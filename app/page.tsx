@@ -9,6 +9,8 @@ type AdminTab = "overview" | "verification" | "fraud" | "disputes";
 type PersistedJob = { id: number; externalId: string; category: string; title: string; status: string; budget: string; createdAt: string | number };
 type PersistedQuote = { id: number; contractorName: string; amountCents: number; message: string; availableAt: string; status: string };
 type Opportunity = { numericId?: number; id: string; service: string; title: string; distance: string; budget: string; timing: string; match: number; posted: string; details: string };
+type RoomMessage = { id: number; body: string; mine: boolean; createdAt: string | number };
+type RoomEvent = { id: number; label: string; eventType: string; createdAt: string | number };
 
 const categories = [
   ["Drywall", "DW"],
@@ -108,6 +110,12 @@ export default function Home() {
   const [savedQuotes, setSavedQuotes] = useState<PersistedQuote[]>([]);
   const [savedQuotesStatus, setSavedQuotesStatus] = useState<"idle" | "loading" | "error">("idle");
   const [acceptedQuoteId, setAcceptedQuoteId] = useState<number | null>(null);
+  const [conversations, setConversations] = useState<PersistedJob[]>([]);
+  const [roomJob, setRoomJob] = useState<PersistedJob | null>(null);
+  const [roomMessages, setRoomMessages] = useState<RoomMessage[]>([]);
+  const [roomEvents, setRoomEvents] = useState<RoomEvent[]>([]);
+  const [roomText, setRoomText] = useState("");
+  const [roomStatus, setRoomStatus] = useState<"idle" | "loading" | "sending" | "error">("idle");
 
   const jobBrief = useMemo(
     () =>
@@ -143,6 +151,14 @@ export default function Home() {
       })
       .catch(() => undefined);
   }, [view]);
+
+  useEffect(() => {
+    if (view !== "contractor") return;
+    fetch("/api/conversations")
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data: { conversations?: PersistedJob[] }) => setConversations(data.conversations ?? []))
+      .catch(() => undefined);
+  }, [view, quoteSent]);
 
   const availableOpportunities = useMemo(() => {
     const liveIds = new Set(liveOpportunities.map((job) => job.id));
@@ -252,6 +268,41 @@ export default function Home() {
       setSavedQuotesStatus("idle");
     } catch {
       setSavedQuotesStatus("error");
+    }
+  }
+
+  async function openJobRoom(job: PersistedJob) {
+    setRoomJob(job);
+    setRoomStatus("loading");
+    try {
+      const response = await fetch(`/api/jobs/${job.id}`);
+      if (!response.ok) throw new Error("Unable to load job room");
+      const data = (await response.json()) as { messages?: RoomMessage[]; events?: RoomEvent[] };
+      setRoomMessages(data.messages ?? []);
+      setRoomEvents(data.events ?? []);
+      setRoomStatus("idle");
+    } catch {
+      setRoomStatus("error");
+    }
+  }
+
+  async function sendRoomMessage(event: FormEvent) {
+    event.preventDefault();
+    if (!roomJob || !roomText.trim()) return;
+    setRoomStatus("sending");
+    try {
+      const response = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: roomJob.id, body: roomText.trim() }),
+      });
+      if (!response.ok) throw new Error("Unable to send message");
+      const data = (await response.json()) as { message: RoomMessage };
+      setRoomMessages((current) => [...current, data.message]);
+      setRoomText("");
+      setRoomStatus("idle");
+    } catch {
+      setRoomStatus("error");
     }
   }
 
@@ -565,7 +616,7 @@ export default function Home() {
             </aside>
             <div className="account-content">
               {accountTab === "jobs" && <>
-                {persistedJobs.length > 0 && <div className="saved-request-list"><div className="account-section-head"><div><p className="aside-label">Saved to JobDrop</p><h2>Your submitted requests</h2></div><span>{persistedJobs.length} stored</span></div>{persistedJobs.map((job) => <article key={job.id} className={selectedSavedJob?.id === job.id ? "selected-request" : ""}><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status}</small><h3>{job.title}</h3><p>{job.budget}</p></div><button onClick={() => loadSavedQuotes(job)}>Compare quotes →</button></article>)}{selectedSavedJob && <div className="saved-quote-panel"><div className="saved-quote-heading"><div><p className="aside-label">Live quote comparison</p><h3>{selectedSavedJob.externalId}</h3></div><button aria-label="Close quote comparison" onClick={() => setSelectedSavedJob(null)}>×</button></div>{savedQuotesStatus === "loading" && !savedQuotes.length ? <p className="quote-panel-state">Loading quotes…</p> : savedQuotesStatus === "error" ? <p className="quote-panel-state error">Quotes could not be loaded. Please try again.</p> : <div className="saved-quote-grid">{savedQuotes.map((quote, index) => <article key={quote.id} className={quote.status === "accepted" ? "accepted" : ""}><div><span>{index === 0 ? "Best value" : "Verified pro"}</span><b>{quote.contractorName}</b></div><strong>${(quote.amountCents / 100).toLocaleString()}</strong><p>{quote.message}</p><small>Available {quote.availableAt}</small><button disabled={savedQuotesStatus === "loading" || (acceptedQuoteId !== null && acceptedQuoteId !== quote.id)} onClick={() => acceptSavedQuote(quote)}>{quote.status === "accepted" ? "Selected ✓" : quote.status === "declined" ? "Another pro selected" : "Choose this pro →"}</button></article>)}</div>}</div>}</div>}
+                {persistedJobs.length > 0 && <div className="saved-request-list"><div className="account-section-head"><div><p className="aside-label">Saved to JobDrop</p><h2>Your submitted requests</h2></div><span>{persistedJobs.length} stored</span></div>{persistedJobs.map((job) => <article key={job.id} className={selectedSavedJob?.id === job.id ? "selected-request" : ""}><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status}</small><h3>{job.title}</h3><p>{job.budget}</p></div><button onClick={() => loadSavedQuotes(job)}>Compare quotes →</button></article>)}{selectedSavedJob && <div className="saved-quote-panel"><div className="saved-quote-heading"><div><p className="aside-label">Live quote comparison</p><h3>{selectedSavedJob.externalId}</h3></div><div className="saved-quote-heading-actions"><button onClick={() => openJobRoom(selectedSavedJob)}>Open Job Room</button><button aria-label="Close quote comparison" onClick={() => setSelectedSavedJob(null)}>×</button></div></div>{savedQuotesStatus === "loading" && !savedQuotes.length ? <p className="quote-panel-state">Loading quotes…</p> : savedQuotesStatus === "error" ? <p className="quote-panel-state error">Quotes could not be loaded. Please try again.</p> : <div className="saved-quote-grid">{savedQuotes.map((quote, index) => <article key={quote.id} className={quote.status === "accepted" ? "accepted" : ""}><div><span>{index === 0 ? "Best value" : "Verified pro"}</span><b>{quote.contractorName}</b></div><strong>${(quote.amountCents / 100).toLocaleString()}</strong><p>{quote.message}</p><small>Available {quote.availableAt}</small><button disabled={savedQuotesStatus === "loading" || (acceptedQuoteId !== null && acceptedQuoteId !== quote.id)} onClick={() => acceptSavedQuote(quote)}>{quote.status === "accepted" ? "Selected ✓" : quote.status === "declined" ? "Another pro selected" : "Choose this pro →"}</button></article>)}</div>}</div>}</div>}
                 <div className="account-section-head"><div><p className="aside-label">Current</p><h2>Active job</h2></div><button onClick={() => go("tracking")}>Open live tracking →</button></div>
                 <article className="account-active-job"><div className="account-job-status"><span><i /></span><div><small>In progress · Arriving in 14 min</small><h3>Basement drywall repair</h3><p>North & Beam Drywall · JD-2048</p></div><b>$2,280</b></div><div className="account-progress"><i /></div><div className="account-job-actions"><span>Started today at 8:31 AM</span><button onClick={() => go("tracking")}>Track job</button><button>Message pro</button></div></article>
                 <div className="account-section-head history-head"><div><p className="aside-label">History</p><h2>Past requests</h2></div></div>
@@ -723,6 +774,7 @@ export default function Home() {
               <div className="inbox-layout">
                 <aside className="conversation-list">
                   <label><span>⌕</span><input placeholder="Search messages" /></label>
+                  {conversations.map((job) => <button key={job.id} className="live-conversation" onClick={() => openJobRoom(job)}><span className="person-avatar orange">{job.category.slice(0,2).toUpperCase()}</span><div><b>{job.title}</b><p>Open the live Job Room</p><small>{job.externalId} · {job.status}</small></div><em>Live</em></button>)}
                   <button className="selected"><span className="person-avatar orange">NL</span><div><b>Niall L.</b><p>Great, see you shortly.</p><small>Basement drywall · Today</small></div><em>2m</em></button>
                   <button><span className="person-avatar green">MR</span><div><b>Melissa R.</b><p>I’ve added two more photos.</p><small>Ceiling patch · Tomorrow</small></div><em>1h</em></button>
                   <button><span className="person-avatar blue">SK</span><div><b>Steve K.</b><p>Friday at 7:30 works.</p><small>Garage · Friday</small></div><em>4h</em></button>
@@ -783,6 +835,8 @@ export default function Home() {
           {changeOrderOpen && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="change-title"><button className="overlay-close" onClick={() => setChangeOrderOpen(false)} aria-label="Close change order">×</button><div className="quote-drawer change-drawer"><p className="step-kicker">Job JD-2048 · Change order</p><h2 id="change-title">Document extra work.</h2><p className="quote-job-title">Basement drywall repair · Niall L.</p><div className="change-alert"><span>!</span><p>The customer must approve this change before additional work begins.</p></div><label className="field-label">Reason for change<select defaultValue="Hidden damage discovered"><option>Hidden damage discovered</option><option>Customer requested upgrade</option><option>Scope clarification</option></select></label><label className="field-label">Describe the additional work<textarea rows={4} defaultValue="Replace water-damaged insulation behind the four affected drywall sheets before installing new board." /></label><div className="two-fields"><label className="field-label">Additional labour<input defaultValue="$240" /></label><label className="field-label">Additional materials<input defaultValue="$185" /></label></div><div className="change-total"><span>Original contract</span><b>$2,280</b><span>Change order</span><b>+$425</b><strong>New total</strong><strong>$2,705</strong></div><label className="field-label">Schedule impact<select><option>Adds approximately 2 hours</option><option>No schedule impact</option><option>Adds 1 business day</option></select></label><button className="send-quote" onClick={() => { setChangeOrderSent(true); setChangeOrderOpen(false); }}>Send change order for approval →</button></div></div>}
         </section>
       )}
+
+      {roomJob && <div className="job-room-overlay" role="dialog" aria-modal="true" aria-labelledby="job-room-title"><button className="job-room-close" aria-label="Close Job Room" onClick={() => setRoomJob(null)}>×</button><div className="job-room"><header><div><p className="step-kicker">Shared Job Room · {roomJob.externalId}</p><h2 id="job-room-title">{roomJob.title}</h2><p>{roomJob.category} · {roomJob.status}</p></div><span><i /> Private to this job</span></header>{roomStatus === "loading" ? <div className="job-room-loading">Opening your Job Room…</div> : roomStatus === "error" && !roomMessages.length ? <div className="job-room-loading error">The Job Room could not be loaded. Please close it and try again.</div> : <div className="job-room-grid"><aside><p className="aside-label">Job activity</p><div className="room-timeline">{roomEvents.map((event, index) => <article key={event.id}><span>{index + 1}</span><div><b>{event.label}</b><small>{new Date(event.createdAt).toLocaleString()}</small></div></article>)}</div></aside><section><div className="room-chat-head"><div><span>JD</span><div><b>Job conversation</b><small>Keep details and decisions documented here</small></div></div></div><div className="room-chat-body">{roomMessages.length === 0 && <div className="room-empty"><span>✦</span><b>Start the conversation</b><p>Messages stay attached to this job for both sides.</p></div>}{roomMessages.map((message) => <div className={`room-message ${message.mine ? "mine" : "theirs"}`} key={message.id}><p>{message.body}</p><small>{new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small></div>)}</div><form className="room-composer" onSubmit={sendRoomMessage}><input value={roomText} onChange={(event) => setRoomText(event.target.value)} placeholder="Write a message about this job…" aria-label="Job message" /><button disabled={roomStatus === "sending" || !roomText.trim()}>{roomStatus === "sending" ? "Sending…" : "Send →"}</button></form></section></div>}</div></div>}
 
       <footer>
         <div className="brand footer-brand"><span className="brand-mark"><i /></span><span>JobDrop</span></div>

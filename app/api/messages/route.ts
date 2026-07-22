@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     if (!Number.isInteger(jobId) || !body) return Response.json({ error: "jobId and body are required" }, { status: 400 });
     if (!(await accessibleJob(jobId, user.email))) return Response.json({ error: "Job not found" }, { status: 404 });
     const [message] = await getDb().insert(messages).values({ jobId, senderEmail: user.email, body }).returning();
-    return Response.json({ message }, { status: 201 });
+    return Response.json({ message: { ...message, mine: true } }, { status: 201 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }
