@@ -146,3 +146,21 @@ export const changeOrders = sqliteTable("change_orders", {
   index("change_orders_owner_idx").on(table.ownerEmail),
   index("change_orders_contractor_idx").on(table.contractorEmail),
 ]);
+
+export const verifiedReviews = sqliteTable("verified_reviews", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobId: integer("job_id").notNull().references(() => jobRequests.id, { onDelete: "cascade" }),
+  ownerEmail: text("owner_email").notNull(),
+  contractorEmail: text("contractor_email").notNull(),
+  contractorName: text("contractor_name").notNull(),
+  workmanship: integer("workmanship").notNull(),
+  communication: integer("communication").notNull(),
+  punctuality: integer("punctuality").notNull(),
+  cleanliness: integer("cleanliness").notNull(),
+  averageScore: integer("average_score").notNull(),
+  comment: text("comment").notNull().default(""),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("verified_reviews_job_unique").on(table.jobId),
+  index("verified_reviews_contractor_idx").on(table.contractorEmail),
+]);

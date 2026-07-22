@@ -43,6 +43,13 @@
       "when": 1784705247676,
       "tag": "0005_third_lake",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784705531138,
+      "tag": "0006_living_vulcan",
+      "breakpoints": true
     }
   ]
 }

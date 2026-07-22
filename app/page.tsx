@@ -15,6 +15,7 @@ type ContractorProfile = { businessName: string; legalName: string; phone: strin
 type PaymentRecord = { id: number; externalId: string; title: string; contractorName: string; subtotalCents: number; customerFeeCents: number; totalCents: number; contractorPayoutCents: number; status: string; processor: string; viewerRole: "homeowner" | "contractor"; createdAt: string | number };
 type GeneratedDocument = { id: number; externalId: string; jobTitle: string; jobNumber: string; documentType: string; title: string; status: string; createdAt: string | number };
 type ChangeOrderRecord = { id: number; externalId: string; reason: string; description: string; amountCents: number; scheduleImpact: string; status: string; contractorName: string; decisionName?: string | null };
+type VerifiedReview = { id: number; workmanship: number; communication: number; punctuality: number; cleanliness: number; averageScore: number; comment: string };
 
 const categories = [
   ["Drywall", "DW"],
@@ -143,6 +144,11 @@ export default function Home() {
   const [changeAmount, setChangeAmount] = useState("425");
   const [changeSchedule, setChangeSchedule] = useState("Adds approximately 2 hours");
   const [changeStatus, setChangeStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [roomReview, setRoomReview] = useState<VerifiedReview | null>(null);
+  const [reviewScores, setReviewScores] = useState({ workmanship: 5, communication: 5, punctuality: 5, cleanliness: 5 });
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewStatus, setReviewStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [reputation, setReputation] = useState<{ verifiedReviewCount: number; averageStars: number | null; verifiedReviewScore: number | null }>({ verifiedReviewCount: 0, averageStars: null, verifiedReviewScore: null });
 
   const jobBrief = useMemo(
     () =>
@@ -173,6 +179,11 @@ export default function Home() {
       .then((data: { documents?: GeneratedDocument[] }) => setGeneratedDocuments(data.documents ?? []))
       .catch(() => undefined);
   }, [view, accountTab, acceptedQuoteId]);
+
+  useEffect(() => {
+    if (view !== "contractor") return;
+    fetch("/api/reputation").then((response) => response.ok ? response.json() : Promise.reject()).then((data: { reputation?: typeof reputation }) => data.reputation && setReputation(data.reputation)).catch(() => undefined);
+  }, [view]);
 
   useEffect(() => {
     if (view !== "contractor") return;
@@ -342,10 +353,11 @@ export default function Home() {
     try {
       const response = await fetch(`/api/jobs/${job.id}`);
       if (!response.ok) throw new Error("Unable to load job room");
-      const data = (await response.json()) as { messages?: RoomMessage[]; events?: RoomEvent[]; changeOrders?: ChangeOrderRecord[] };
+      const data = (await response.json()) as { messages?: RoomMessage[]; events?: RoomEvent[]; changeOrders?: ChangeOrderRecord[]; review?: VerifiedReview | null };
       setRoomMessages(data.messages ?? []);
       setRoomEvents(data.events ?? []);
       setRoomChangeOrders(data.changeOrders ?? []);
+      setRoomReview(data.review ?? null);
       setRoomStatus("idle");
     } catch {
       setRoomStatus("error");
@@ -442,6 +454,17 @@ export default function Home() {
       setRoomChangeOrders((current) => current.map((item) => item.id === order.id ? { ...item, status: decision, decisionName: "Niall L." } : item));
       setRoomStatus("idle");
     } catch { setRoomStatus("error"); }
+  }
+
+  async function submitVerifiedReview() {
+    if (!roomJob) return;
+    setReviewStatus("saving");
+    try {
+      const response = await fetch(`/api/jobs/${roomJob.id}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...reviewScores, comment: reviewComment }) });
+      if (!response.ok) throw new Error("Unable to submit review");
+      const data = (await response.json()) as { review: VerifiedReview };
+      setRoomReview(data.review); setReviewStatus("idle");
+    } catch { setReviewStatus("error"); }
   }
 
   return (
@@ -832,7 +855,7 @@ export default function Home() {
                 <article><span>Open opportunities</span><b>8</b><small><i className="up">↑ 3</i> since yesterday</small></article>
                 <article><span>Quotes awaiting reply</span><b>4</b><small>$9,840 potential value</small></article>
                 <article><span>Booked this month</span><b>$18,420</b><small><i className="up">↑ 12%</i> from June</small></article>
-                <article><span>Trust score</span><b>96</b><small>Top 4% in Hamilton</small></article>
+                <article><span>Verified review score</span><b>{reputation.verifiedReviewScore ?? "New"}</b><small>{reputation.verifiedReviewCount} completed-job {reputation.verifiedReviewCount === 1 ? "review" : "reviews"}</small></article>
               </div>
               <div className="pro-overview-grid">
                 <div className="pro-panel">
@@ -846,7 +869,7 @@ export default function Home() {
                   ))}
                 </div>
                 <aside className="trust-panel">
-                  <div className="trust-panel-top"><div><p className="aside-label">Your reputation</p><h2>96<small>/100</small></h2></div><span>Excellent</span></div>
+                  <div className="trust-panel-top"><div><p className="aside-label">Verified reputation</p><h2>{reputation.verifiedReviewScore ?? "—"}<small>/100</small></h2></div><span>{reputation.verifiedReviewCount ? `${reputation.averageStars?.toFixed(1)} ★` : "Building"}</span></div>
                   <div className="score-bar"><i /></div>
                   <dl><div><dt>Response speed</dt><dd>8 min</dd></div><div><dt>On-time arrival</dt><dd>98%</dd></div><div><dt>Completion rate</dt><dd>100%</dd></div><div><dt>Repeat customers</dt><dd>31%</dd></div></dl>
                   <button onClick={() => setProTab("business")}>Improve your profile →</button>
@@ -978,7 +1001,7 @@ export default function Home() {
 
       {liveChangeOrderJob && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="live-change-title"><button className="overlay-close" onClick={() => setLiveChangeOrderJob(null)} aria-label="Close change order">×</button><div className="quote-drawer change-drawer"><p className="step-kicker">{liveChangeOrderJob.externalId} · Change order</p><h2 id="live-change-title">Document extra work.</h2><p className="quote-job-title">{liveChangeOrderJob.title}</p><div className="change-alert"><span>!</span><p>The homeowner must approve this change before additional work begins.</p></div><label className="field-label">Reason<input value={changeReason} onChange={(event) => setChangeReason(event.target.value)} /></label><label className="field-label">Additional work<textarea rows={4} value={changeDescription} onChange={(event) => setChangeDescription(event.target.value)} /></label><label className="field-label">Additional amount<div className="price-input"><span>$</span><input value={changeAmount} onChange={(event) => setChangeAmount(event.target.value)} inputMode="decimal" /><em>CAD</em></div></label><label className="field-label">Schedule impact<select value={changeSchedule} onChange={(event) => setChangeSchedule(event.target.value)}><option>Adds approximately 2 hours</option><option>No schedule impact</option><option>Adds 1 business day</option></select></label>{changeStatus === "error" && <p className="quote-submit-error">The change order could not be sent.</p>}<button className="send-quote" disabled={changeStatus === "saving"} onClick={submitLiveChangeOrder}>{changeStatus === "saving" ? "Sending…" : `Send $${Number(changeAmount || 0).toLocaleString()} change order →`}</button></div></div>}
 
-      {roomJob && <div className="job-room-overlay" role="dialog" aria-modal="true" aria-labelledby="job-room-title"><button className="job-room-close" aria-label="Close Job Room" onClick={() => setRoomJob(null)}>×</button><div className="job-room"><header><div><p className="step-kicker">Shared Job Room · {roomJob.externalId}</p><h2 id="job-room-title">{roomJob.title}</h2><p>{roomJob.category} · {roomJob.status}</p></div><span><i /> Private to this job</span></header>{roomStatus === "loading" ? <div className="job-room-loading">Opening your Job Room…</div> : roomStatus === "error" && !roomMessages.length ? <div className="job-room-loading error">The Job Room could not be loaded. Please close it and try again.</div> : <div className="job-room-grid"><aside><p className="aside-label">Job activity</p><div className="room-timeline">{roomEvents.map((event, index) => <article key={event.id}><span>{index + 1}</span><div><b>{event.label}</b><small>{new Date(event.createdAt).toLocaleString()}</small></div></article>)}</div>{roomChangeOrders.length > 0 && <div className="room-change-orders"><p className="aside-label">Change orders</p>{roomChangeOrders.map((order) => <article key={order.id}><div><small>{order.externalId} · {order.status}</small><b>{order.reason}</b><p>{order.description}</p><strong>+${(order.amountCents / 100).toLocaleString()}</strong></div>{order.status === "pending" && <div><button onClick={() => decideChangeOrder(order, "declined")}>Decline</button><button onClick={() => decideChangeOrder(order, "approved")}>Approve & sign</button></div>}</article>)}</div>}</aside><section><div className="room-chat-head"><div><span>JD</span><div><b>Job conversation</b><small>Keep details and decisions documented here</small></div></div></div><div className="room-chat-body">{roomMessages.length === 0 && <div className="room-empty"><span>✦</span><b>Start the conversation</b><p>Messages stay attached to this job for both sides.</p></div>}{roomMessages.map((message) => <div className={`room-message ${message.mine ? "mine" : "theirs"}`} key={message.id}><p>{message.body}</p><small>{new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small></div>)}</div><form className="room-composer" onSubmit={sendRoomMessage}><input value={roomText} onChange={(event) => setRoomText(event.target.value)} placeholder="Write a message about this job…" aria-label="Job message" /><button disabled={roomStatus === "sending" || !roomText.trim()}>{roomStatus === "sending" ? "Sending…" : "Send →"}</button></form></section></div>}</div></div>}
+      {roomJob && <div className="job-room-overlay" role="dialog" aria-modal="true" aria-labelledby="job-room-title"><button className="job-room-close" aria-label="Close Job Room" onClick={() => setRoomJob(null)}>×</button><div className="job-room"><header><div><p className="step-kicker">Shared Job Room · {roomJob.externalId}</p><h2 id="job-room-title">{roomJob.title}</h2><p>{roomJob.category} · {roomJob.status}</p></div><span><i /> Private to this job</span></header>{roomStatus === "loading" ? <div className="job-room-loading">Opening your Job Room…</div> : roomStatus === "error" && !roomMessages.length ? <div className="job-room-loading error">The Job Room could not be loaded. Please close it and try again.</div> : <div className="job-room-grid"><aside><p className="aside-label">Job activity</p><div className="room-timeline">{roomEvents.map((event, index) => <article key={event.id}><span>{index + 1}</span><div><b>{event.label}</b><small>{new Date(event.createdAt).toLocaleString()}</small></div></article>)}</div>{roomChangeOrders.length > 0 && <div className="room-change-orders"><p className="aside-label">Change orders</p>{roomChangeOrders.map((order) => <article key={order.id}><div><small>{order.externalId} · {order.status}</small><b>{order.reason}</b><p>{order.description}</p><strong>+${(order.amountCents / 100).toLocaleString()}</strong></div>{order.status === "pending" && <div><button onClick={() => decideChangeOrder(order, "declined")}>Decline</button><button onClick={() => decideChangeOrder(order, "approved")}>Approve & sign</button></div>}</article>)}</div>}{roomJob.status === "completed" && <div className="verified-review-box"><p className="aside-label">Verified job review</p>{roomReview ? <div className="review-complete"><b>{(roomReview.averageScore / 100).toFixed(1)} ★</b><span>Verified completed job</span><p>{roomReview.comment || "Review submitted without a written comment."}</p></div> : <><div className="review-dimensions">{(["workmanship","communication","punctuality","cleanliness"] as const).map((dimension) => <div key={dimension}><span>{dimension}</span><select value={reviewScores[dimension]} onChange={(event) => setReviewScores((current) => ({ ...current, [dimension]: Number(event.target.value) }))}><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="3">3 · Average</option><option value="2">2 · Poor</option><option value="1">1 · Very poor</option></select></div>)}</div><textarea rows={3} value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} placeholder="What should future customers know?" />{reviewStatus === "error" && <p className="review-error">The review could not be submitted.</p>}<button disabled={reviewStatus === "saving"} onClick={submitVerifiedReview}>{reviewStatus === "saving" ? "Submitting…" : "Submit verified review"}</button></>}</div>}</aside><section><div className="room-chat-head"><div><span>JD</span><div><b>Job conversation</b><small>Keep details and decisions documented here</small></div></div></div><div className="room-chat-body">{roomMessages.length === 0 && <div className="room-empty"><span>✦</span><b>Start the conversation</b><p>Messages stay attached to this job for both sides.</p></div>}{roomMessages.map((message) => <div className={`room-message ${message.mine ? "mine" : "theirs"}`} key={message.id}><p>{message.body}</p><small>{new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small></div>)}</div><form className="room-composer" onSubmit={sendRoomMessage}><input value={roomText} onChange={(event) => setRoomText(event.target.value)} placeholder="Write a message about this job…" aria-label="Job message" /><button disabled={roomStatus === "sending" || !roomText.trim()}>{roomStatus === "sending" ? "Sending…" : "Send →"}</button></form></section></div>}</div></div>}
 
       <footer>
         <div className="brand footer-brand"><span className="brand-mark"><i /></span><span>JobDrop</span></div>
