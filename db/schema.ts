@@ -8,6 +8,26 @@ export const users = sqliteTable("users", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [uniqueIndex("users_email_unique").on(table.email)]);
 
+export const contractorProfiles = sqliteTable("contractor_profiles", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ownerEmail: text("owner_email").notNull(),
+  businessName: text("business_name").notNull(),
+  legalName: text("legal_name").notNull().default(""),
+  phone: text("phone").notNull().default(""),
+  about: text("about").notNull().default(""),
+  primaryService: text("primary_service").notNull(),
+  services: text("services").notNull().default("[]"),
+  homeBase: text("home_base").notNull().default("Hamilton, Ontario"),
+  serviceRadiusKm: integer("service_radius_km").notNull().default(30),
+  teamSize: integer("team_size").notNull().default(1),
+  emergencyAvailable: integer("emergency_available", { mode: "boolean" }).notNull().default(false),
+  acceptingWork: integer("accepting_work", { mode: "boolean" }).notNull().default(true),
+  plan: text("plan").notNull().default("growth"),
+  verificationStatus: text("verification_status").notNull().default("pending"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [uniqueIndex("contractor_profiles_owner_unique").on(table.ownerEmail)]);
+
 export const jobRequests = sqliteTable("job_requests", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   externalId: text("external_id").notNull(),

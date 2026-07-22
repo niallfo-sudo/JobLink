@@ -11,6 +11,7 @@ type PersistedQuote = { id: number; contractorName: string; amountCents: number;
 type Opportunity = { numericId?: number; id: string; service: string; title: string; distance: string; budget: string; timing: string; match: number; posted: string; details: string };
 type RoomMessage = { id: number; body: string; mine: boolean; createdAt: string | number };
 type RoomEvent = { id: number; label: string; eventType: string; createdAt: string | number };
+type ContractorProfile = { businessName: string; legalName: string; phone: string; about: string; primaryService: string; services: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: "starter" | "growth" | "pro"; verificationStatus: string };
 
 const categories = [
   ["Drywall", "DW"],
@@ -116,6 +117,18 @@ export default function Home() {
   const [roomEvents, setRoomEvents] = useState<RoomEvent[]>([]);
   const [roomText, setRoomText] = useState("");
   const [roomStatus, setRoomStatus] = useState<"idle" | "loading" | "sending" | "error">("idle");
+  const [contractorProfile, setContractorProfile] = useState<ContractorProfile | null>(null);
+  const [businessName, setBusinessName] = useState("North & Beam Drywall");
+  const [legalName, setLegalName] = useState("North & Beam Drywall Inc.");
+  const [businessPhone, setBusinessPhone] = useState("(905) 555-0148");
+  const [businessAbout, setBusinessAbout] = useState("Residential and light-commercial drywall installation, repair and finishing across Hamilton and surrounding communities.");
+  const [primaryService, setPrimaryService] = useState("Drywall");
+  const [selectedServices, setSelectedServices] = useState(["Drywall repair", "Drywall installation", "Taping & finishing", "Plaster repair"]);
+  const [homeBase, setHomeBase] = useState("Hamilton, Ontario");
+  const [serviceRadius, setServiceRadius] = useState(30);
+  const [emergencyAvailable, setEmergencyAvailable] = useState(true);
+  const [selectedPlan, setSelectedPlan] = useState<"starter" | "growth" | "pro">("growth");
+  const [profileStatus, setProfileStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   const jobBrief = useMemo(
     () =>
@@ -159,6 +172,28 @@ export default function Home() {
       .then((data: { conversations?: PersistedJob[] }) => setConversations(data.conversations ?? []))
       .catch(() => undefined);
   }, [view, quoteSent]);
+
+  useEffect(() => {
+    if (view !== "contractor" && view !== "onboarding") return;
+    fetch("/api/contractor-profile")
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data: { profile?: ContractorProfile | null }) => {
+        if (!data.profile) return;
+        const profile = data.profile;
+        setContractorProfile(profile);
+        setBusinessName(profile.businessName);
+        setLegalName(profile.legalName);
+        setBusinessPhone(profile.phone);
+        setBusinessAbout(profile.about);
+        setPrimaryService(profile.primaryService);
+        setSelectedServices(profile.services);
+        setHomeBase(profile.homeBase);
+        setServiceRadius(profile.serviceRadiusKm);
+        setEmergencyAvailable(profile.emergencyAvailable);
+        setSelectedPlan(profile.plan);
+      })
+      .catch(() => undefined);
+  }, [view]);
 
   const availableOpportunities = useMemo(() => {
     const liveIds = new Set(liveOpportunities.map((job) => job.id));
@@ -220,7 +255,7 @@ export default function Home() {
       const response = await fetch(`/api/jobs/${quoteJob.numericId}/quotes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: Number(quoteAmount), message: quoteNote, availableAt: quoteAvailability, contractorName: "North & Beam Drywall" }),
+        body: JSON.stringify({ amount: Number(quoteAmount), message: quoteNote, availableAt: quoteAvailability, contractorName: contractorProfile?.businessName || businessName }),
       });
       if (!response.ok) throw new Error("Unable to submit quote");
       setQuoteSent(quoteJob.id);
@@ -303,6 +338,38 @@ export default function Home() {
       setRoomStatus("idle");
     } catch {
       setRoomStatus("error");
+    }
+  }
+
+  async function saveContractorProfile() {
+    setProfileStatus("saving");
+    try {
+      const response = await fetch("/api/contractor-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessName, legalName, phone: businessPhone, about: businessAbout, primaryService, services: selectedServices, homeBase, serviceRadiusKm: serviceRadius, teamSize: 4, emergencyAvailable, acceptingWork: true, plan: selectedPlan }),
+      });
+      if (!response.ok) throw new Error("Unable to save profile");
+      const data = (await response.json()) as { profile: ContractorProfile };
+      setContractorProfile(data.profile);
+      setProfileStatus("saved");
+      setOnboardingStep(4);
+    } catch {
+      setProfileStatus("error");
+    }
+  }
+
+  async function updateContractorProfile(updates: Partial<Pick<ContractorProfile, "plan" | "acceptingWork" | "emergencyAvailable" | "serviceRadiusKm">>) {
+    setProfileStatus("saving");
+    try {
+      const response = await fetch("/api/contractor-profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updates) });
+      if (!response.ok) throw new Error("Unable to update profile");
+      const data = (await response.json()) as { profile: ContractorProfile };
+      setContractorProfile(data.profile);
+      setSelectedPlan(data.profile.plan);
+      setProfileStatus("saved");
+    } catch {
+      setProfileStatus("error");
     }
   }
 
@@ -670,11 +737,11 @@ export default function Home() {
         <section className="onboarding-shell">
           <div className="onboarding-progress"><button onClick={() => onboardingStep === 0 ? go("discover") : setOnboardingStep(onboardingStep - 1)}>← {onboardingStep === 0 ? "Exit" : "Back"}</button><div>{["Business", "Services", "Verification", "Plan"].map((label, index) => <span key={label} className={index <= onboardingStep ? "done" : ""}><i />{label}</span>)}</div><small>{onboardingStep < 4 ? `${Math.round(((onboardingStep + 1) / 4) * 100)}% complete` : "Complete"}</small></div>
           {onboardingStep < 4 ? <div className="onboarding-layout"><div className="onboarding-form">
-            {onboardingStep === 0 && <><p className="step-kicker">Step 1 of 4</p><h1>Tell us about your business.</h1><p>Start with the details customers will see. You can update these anytime.</p><div className="two-fields"><label>Legal business name<input defaultValue="North & Beam Drywall Inc." /></label><label>Public business name<input defaultValue="North & Beam Drywall" /></label></div><label>Business address<input defaultValue="225 King Street W, Hamilton, ON" /></label><div className="two-fields"><label>Business phone<input defaultValue="(905) 555-0148" /></label><label>Years in business<select defaultValue="8"><option>0–2</option><option>3–5</option><option value="8">6–10</option><option>10+</option></select></label></div><label>About your company<textarea rows={4} defaultValue="Residential and light-commercial drywall installation, repair and finishing across Hamilton and surrounding communities." /></label></>}
-            {onboardingStep === 1 && <><p className="step-kicker">Step 2 of 4</p><h1>Choose your work and territory.</h1><p>There is no extra charge for verified services. Matching only uses work you select.</p><label>Primary service<select defaultValue="Drywall"><option>Drywall</option><option>Painting</option><option>Roofing</option><option>Plumbing</option></select></label><p className="field-label">Additional services</p><div className="onboarding-options">{["Drywall repair", "Drywall installation", "Taping & finishing", "Plaster repair", "Interior painting", "Insulation"].map((item, index) => <label key={item}><input type="checkbox" defaultChecked={index < 4} /><span>✓</span>{item}</label>)}</div><div className="two-fields"><label>Home base<input defaultValue="Hamilton, Ontario" /></label><label>Service radius<select defaultValue="30"><option>15 km</option><option value="30">30 km</option><option>50 km</option></select></label></div><label className="availability-check"><input type="checkbox" defaultChecked /><span />Available for emergency requests</label></>}
+            {onboardingStep === 0 && <><p className="step-kicker">Step 1 of 4</p><h1>Tell us about your business.</h1><p>Start with the details customers will see. You can update these anytime.</p><div className="two-fields"><label>Legal business name<input value={legalName} onChange={(event) => setLegalName(event.target.value)} /></label><label>Public business name<input value={businessName} onChange={(event) => setBusinessName(event.target.value)} /></label></div><label>Business address<input defaultValue="225 King Street W, Hamilton, ON" /></label><div className="two-fields"><label>Business phone<input value={businessPhone} onChange={(event) => setBusinessPhone(event.target.value)} /></label><label>Years in business<select defaultValue="8"><option>0–2</option><option>3–5</option><option value="8">6–10</option><option>10+</option></select></label></div><label>About your company<textarea rows={4} value={businessAbout} onChange={(event) => setBusinessAbout(event.target.value)} /></label></>}
+            {onboardingStep === 1 && <><p className="step-kicker">Step 2 of 4</p><h1>Choose your work and territory.</h1><p>There is no extra charge for verified services. Matching only uses work you select.</p><label>Primary service<select value={primaryService} onChange={(event) => setPrimaryService(event.target.value)}><option>Drywall</option><option>Painting</option><option>Roofing</option><option>Plumbing</option></select></label><p className="field-label">Additional services</p><div className="onboarding-options">{["Drywall repair", "Drywall installation", "Taping & finishing", "Plaster repair", "Interior painting", "Insulation"].map((item) => <label key={item}><input type="checkbox" checked={selectedServices.includes(item)} onChange={() => setSelectedServices((current) => current.includes(item) ? current.filter((service) => service !== item) : [...current, item])} /><span>✓</span>{item}</label>)}</div><div className="two-fields"><label>Home base<input value={homeBase} onChange={(event) => setHomeBase(event.target.value)} /></label><label>Service radius<select value={serviceRadius} onChange={(event) => setServiceRadius(Number(event.target.value))}><option value="15">15 km</option><option value="30">30 km</option><option value="50">50 km</option></select></label></div><label className="availability-check"><input type="checkbox" checked={emergencyAvailable} onChange={(event) => setEmergencyAvailable(event.target.checked)} /><span />Available for emergency requests</label></>}
             {onboardingStep === 2 && <><p className="step-kicker">Step 3 of 4</p><h1>Build a verified profile.</h1><p>Documents stay private. Customers only see the verified status and expiry monitoring.</p><div className="verification-uploads"><button><span>✓</span><div><b>Government ID</b><small>Alex Morgan · Verified</small></div><em>Complete</em></button><button><span>✓</span><div><b>Business registration</b><small>Ontario Corporation · Verified</small></div><em>Complete</em></button><button><span>+</span><div><b>Liability insurance</b><small>Upload certificate · PDF or photo</small></div><em>Required</em></button><button><span>+</span><div><b>Trade licence</b><small>Only required for regulated services</small></div><em>Optional</em></button></div><div className="verification-note"><span>▣</span><div><b>Your information is encrypted.</b><p>JobDrop uses verification data only for trust, fraud prevention and payment compliance.</p></div></div></>}
-            {onboardingStep === 3 && <><p className="step-kicker">Step 4 of 4</p><h1>Choose how you grow.</h1><p>No lead fees. No charge for each service. Cancel or change plans anytime.</p><div className="onboarding-plans"><label><input type="radio" name="plan" /><div><span>Starter</span><b>$49<small>/month</small></b><p>1 user · 25 km territory · Quoting and invoicing</p></div></label><label className="recommended"><input type="radio" name="plan" defaultChecked /><div><span>Growth · Recommended</span><b>$129<small>/month</small></b><p>5 users · 50 km territory · Scheduling and insights</p></div></label><label><input type="radio" name="plan" /><div><span>Pro</span><b>$299<small>/month</small></b><p>Unlimited team · Multiple territories · Advanced operations</p></div></label></div><div className="trial-note"><span>30</span><div><b>Your first month is free.</b><p>You won’t be charged until August 22. Cancel before then and pay nothing.</p></div></div></>}
-            <div className="onboarding-footer"><span>Saved automatically</span><button onClick={() => setOnboardingStep(onboardingStep + 1)}>{onboardingStep === 3 ? "Submit application" : "Continue"} →</button></div>
+            {onboardingStep === 3 && <><p className="step-kicker">Step 4 of 4</p><h1>Choose how you grow.</h1><p>No lead fees. No charge for each service. Cancel or change plans anytime.</p><div className="onboarding-plans"><label><input type="radio" name="plan" checked={selectedPlan === "starter"} onChange={() => setSelectedPlan("starter")} /><div><span>Starter</span><b>$49<small>/month</small></b><p>1 user · 25 km territory · Quoting and invoicing</p></div></label><label className="recommended"><input type="radio" name="plan" checked={selectedPlan === "growth"} onChange={() => setSelectedPlan("growth")} /><div><span>Growth · Recommended</span><b>$129<small>/month</small></b><p>5 users · 50 km territory · Scheduling and insights</p></div></label><label><input type="radio" name="plan" checked={selectedPlan === "pro"} onChange={() => setSelectedPlan("pro")} /><div><span>Pro</span><b>$299<small>/month</small></b><p>Unlimited team · Multiple territories · Advanced operations</p></div></label></div><div className="trial-note"><span>30</span><div><b>Your first month is free.</b><p>You won’t be charged until August 22. Cancel before then and pay nothing.</p></div></div></>}
+            {profileStatus === "error" && <p className="profile-save-error">Your business profile could not be saved. Please try again.</p>}<div className="onboarding-footer"><span>{profileStatus === "saving" ? "Saving securely…" : profileStatus === "saved" ? "Profile saved ✓" : "Your progress is ready"}</span><button disabled={profileStatus === "saving"} onClick={() => onboardingStep === 3 ? saveContractorProfile() : setOnboardingStep(onboardingStep + 1)}>{onboardingStep === 3 ? "Submit application" : "Continue"} →</button></div>
           </div><aside className="onboarding-aside"><div className="onboarding-quote"><span>“</span><p>JobDrop gives us fewer opportunities than lead sites—but they’re the right jobs. We spend time quoting work we can actually win.</p><div><b>Marcus T.</b><small>General contractor · Hamilton</small></div></div><div className="onboarding-promise"><p className="aside-label">The JobDrop promise</p><ul><li>✓ Never pay per lead</li><li>✓ Keep your quoted labour price</li><li>✓ Control services and territory</li><li>✓ Pause matching anytime</li></ul></div></aside></div> : <div className="onboarding-complete"><span>✓</span><p className="step-kicker">Application submitted</p><h1>Welcome to JobDrop.</h1><p>Your identity and business are approved. Insurance review normally takes one business day; the contractor workspace is ready to explore now.</p><div><span><b>3</b> matching jobs ready</span><span><b>30</b> days free</span><span><b>0</b> lead fees</span></div><button onClick={() => { setProTab("overview"); go("contractor"); }}>Open contractor workspace →</button></div>}
         </section>
       )}
@@ -682,8 +749,8 @@ export default function Home() {
       {view === "contractor" && (
         <section className="pro-shell">
           <div className="pro-banner">
-            <div className="pro-company"><span>NB</span><div><b>North & Beam Drywall</b><small>Verified business · Hamilton, ON</small></div></div>
-            <div className="pro-banner-actions"><div className="pro-availability"><span><i /></span><div><b>Accepting new work</b><small>Visible to matched customers</small></div></div><button onClick={() => go("onboarding")}>View onboarding</button></div>
+            <div className="pro-company"><span>{(contractorProfile?.businessName || businessName).split(" ").slice(0,2).map((word) => word[0]).join("")}</span><div><b>{contractorProfile?.businessName || businessName}</b><small>{contractorProfile?.verificationStatus === "verified" ? "Verified business" : "Business profile"} · {contractorProfile?.homeBase || homeBase}</small></div></div>
+            <div className="pro-banner-actions"><button className="pro-availability" onClick={() => contractorProfile && updateContractorProfile({ acceptingWork: !contractorProfile.acceptingWork })}><span className={contractorProfile?.acceptingWork === false ? "paused" : ""}><i /></span><div><b>{contractorProfile?.acceptingWork === false ? "Matching paused" : "Accepting new work"}</b><small>Click to change availability</small></div></button><button onClick={() => { setOnboardingStep(0); go("onboarding"); }}>{contractorProfile ? "Edit profile" : "Complete onboarding"}</button></div>
           </div>
 
           {proTab === "overview" && (
@@ -800,15 +867,15 @@ export default function Home() {
               <div className="pro-page-heading"><div><p className="step-kicker">Business settings</p><h1>Grow on your terms.</h1><p>Simple monthly plans. No lead fees and no charge for services you’re verified to perform.</p></div><span className="founding-badge">Founding contractor pricing</span></div>
               <div className="business-grid">
                 <aside className="business-profile">
-                  <div className="business-logo">NB</div><h2>North & Beam Drywall</h2><p>Hamilton, Ontario · 25 km service area</p><span className="verified-line">✓ Identity, insurance and licence verified</span>
-                  <dl><div><dt>Services</dt><dd>Drywall, Painting</dd></div><div><dt>Team</dt><dd>4 members</dd></div><div><dt>Profile</dt><dd>92% complete</dd></div></dl><button>Edit business profile →</button>
+                  <div className="business-logo">{(contractorProfile?.businessName || businessName).split(" ").slice(0,2).map((word) => word[0]).join("")}</div><h2>{contractorProfile?.businessName || businessName}</h2><p>{contractorProfile?.homeBase || homeBase} · {contractorProfile?.serviceRadiusKm || serviceRadius} km service area</p><span className="verified-line">✓ {contractorProfile?.verificationStatus === "verified" ? "Identity, insurance and licence verified" : "Complete onboarding to activate matching"}</span>
+                  <dl><div><dt>Services</dt><dd>{(contractorProfile?.services || selectedServices).slice(0,2).join(", ")}</dd></div><div><dt>Team</dt><dd>{contractorProfile?.teamSize || 4} members</dd></div><div><dt>Emergency work</dt><dd>{contractorProfile?.emergencyAvailable ? "Enabled" : "Off"}</dd></div></dl><button onClick={() => { setOnboardingStep(0); go("onboarding"); }}>Edit business profile →</button>
                 </aside>
                 <div className="plans-area">
-                  <div className="plans-heading"><div><p className="aside-label">Current plan</p><h2>Growth</h2></div><b>$129<small>/month</small></b></div>
+                  <div className="plans-heading"><div><p className="aside-label">Current plan</p><h2>{(contractorProfile?.plan || selectedPlan).replace(/^./, (letter) => letter.toUpperCase())}</h2></div><b>${({ starter: 49, growth: 129, pro: 299 }[contractorProfile?.plan || selectedPlan])}<small>/month</small></b></div>
                   <div className="plan-grid">
-                    <article><span>Starter</span><h3>$49<small>/mo</small></h3><p>For an independent pro building a local reputation.</p><ul><li>1 user and crew</li><li>25 km territory</li><li>Unlimited verified services</li><li>Quotes and invoicing</li></ul><button>Switch plan</button></article>
-                    <article className="current-plan"><span>Growth · Current</span><h3>$129<small>/mo</small></h3><p>For a growing team that wants more work and automation.</p><ul><li>Up to 5 team members</li><li>50 km territory</li><li>Scheduling and dispatch</li><li>Performance insights</li></ul><button>Current plan ✓</button></article>
-                    <article><span>Pro</span><h3>$299<small>/mo</small></h3><p>For multi-crew businesses managing several territories.</p><ul><li>Unlimited team members</li><li>Multiple territories</li><li>Advanced operations</li><li>Priority support</li></ul><button>Upgrade to Pro</button></article>
+                    <article className={(contractorProfile?.plan || selectedPlan) === "starter" ? "current-plan" : ""}><span>Starter{(contractorProfile?.plan || selectedPlan) === "starter" ? " · Current" : ""}</span><h3>$49<small>/mo</small></h3><p>For an independent pro building a local reputation.</p><ul><li>1 user and crew</li><li>25 km territory</li><li>Unlimited verified services</li><li>Quotes and invoicing</li></ul><button disabled={profileStatus === "saving"} onClick={() => updateContractorProfile({ plan: "starter" })}>{(contractorProfile?.plan || selectedPlan) === "starter" ? "Current plan ✓" : "Switch plan"}</button></article>
+                    <article className={(contractorProfile?.plan || selectedPlan) === "growth" ? "current-plan" : ""}><span>Growth{(contractorProfile?.plan || selectedPlan) === "growth" ? " · Current" : ""}</span><h3>$129<small>/mo</small></h3><p>For a growing team that wants more work and automation.</p><ul><li>Up to 5 team members</li><li>50 km territory</li><li>Scheduling and dispatch</li><li>Performance insights</li></ul><button disabled={profileStatus === "saving"} onClick={() => updateContractorProfile({ plan: "growth" })}>{(contractorProfile?.plan || selectedPlan) === "growth" ? "Current plan ✓" : "Switch plan"}</button></article>
+                    <article className={(contractorProfile?.plan || selectedPlan) === "pro" ? "current-plan" : ""}><span>Pro{(contractorProfile?.plan || selectedPlan) === "pro" ? " · Current" : ""}</span><h3>$299<small>/mo</small></h3><p>For multi-crew businesses managing several territories.</p><ul><li>Unlimited team members</li><li>Multiple territories</li><li>Advanced operations</li><li>Priority support</li></ul><button disabled={profileStatus === "saving"} onClick={() => updateContractorProfile({ plan: "pro" })}>{(contractorProfile?.plan || selectedPlan) === "pro" ? "Current plan ✓" : "Upgrade to Pro"}</button></article>
                   </div>
                   <div className="fee-note"><span>◎</span><div><b>You keep 100% of your quoted labour price.</b><p>When customers pay through JobDrop, they cover a separate booking and protection fee. We never charge you per lead.</p></div></div>
                 </div>
