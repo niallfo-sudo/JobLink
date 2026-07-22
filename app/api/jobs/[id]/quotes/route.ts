@@ -1,6 +1,6 @@
 import { and, asc, eq, ne } from "drizzle-orm";
 import { getDb } from "../../../../../db";
-import { jobEvents, jobRequests, quotes, users } from "../../../../../db/schema";
+import { jobEvents, jobRequests, paymentRecords, quotes, users } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -76,6 +76,17 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     await db.update(quotes).set({ status: "declined" }).where(and(eq(quotes.jobId, jobId), ne(quotes.id, quoteId)));
     await db.update(quotes).set({ status: "accepted" }).where(eq(quotes.id, quoteId));
     await db.update(jobRequests).set({ status: "booked", updatedAt: new Date() }).where(eq(jobRequests.id, jobId));
+    const customerFeeCents = Math.round(selected.amountCents * 0.03);
+    await db.insert(paymentRecords).values({
+      jobId, quoteId, ownerEmail: user.email, contractorEmail: selected.contractorEmail,
+      contractorName: selected.contractorName, subtotalCents: selected.amountCents,
+      customerFeeCents, totalCents: selected.amountCents + customerFeeCents,
+      contractorPayoutCents: selected.amountCents,
+    }).onConflictDoUpdate({ target: paymentRecords.jobId, set: {
+      quoteId, contractorEmail: selected.contractorEmail, contractorName: selected.contractorName,
+      subtotalCents: selected.amountCents, customerFeeCents, totalCents: selected.amountCents + customerFeeCents,
+      contractorPayoutCents: selected.amountCents, status: "processor_setup_required", processor: "unconfigured", updatedAt: new Date(),
+    } });
     await db.insert(jobEvents).values({ jobId, eventType: "quote_accepted", label: `${selected.contractorName} selected for the job`, metadata: JSON.stringify({ quoteId, amountCents: selected.amountCents }) });
     return Response.json({ acceptedQuote: { ...selected, status: "accepted" } });
   } catch (error) {

@@ -12,6 +12,7 @@ type Opportunity = { numericId?: number; id: string; service: string; title: str
 type RoomMessage = { id: number; body: string; mine: boolean; createdAt: string | number };
 type RoomEvent = { id: number; label: string; eventType: string; createdAt: string | number };
 type ContractorProfile = { businessName: string; legalName: string; phone: string; about: string; primaryService: string; services: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: "starter" | "growth" | "pro"; verificationStatus: string };
+type PaymentRecord = { id: number; externalId: string; title: string; contractorName: string; subtotalCents: number; customerFeeCents: number; totalCents: number; contractorPayoutCents: number; status: string; processor: string; viewerRole: "homeowner" | "contractor"; createdAt: string | number };
 
 const categories = [
   ["Drywall", "DW"],
@@ -129,6 +130,7 @@ export default function Home() {
   const [emergencyAvailable, setEmergencyAvailable] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<"starter" | "growth" | "pro">("growth");
   const [profileStatus, setProfileStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([]);
 
   const jobBrief = useMemo(
     () =>
@@ -143,6 +145,14 @@ export default function Home() {
       .then((data: { jobs?: PersistedJob[] }) => setPersistedJobs(data.jobs ?? []))
       .catch(() => undefined);
   }, [view]);
+
+  useEffect(() => {
+    if (view !== "account" && view !== "contractor") return;
+    fetch("/api/payments")
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data: { payments?: PaymentRecord[] }) => setPaymentRecords(data.payments ?? []))
+      .catch(() => undefined);
+  }, [view, accountTab, proTab, acceptedQuoteId]);
 
   useEffect(() => {
     if (view !== "contractor") return;
@@ -694,8 +704,9 @@ export default function Home() {
               </>}
               {accountTab === "payments" && <>
                 <div className="account-section-head"><div><p className="aside-label">Money</p><h2>Payments</h2></div><span className="protected-badge">Protected by JobDrop</span></div>
-                <div className="payment-summary"><article><span>Held for active job</span><b>$2,280</b><small>Released after your approval</small></article><article><span>Paid this year</span><b>$3,845</b><small>Across 2 completed jobs</small></article><article><span>Payment method</span><b className="card-ending">•••• 4242</b><small>Visa · Expires 08/29</small></article></div>
-                <div className="transaction-table"><div className="transaction-head"><span>Date</span><span>Description</span><span>Status</span><span>Amount</span></div><div><span>Jul 22</span><span><b>North & Beam Drywall</b>Job deposit · JD-2048</span><em>Protected</em><strong>$2,280</strong></div><div><span>Jun 18</span><span><b>Brightline Painting</b>Final payment · JD-1932</span><em className="paid">Paid</em><strong>$3,460</strong></div><div><span>Apr 3</span><span><b>Harbour Plumbing</b>Final payment · JD-1718</span><em className="paid">Paid</em><strong>$385</strong></div></div>
+                <div className="payment-readiness"><span>◎</span><div><b>Payment records are ready; card processing is not connected.</b><p>Accepted quotes now create a durable ledger with the contractor price, 3% customer protection fee, total charge and contractor payout. Connect Stripe before collecting real money.</p></div><em>Setup required</em></div>
+                {paymentRecords.length > 0 && <div className="live-payment-list"><div className="transaction-head"><span>Job</span><span>Professional</span><span>Status</span><span>Total</span></div>{paymentRecords.map((payment) => <div key={payment.id}><span>{payment.externalId}</span><span><b>{payment.contractorName}</b>{payment.title}</span><em>{payment.status === "processor_setup_required" ? "Awaiting processor" : payment.status}</em><strong>${(payment.totalCents / 100).toLocaleString()}</strong><small>Contractor ${ (payment.subtotalCents / 100).toLocaleString() } + JobDrop fee ${ (payment.customerFeeCents / 100).toLocaleString() }</small></div>)}</div>}
+                <div className="payment-summary"><article><span>Accepted job value</span><b>${(paymentRecords.reduce((total, payment) => total + payment.subtotalCents, 0) / 100).toLocaleString()}</b><small>Contractor prices recorded</small></article><article><span>JobDrop protection fees</span><b>${(paymentRecords.reduce((total, payment) => total + payment.customerFeeCents, 0) / 100).toLocaleString()}</b><small>3% paid by customers</small></article><article><span>Payment processor</span><b className="card-ending">Not connected</b><small>Stripe setup required before launch</small></article></div>
                 <div className="payment-explainer"><span>◎</span><div><b>You stay in control of every payment.</b><p>Funds are only released when milestones are approved. Changes require a signed change order before any extra charge.</p></div></div>
               </>}
               {accountTab === "documents" && <>
@@ -831,7 +842,7 @@ export default function Home() {
                   <article><span className="calendar-tile"><b>27</b>JUL</span><div><small>Monday · 8:00 AM</small><h3>Living room skim coat</h3><p>Hamilton · Priya S.</p></div><b>$1,420</b></article>
                 </div>
               </div>
-              <div className="pro-panel payment-panel"><div><p className="aside-label">Ready for payout</p><h2>$6,740</h2><span>2 completed jobs · Arrives Friday</span></div><button>View payments →</button></div>
+              <div className="pro-panel payment-panel"><div><p className="aside-label">Payment ledger</p><h2>${(paymentRecords.reduce((total, payment) => total + payment.contractorPayoutCents, 0) / 100).toLocaleString()}</h2><span>{paymentRecords.length} accepted {paymentRecords.length === 1 ? "job" : "jobs"} · Processor setup required</span></div><button onClick={() => setProTab("business")}>Payment setup →</button></div>
             </div>
           )}
 

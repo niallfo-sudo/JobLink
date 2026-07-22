@@ -80,3 +80,25 @@ export const jobEvents = sqliteTable("job_events", {
   metadata: text("metadata").notNull().default("{}"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [index("job_events_job_created_idx").on(table.jobId, table.createdAt)]);
+
+export const paymentRecords = sqliteTable("payment_records", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobId: integer("job_id").notNull().references(() => jobRequests.id, { onDelete: "cascade" }),
+  quoteId: integer("quote_id").notNull().references(() => quotes.id, { onDelete: "cascade" }),
+  ownerEmail: text("owner_email").notNull(),
+  contractorEmail: text("contractor_email"),
+  contractorName: text("contractor_name").notNull(),
+  subtotalCents: integer("subtotal_cents").notNull(),
+  customerFeeCents: integer("customer_fee_cents").notNull(),
+  totalCents: integer("total_cents").notNull(),
+  contractorPayoutCents: integer("contractor_payout_cents").notNull(),
+  currency: text("currency").notNull().default("cad"),
+  status: text("status").notNull().default("processor_setup_required"),
+  processor: text("processor").notNull().default("unconfigured"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("payment_records_job_unique").on(table.jobId),
+  index("payment_records_owner_idx").on(table.ownerEmail),
+  index("payment_records_contractor_idx").on(table.contractorEmail),
+]);

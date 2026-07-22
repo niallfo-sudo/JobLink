@@ -22,6 +22,13 @@
       "when": 1784703956347,
       "tag": "0002_normal_centennial",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784704254625,
+      "tag": "0003_massive_glorian",
+      "breakpoints": true
     }
   ]
 }
