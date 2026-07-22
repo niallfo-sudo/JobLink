@@ -175,3 +175,20 @@ export const notifications = sqliteTable("notifications", {
   readAt: integer("read_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [index("notifications_recipient_created_idx").on(table.recipientEmail, table.createdAt)]);
+
+export const supportRequests = sqliteTable("support_requests", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  externalId: text("external_id").notNull(),
+  requesterEmail: text("requester_email").notNull(),
+  jobExternalId: text("job_external_id").notNull().default(""),
+  topic: text("topic").notNull().default("general"),
+  message: text("message").notNull(),
+  status: text("status").notNull().default("open"),
+  priority: text("priority").notNull().default("normal"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("support_requests_external_unique").on(table.externalId),
+  index("support_requests_requester_created_idx").on(table.requesterEmail, table.createdAt),
+  index("support_requests_status_created_idx").on(table.status, table.createdAt),
+]);

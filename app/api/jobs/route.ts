@@ -39,7 +39,7 @@ export async function POST(request: Request) {
 
     const db = getDb();
     await db.insert(users).values({ email: user.email, displayName: user.displayName }).onConflictDoUpdate({ target: users.email, set: { displayName: user.displayName } });
-    const externalId = `JD-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    const externalId = `JL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
     const [job] = await db.insert(jobRequests).values({
       externalId, ownerEmail: user.email, category, title, description,
       size: payload.size?.trim() || "Not specified",
