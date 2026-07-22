@@ -2,9 +2,10 @@
 
 import { FormEvent, useMemo, useState } from "react";
 
-type View = "discover" | "request" | "matches" | "tracking" | "contractor" | "account" | "trust" | "help" | "onboarding";
+type View = "discover" | "request" | "matches" | "tracking" | "contractor" | "account" | "trust" | "help" | "onboarding" | "silent" | "emergency" | "admin";
 type ProTab = "overview" | "opportunities" | "jobs" | "inbox" | "business";
 type AccountTab = "jobs" | "payments" | "documents" | "saved";
+type AdminTab = "overview" | "verification" | "fraud" | "disputes";
 
 const categories = [
   ["Drywall", "DW"],
@@ -86,6 +87,13 @@ export default function Home() {
   const [accountTab, setAccountTab] = useState<AccountTab>("jobs");
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [supportSent, setSupportSent] = useState(false);
+  const [negotiating, setNegotiating] = useState(false);
+  const [negotiated, setNegotiated] = useState(false);
+  const [changeOrderOpen, setChangeOrderOpen] = useState(false);
+  const [changeOrderSent, setChangeOrderSent] = useState(false);
+  const [emergencyStage, setEmergencyStage] = useState(0);
+  const [silentStage, setSilentStage] = useState(0);
+  const [adminTab, setAdminTab] = useState<AdminTab>("overview");
 
   const jobBrief = useMemo(
     () =>
@@ -178,6 +186,7 @@ export default function Home() {
               </div>
               <div className="prompt-meta"><span>AI-guided · about 60 seconds</span><span>Free to post · no obligation</span></div>
             </form>
+            <div className="hero-quick-actions"><button onClick={() => go("emergency")}><span>!</span><div><b>Emergency help</b><small>Alert qualified pros nearby</small></div><em>→</em></button><button onClick={() => go("silent")}><span>◉</span><div><b>Try Silent Mode</b><small>Book a service by voice</small></div><em>→</em></button></div>
           </section>
 
           <section className="category-section section-wrap">
@@ -333,8 +342,10 @@ export default function Home() {
               <p>They’re 8 km away, have completed 42 similar jobs and respond 37% faster than average.</p>
               <div><span>Job similarity</span><b>98%</b></div><div><span>Schedule fit</span><b>95%</b></div><div><span>Price confidence</span><b>High</b></div>
               <button onClick={() => setAccepted("North & Beam Drywall")}>Choose best match →</button>
+              <button className="negotiate-button" onClick={() => { setNegotiating(true); setNegotiated(false); }}>Ask AI to negotiate</button>
             </aside>
           </div>
+          {negotiating && <div className="negotiation-panel"><div className="negotiation-head"><span>✦</span><div><p className="aside-label">AI negotiation</p><h3>{negotiated ? "A better option is ready." : "What would make this quote work?"}</h3></div><button onClick={() => setNegotiating(false)}>×</button></div>{negotiated ? <div className="negotiation-result"><div><span>Original quote</span><s>$2,280</s></div><div><span>Updated quote</span><b>$2,150</b></div><p>North & Beam can reduce the price by $130 if the work starts tomorrow and you provide clear access to the basement before 8:00 AM.</p><button onClick={() => { setAccepted("North & Beam Drywall"); setNegotiating(false); }}>Accept $2,150 quote →</button></div> : <><div className="negotiation-options"><button onClick={() => setNegotiated(true)}>My budget is $2,150</button><button onClick={() => setNegotiated(true)}>Can the scope be adjusted?</button><button onClick={() => setNegotiated(true)}>I can be flexible on timing</button></div><label>Add a note<input placeholder="e.g. I can clear the room before arrival" /></label></>}</div>}
           {accepted && <div className="accepted-banner"><span>✓</span><div><b>{accepted} has been selected.</b><p>Your booking is ready. Follow the live job timeline from arrival to completion.</p></div><button onClick={() => go("tracking")}>Track this job →</button></div>}
         </section>
       )}
@@ -370,6 +381,41 @@ export default function Home() {
             <div><p className="aside-label">Agreed quote</p><h3>$2,280</h3><span>Payment protected by JobDrop</span></div>
             <div><p className="aside-label">Documents</p><button>View contract ↗</button><button>View quote ↗</button></div>
           </div>
+        </section>
+      )}
+
+      {view === "silent" && (
+        <section className="silent-page">
+          <div className="silent-intro"><p className="section-label light">JobDrop Silent Mode</p><h1>Say the problem.<br /><em>Everything else happens.</em></h1><p>JobDrop can create the request, gather qualified quotes and bring back one simple decision—without searching, calling or opening an app.</p><button onClick={() => setSilentStage(1)}>Start voice demo →</button></div>
+          <div className="voice-demo">
+            <div className={`voice-orb stage-${silentStage}`}><i /><span>{silentStage === 0 ? "◉" : silentStage === 1 ? "≈" : silentStage === 2 ? "✦" : "✓"}</span></div>
+            <div className="voice-copy">
+              {silentStage === 0 && <><small>Ready when you are</small><h2>“Find someone to fix my furnace tomorrow.”</h2><p>Tap Start voice demo to see JobDrop handle the request.</p></>}
+              {silentStage === 1 && <><small>Listening and understanding</small><h2>Furnace repair · Tomorrow</h2><p>“Is the furnace completely off, and do you smell gas?”</p><div className="voice-answer"><button onClick={() => setSilentStage(2)}>It’s off. No gas smell.</button></div></>}
+              {silentStage === 2 && <><small>Matching verified HVAC professionals</small><h2>Checking 14 nearby companies…</h2><div className="silent-progress"><i /></div><p>Availability · licences · insurance · price history · response speed</p><button onClick={() => setSilentStage(3)}>Show result</button></>}
+              {silentStage === 3 && <><small>Best result found</small><h2>Three highly rated HVAC companies are available.</h2><div className="voice-result"><div><span>Best rated</span><b>Maple Air & Heat</b><small>4.9 ★ · 7.2 km · Tomorrow 9–11 AM</small></div><strong>$285</strong></div><p>“Would you like me to book Maple Air & Heat for $285?”</p><div className="voice-answer"><button onClick={() => setSilentStage(0)}>Yes, book it</button><button onClick={() => setSilentStage(2)}>Compare all three</button></div></>}
+            </div>
+            <ol>{["Ask", "Clarify", "Match", "Book"].map((label,index)=><li key={label} className={index <= silentStage ? "active" : ""}><span>{index+1}</span>{label}</li>)}</ol>
+          </div>
+          <div className="silent-capabilities"><article><span>01</span><h3>Voice assistants</h3><p>Start from Siri, Google Assistant, Alexa or the JobDrop phone line.</p></article><article><span>02</span><h3>Property monitoring</h3><p>Connected devices can report a leak, outage or maintenance alert.</p></article><article><span>03</span><h3>Automatic maintenance</h3><p>Repeat services can be scheduled, quoted and approved within set limits.</p></article></div>
+        </section>
+      )}
+
+      {view === "emergency" && (
+        <section className="emergency-page">
+          {emergencyStage === 0 ? <div className="emergency-intake"><div className="emergency-copy"><span className="emergency-mark">!</span><p className="section-label">Priority dispatch</p><h1>Get the right help,<br /><em>right now.</em></h1><p>For urgent home-service problems—not police, fire or medical emergencies. JobDrop alerts verified available professionals nearby.</p><div className="emergency-warning"><b>Immediate danger?</b><p>Call 911 or your local emergency service first.</p></div></div><div className="emergency-form"><p className="step-kicker">Emergency request</p><h2>What’s happening?</h2><div className="emergency-types"><button className="selected"><span>PL</span>Active water leak</button><button><span>HV</span>No heat / HVAC</button><button><span>EL</span>Electrical issue</button><button><span>LK</span>Locked out</button></div><label>Describe the situation<textarea rows={3} defaultValue="Water is leaking from a pipe under the kitchen sink. Main shutoff is accessible." /></label><label>Service address<input defaultValue="225 King Street W, Hamilton, ON" /></label><label className="emergency-consent"><input type="checkbox" defaultChecked /><span>✓</span>I agree to share my approximate location with matched emergency professionals.</label><button onClick={() => setEmergencyStage(1)}>Alert emergency plumbers →</button></div></div> : <div className="dispatch-live"><div className="dispatch-header"><span className="pulse-emergency"><i /></span><div><small>Priority dispatch active · ER-8421</small><h1>Help is responding.</h1><p>We alerted 6 verified emergency plumbers within 12 km.</p></div><button onClick={() => setEmergencyStage(0)}>Cancel request</button></div><div className="dispatch-grid"><div className="dispatch-map"><div className="road road-one"/><div className="road road-two"/><div className="road road-three"/><span className="dispatch-home">⌂</span><span className="dispatch-pro pro-a">HP</span><span className="dispatch-pro pro-b">JP</span><span className="dispatch-pro pro-c">CF</span><div className="dispatch-radius"/></div><aside><p className="aside-label">Best responder</p><div className="responder-head"><span>HP</span><div><h2>Harbour Plumbing</h2><p>4.9 ★ · 97 Trust Score</p></div></div><div className="arrival-time"><small>Estimated arrival</small><b>18 min</b></div><dl><div><dt>Emergency callout</dt><dd>$185</dd></div><div><dt>Hourly rate after arrival</dt><dd>$145</dd></div><div><dt>Identity & insurance</dt><dd>Verified ✓</dd></div></dl><button onClick={() => setEmergencyStage(2)}>Confirm Harbour Plumbing →</button></aside></div>{emergencyStage === 2 && <div className="dispatch-confirmed"><span>✓</span><div><b>Harbour Plumbing is on the way.</b><p>Track arrival and message the plumber from this screen.</p></div><button onClick={() => go("tracking")}>Open live tracking →</button></div>}</div>}
+        </section>
+      )}
+
+      {view === "admin" && (
+        <section className="admin-shell">
+          <header className="admin-head"><div><span className="admin-logo">JD</span><div><b>JobDrop Operations</b><small>Hamilton marketplace · Live</small></div></div><button onClick={() => go("discover")}>Exit operations</button></header>
+          <div className="admin-layout"><aside className="admin-nav"><p>Workspace</p><button className={adminTab === "overview" ? "selected" : ""} onClick={() => setAdminTab("overview")}><span>OV</span>Overview</button><button className={adminTab === "verification" ? "selected" : ""} onClick={() => setAdminTab("verification")}><span>VR</span>Verification <b>12</b></button><button className={adminTab === "fraud" ? "selected" : ""} onClick={() => setAdminTab("fraud")}><span>FR</span>Fraud review <b>4</b></button><button className={adminTab === "disputes" ? "selected" : ""} onClick={() => setAdminTab("disputes")}><span>DS</span>Disputes <b>3</b></button><div className="admin-system"><span><i /></span><div><b>All systems normal</b><small>Last checked just now</small></div></div></aside><div className="admin-content">
+            {adminTab === "overview" && <><div className="admin-title"><div><p className="step-kicker">Wednesday, July 22</p><h1>Marketplace health.</h1></div><div><span><i /></span>Live monitoring</div></div><div className="admin-kpis"><article><span>Jobs posted today</span><b>184</b><small>↑ 14% vs. last Wednesday</small></article><article><span>Match success</span><b>92.4%</b><small>Target: above 90%</small></article><article><span>Active job value</span><b>$428K</b><small>Across 237 jobs</small></article><article><span>Median first quote</span><b>11 min</b><small>↓ 3 min this month</small></article></div><div className="admin-overview-grid"><div className="admin-panel"><div className="admin-panel-title"><h2>Live marketplace</h2><span>Last 60 minutes</span></div><div className="market-bars">{[["Drywall",72],["Plumbing",91],["Painting",60],["Electrical",48],["HVAC",82],["Moving",36]].map(([name,value])=><div key={name}><span>{name}</span><i><b style={{width:`${value}%`}}/></i><strong>{value}</strong></div>)}</div></div><div className="admin-panel alert-panel"><div className="admin-panel-title"><h2>Needs attention</h2><span>19 items</span></div><article><span className="risk red">High</span><div><b>Possible duplicate contractor</b><p>2 businesses · matching bank account</p></div><button onClick={() => setAdminTab("fraud")}>Review</button></article><article><span className="risk amber">Due</span><div><b>Insurance expires tomorrow</b><p>Northcrest Electric · 3 open jobs</p></div><button onClick={() => setAdminTab("verification")}>Review</button></article><article><span className="risk blue">New</span><div><b>Change-order dispute</b><p>JD-2164 · $1,280 contested</p></div><button onClick={() => setAdminTab("disputes")}>Review</button></article></div></div><div className="admin-panel emergency-monitor"><div className="admin-panel-title"><h2>Emergency dispatch</h2><span>3 active</span></div><div><article><span className="pulse-emergency"><i /></span><div><b>Active water leak</b><p>West Hamilton · ER-8421</p></div><strong>Responder arriving in 18 min</strong></article><article><span className="pulse-emergency amber"><i /></span><div><b>No heat · senior resident</b><p>Stoney Creek · ER-8419</p></div><strong>Matching 4 HVAC pros</strong></article></div></div></>}
+            {adminTab === "verification" && <><div className="admin-title"><div><p className="step-kicker">Trust operations</p><h1>Verification queue.</h1></div><button>Filter queue</button></div><div className="review-table"><div className="review-head"><span>Business</span><span>Check</span><span>Risk</span><span>Submitted</span><span>Action</span></div>{[["Lakeshore Electric","Master electrician licence","Low","8 min ago"],["Peakline Roofing","Liability insurance","Medium","24 min ago"],["Bluebird Plumbing","Business identity","Low","41 min ago"],["Citywide Renovations","Ownership and banking","High","1h ago"]].map((row,index)=><div key={row[0]}><span><b>{row[0]}</b><small>Hamilton, ON · New applicant</small></span><span>{row[1]}</span><em className={`risk ${index===3?"red":index===1?"amber":"blue"}`}>{row[2]}</em><span>{row[3]}</span><button>Open review →</button></div>)}</div></>}
+            {adminTab === "fraud" && <><div className="admin-title"><div><p className="step-kicker">Risk operations</p><h1>Fraud review.</h1></div><span className="fraud-score">4 open alerts</span></div><div className="case-grid"><article className="case-card high"><div><span>High risk · FR-1098</span><small>Detected 6 min ago</small></div><h2>Possible duplicate contractor network</h2><p>Two contractor accounts share a payout account, device fingerprint and six portfolio photos.</p><dl><div><dt>Accounts</dt><dd>Premier Reno / GTA Project Co.</dd></div><div><dt>Shared signals</dt><dd>8 of 10</dd></div><div><dt>Jobs at risk</dt><dd>3 · $18,420</dd></div></dl><button>Freeze payouts and investigate →</button></article><article className="case-card"><div><span>Medium risk · FR-1095</span><small>Detected 38 min ago</small></div><h2>Stolen project photos suspected</h2><p>Reverse-image matching found portfolio images on an unrelated US contractor website.</p><dl><div><dt>Account</dt><dd>Ontario Elite Exteriors</dd></div><div><dt>Matched photos</dt><dd>11 of 18</dd></div><div><dt>Current status</dt><dd>Matching paused</dd></div></dl><button>Open evidence →</button></article></div></>}
+            {adminTab === "disputes" && <><div className="admin-title"><div><p className="step-kicker">Resolution centre</p><h1>Open disputes.</h1></div><button>View policy guide</button></div><div className="dispute-list"><article><div className="dispute-id"><span>DS-304</span><em>Response due in 2h</em></div><div><h2>Unapproved electrical change order</h2><p>Customer says the $1,280 addition was discussed but never approved in the app.</p><span>JD-2164 · East Hamilton · $8,920 contract</span></div><div className="evidence-count"><b>14</b><small>evidence items</small></div><button>Review case →</button></article><article><div className="dispute-id"><span>DS-301</span><em className="normal">Response due tomorrow</em></div><div><h2>Workmanship warranty claim</h2><p>Ceiling seam became visible six weeks after project completion.</p><span>JD-1988 · Dundas · $3,400 contract</span></div><div className="evidence-count"><b>9</b><small>evidence items</small></div><button>Review case →</button></article></div></>}
+          </div></div>
         </section>
       )}
 
@@ -527,7 +573,7 @@ export default function Home() {
                   <div className="active-job-top"><span className="status-live">In progress</span><small>JD-2048</small></div><h2>Basement drywall repair</h2><p>Niall L. · West Hamilton</p>
                   <div className="progress-line"><i /></div><div className="progress-labels"><span>Started 8:31 AM</span><b>45% complete</b><span>Est. finish 4:30 PM</span></div>
                   <div className="crew-line"><div><span>AJ</span><span>JR</span><p><b>Alex & Jordan</b><small>Crew on site</small></p></div><div><b>$2,280</b><small>Protected payment</small></div></div>
-                  <div className="active-job-actions"><button>Message customer</button><button>Update progress</button><button className="primary-action">Create change order</button></div>
+                  <div className="active-job-actions"><button>Message customer</button><button>Update progress</button><button className="primary-action" onClick={() => setChangeOrderOpen(true)}>{changeOrderSent ? "Change order sent ✓" : "Create change order"}</button></div>
                 </article>
                 <div className="upcoming-stack">
                   <p className="aside-label">Next up</p>
@@ -602,13 +648,14 @@ export default function Home() {
               </div>
             </div>
           )}
+          {changeOrderOpen && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="change-title"><button className="overlay-close" onClick={() => setChangeOrderOpen(false)} aria-label="Close change order">×</button><div className="quote-drawer change-drawer"><p className="step-kicker">Job JD-2048 · Change order</p><h2 id="change-title">Document extra work.</h2><p className="quote-job-title">Basement drywall repair · Niall L.</p><div className="change-alert"><span>!</span><p>The customer must approve this change before additional work begins.</p></div><label className="field-label">Reason for change<select defaultValue="Hidden damage discovered"><option>Hidden damage discovered</option><option>Customer requested upgrade</option><option>Scope clarification</option></select></label><label className="field-label">Describe the additional work<textarea rows={4} defaultValue="Replace water-damaged insulation behind the four affected drywall sheets before installing new board." /></label><div className="two-fields"><label className="field-label">Additional labour<input defaultValue="$240" /></label><label className="field-label">Additional materials<input defaultValue="$185" /></label></div><div className="change-total"><span>Original contract</span><b>$2,280</b><span>Change order</span><b>+$425</b><strong>New total</strong><strong>$2,705</strong></div><label className="field-label">Schedule impact<select><option>Adds approximately 2 hours</option><option>No schedule impact</option><option>Adds 1 business day</option></select></label><button className="send-quote" onClick={() => { setChangeOrderSent(true); setChangeOrderOpen(false); }}>Send change order for approval →</button></div></div>}
         </section>
       )}
 
       <footer>
         <div className="brand footer-brand"><span className="brand-mark"><i /></span><span>JobDrop</span></div>
         <p>Local work, matched better.</p>
-        <div><button onClick={() => go("discover")}>How it works</button><button onClick={() => go("trust")}>Trust & safety</button><button onClick={() => go("onboarding")}>Join as a contractor</button><button onClick={() => go("help")}>Help</button></div>
+        <div><button onClick={() => go("discover")}>How it works</button><button onClick={() => go("trust")}>Trust & safety</button><button onClick={() => go("onboarding")}>Join as a contractor</button><button onClick={() => go("help")}>Help</button><button onClick={() => go("admin")}>Operations</button></div>
         <span>© 2026 JobDrop · Hamilton, Ontario</span>
       </footer>
     </main>
