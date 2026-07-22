@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type View = "discover" | "request" | "matches" | "tracking" | "contractor" | "account" | "trust" | "help" | "onboarding" | "silent" | "emergency" | "admin";
 type ProTab = "overview" | "opportunities" | "jobs" | "inbox" | "business";
 type AccountTab = "jobs" | "payments" | "documents" | "saved";
 type AdminTab = "overview" | "verification" | "fraud" | "disputes";
+type PersistedJob = { id: number; externalId: string; category: string; title: string; status: string; budget: string; createdAt: string | number };
 
 const categories = [
   ["Drywall", "DW"],
@@ -94,12 +95,23 @@ export default function Home() {
   const [emergencyStage, setEmergencyStage] = useState(0);
   const [silentStage, setSilentStage] = useState(0);
   const [adminTab, setAdminTab] = useState<AdminTab>("overview");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [savedRequestId, setSavedRequestId] = useState<string | null>(null);
+  const [persistedJobs, setPersistedJobs] = useState<PersistedJob[]>([]);
 
   const jobBrief = useMemo(
     () =>
       `Looking for an experienced ${category.toLowerCase()} contractor to ${scope.toLowerCase()}. Scope is approximately ${size.toLowerCase()} and includes protection, materials, finishing and cleanup. Customer prefers completion ${timeline.toLowerCase()} with a target budget of ${budget}.`,
     [category, scope, size, timeline, budget],
   );
+
+  useEffect(() => {
+    if (view !== "account") return;
+    fetch("/api/jobs")
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data: { jobs?: PersistedJob[] }) => setPersistedJobs(data.jobs ?? []))
+      .catch(() => undefined);
+  }, [view]);
 
   function beginRequest(value?: string, picked?: string) {
     if (picked) setCategory(picked);
@@ -124,6 +136,24 @@ export default function Home() {
   function go(next: View) {
     setView(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function saveJobRequest() {
+    setSaveStatus("saving");
+    try {
+      const response = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category, title: scope, description: jobBrief, size, timeline, budget, postalCode: "L8P 1A1", emergency: false }),
+      });
+      if (!response.ok) throw new Error("Unable to save request");
+      const data = (await response.json()) as { job: { externalId: string } };
+      setSavedRequestId(data.job.externalId);
+      setSaveStatus("saved");
+      go("matches");
+    } catch {
+      setSaveStatus("error");
+    }
   }
 
   return (
@@ -296,8 +326,9 @@ export default function Home() {
               </>}
               <div className="form-footer">
                 <span>{step < 3 ? "Usually takes less than a minute" : "Free to post · no obligation"}</span>
-                <button onClick={() => step < 3 ? setStep(step + 1) : go("matches")}>{step < 3 ? "Continue" : "Send to matched pros"} <span>→</span></button>
+                <button disabled={saveStatus === "saving"} onClick={() => step < 3 ? setStep(step + 1) : saveJobRequest()}>{step < 3 ? "Continue" : saveStatus === "saving" ? "Saving request…" : saveStatus === "error" ? "Try saving again" : "Send to matched pros"} <span>→</span></button>
               </div>
+              {saveStatus === "error" && <p className="save-error">We couldn’t save this request yet. Your answers are still here—please try again.</p>}
             </div>
 
             <aside className="request-aside">
@@ -315,7 +346,7 @@ export default function Home() {
       {view === "matches" && (
         <section className="app-shell matches-shell">
           <div className="dashboard-heading">
-            <div><p className="step-kicker">Request JD-2048</p><h1>Your best matches.</h1><p>We ranked 12 available pros. Here are the top 3 for your drywall repair.</p></div>
+            <div><p className="step-kicker">Request {savedRequestId ?? "JD-2048"}</p><h1>Your best matches.</h1><p>We ranked 12 available pros. Here are the top 3 for your drywall repair.</p>{savedRequestId && <span className="persisted-note">✓ Saved to your JobDrop account</span>}</div>
             <div className="matching-status"><span><i /></span><div><b>Quotes are live</b><small>Last updated just now</small></div></div>
           </div>
           <div className="job-summary-strip"><span><b>Drywall repair</b>Finished basement · Hamilton</span><span><b>Target</b>Before Friday</span><span><b>Budget</b>$2,000–$2,500</span><button onClick={() => { setStep(3); go("request"); }}>View request</button></div>
@@ -435,6 +466,7 @@ export default function Home() {
             </aside>
             <div className="account-content">
               {accountTab === "jobs" && <>
+                {persistedJobs.length > 0 && <div className="saved-request-list"><div className="account-section-head"><div><p className="aside-label">Saved to JobDrop</p><h2>Your submitted requests</h2></div><span>{persistedJobs.length} stored</span></div>{persistedJobs.map((job) => <article key={job.id}><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status}</small><h3>{job.title}</h3><p>{job.budget}</p></div><button onClick={() => go("matches")}>View matches →</button></article>)}</div>}
                 <div className="account-section-head"><div><p className="aside-label">Current</p><h2>Active job</h2></div><button onClick={() => go("tracking")}>Open live tracking →</button></div>
                 <article className="account-active-job"><div className="account-job-status"><span><i /></span><div><small>In progress · Arriving in 14 min</small><h3>Basement drywall repair</h3><p>North & Beam Drywall · JD-2048</p></div><b>$2,280</b></div><div className="account-progress"><i /></div><div className="account-job-actions"><span>Started today at 8:31 AM</span><button onClick={() => go("tracking")}>Track job</button><button>Message pro</button></div></article>
                 <div className="account-section-head history-head"><div><p className="aside-label">History</p><h2>Past requests</h2></div></div>
