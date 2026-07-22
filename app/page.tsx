@@ -2,8 +2,9 @@
 
 import { FormEvent, useMemo, useState } from "react";
 
-type View = "discover" | "request" | "matches" | "tracking" | "contractor";
+type View = "discover" | "request" | "matches" | "tracking" | "contractor" | "account" | "trust" | "help" | "onboarding";
 type ProTab = "overview" | "opportunities" | "jobs" | "inbox" | "business";
+type AccountTab = "jobs" | "payments" | "documents" | "saved";
 
 const categories = [
   ["Drywall", "DW"],
@@ -82,6 +83,9 @@ export default function Home() {
   const [quoteSent, setQuoteSent] = useState<string | null>(null);
   const [chatMessage, setChatMessage] = useState("");
   const [sentMessages, setSentMessages] = useState<string[]>([]);
+  const [accountTab, setAccountTab] = useState<AccountTab>("jobs");
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [supportSent, setSupportSent] = useState(false);
 
   const jobBrief = useMemo(
     () =>
@@ -138,7 +142,7 @@ export default function Home() {
         )}
         <div className="header-actions">
           <button className="text-button" onClick={() => go(view === "contractor" ? "discover" : "contractor")}>{view === "contractor" ? "Homeowner view" : "For contractors"}</button>
-          <button className="avatar-button" aria-label="Open profile">{view === "contractor" ? "NB" : "NL"}</button>
+          <button className="avatar-button" aria-label="Open profile" onClick={() => view === "contractor" ? setProTab("business") : go("account")}>{view === "contractor" ? "NB" : "NL"}</button>
         </div>
       </header>
 
@@ -369,11 +373,89 @@ export default function Home() {
         </section>
       )}
 
+      {view === "account" && (
+        <section className="account-shell">
+          <div className="account-heading"><div><p className="step-kicker">Homeowner account</p><h1>Your home, handled.</h1><p>Jobs, payments and paperwork in one place.</p></div><button className="primary-action" onClick={() => beginRequest()}>+ Post another job</button></div>
+          <div className="account-layout">
+            <aside className="account-sidebar">
+              <div className="account-person"><span>NL</span><div><b>Niall L.</b><small>Hamilton, Ontario</small></div></div>
+              <nav aria-label="Account sections">
+                <button className={accountTab === "jobs" ? "selected" : ""} onClick={() => setAccountTab("jobs")}><span>01</span>My jobs <b>3</b></button>
+                <button className={accountTab === "payments" ? "selected" : ""} onClick={() => setAccountTab("payments")}><span>02</span>Payments</button>
+                <button className={accountTab === "documents" ? "selected" : ""} onClick={() => setAccountTab("documents")}><span>03</span>Documents <b>6</b></button>
+                <button className={accountTab === "saved" ? "selected" : ""} onClick={() => setAccountTab("saved")}><span>04</span>Saved pros</button>
+              </nav>
+              <div className="account-safety"><span>✓</span><div><b>JobDrop protected</b><p>Your active job and payment are covered.</p></div></div>
+            </aside>
+            <div className="account-content">
+              {accountTab === "jobs" && <>
+                <div className="account-section-head"><div><p className="aside-label">Current</p><h2>Active job</h2></div><button onClick={() => go("tracking")}>Open live tracking →</button></div>
+                <article className="account-active-job"><div className="account-job-status"><span><i /></span><div><small>In progress · Arriving in 14 min</small><h3>Basement drywall repair</h3><p>North & Beam Drywall · JD-2048</p></div><b>$2,280</b></div><div className="account-progress"><i /></div><div className="account-job-actions"><span>Started today at 8:31 AM</span><button onClick={() => go("tracking")}>Track job</button><button>Message pro</button></div></article>
+                <div className="account-section-head history-head"><div><p className="aside-label">History</p><h2>Past requests</h2></div></div>
+                <div className="job-history-list">
+                  <article><span className="history-icon">PT</span><div><small>Completed · June 18</small><h3>Main-floor painting</h3><p>Brightline Painting · 5.0 ★</p></div><b>$3,460</b><button>View details →</button></article>
+                  <article><span className="history-icon green">PL</span><div><small>Completed · April 3</small><h3>Kitchen faucet replacement</h3><p>Harbour Plumbing · 4.9 ★</p></div><b>$385</b><button>View details →</button></article>
+                </div>
+              </>}
+              {accountTab === "payments" && <>
+                <div className="account-section-head"><div><p className="aside-label">Money</p><h2>Payments</h2></div><span className="protected-badge">Protected by JobDrop</span></div>
+                <div className="payment-summary"><article><span>Held for active job</span><b>$2,280</b><small>Released after your approval</small></article><article><span>Paid this year</span><b>$3,845</b><small>Across 2 completed jobs</small></article><article><span>Payment method</span><b className="card-ending">•••• 4242</b><small>Visa · Expires 08/29</small></article></div>
+                <div className="transaction-table"><div className="transaction-head"><span>Date</span><span>Description</span><span>Status</span><span>Amount</span></div><div><span>Jul 22</span><span><b>North & Beam Drywall</b>Job deposit · JD-2048</span><em>Protected</em><strong>$2,280</strong></div><div><span>Jun 18</span><span><b>Brightline Painting</b>Final payment · JD-1932</span><em className="paid">Paid</em><strong>$3,460</strong></div><div><span>Apr 3</span><span><b>Harbour Plumbing</b>Final payment · JD-1718</span><em className="paid">Paid</em><strong>$385</strong></div></div>
+                <div className="payment-explainer"><span>◎</span><div><b>You stay in control of every payment.</b><p>Funds are only released when milestones are approved. Changes require a signed change order before any extra charge.</p></div></div>
+              </>}
+              {accountTab === "documents" && <>
+                <div className="account-section-head"><div><p className="aside-label">Paperwork</p><h2>Documents</h2></div><span>6 files</span></div>
+                <div className="document-group"><h3>Basement drywall repair <small>JD-2048</small></h3><article><span className="doc-icon">PDF</span><div><b>Signed service contract</b><small>Signed July 21 · 184 KB</small></div><button>Download ↓</button></article><article><span className="doc-icon">PDF</span><div><b>Accepted quote</b><small>Issued July 21 · 96 KB</small></div><button>Download ↓</button></article><article><span className="doc-icon muted">IMG</span><div><b>Before-work photos</b><small>8 photos · 14.2 MB</small></div><button>View ↗</button></article></div>
+                <div className="document-group"><h3>Past jobs</h3><article><span className="doc-icon">PDF</span><div><b>Painting warranty certificate</b><small>Valid until June 2031</small></div><button>Download ↓</button></article><article><span className="doc-icon">PDF</span><div><b>2026 home-services receipts</b><small>2 receipts · Tax-ready bundle</small></div><button>Download ↓</button></article></div>
+              </>}
+              {accountTab === "saved" && <>
+                <div className="account-section-head"><div><p className="aside-label">Your network</p><h2>Saved professionals</h2></div></div>
+                <div className="saved-pro-grid"><article><span className="saved-logo orange">BP</span><h3>Brightline Painting</h3><p>Painting · 4.9 ★ · 312 jobs</p><div><span>Last hired June 2026</span><b>98 Trust Score</b></div><button onClick={() => beginRequest(undefined, "Painting")}>Request another quote →</button></article><article><span className="saved-logo green">HP</span><h3>Harbour Plumbing</h3><p>Plumbing · 4.9 ★ · 481 jobs</p><div><span>Last hired April 2026</span><b>97 Trust Score</b></div><button onClick={() => beginRequest(undefined, "Plumbing")}>Request another quote →</button></article><article className="saved-empty"><span>+</span><h3>Build your trusted team</h3><p>Save a professional after comparing quotes or completing a job.</p></article></div>
+              </>}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {view === "trust" && (
+        <section className="trust-page">
+          <div className="trust-hero"><div><p className="section-label light">Trust & safety</p><h1>Confidence is<br />built into <em>every job.</em></h1><p>Identity checks, verified credentials, protected payments and real performance history—working before, during and after the job.</p></div><div className="trust-seal"><span>✓</span><b>JobDrop<br />Protected</b><small>Every booked job</small></div></div>
+          <div className="trust-process"><div className="trust-process-intro"><p className="section-label">Before anyone can quote</p><h2>We verify the business,<br />not just the profile.</h2><p>Every professional goes through layered checks. Regulated trades require valid credentials before matching is enabled.</p></div><div className="verification-list"><article><span>01</span><div><h3>Identity and business</h3><p>Government ID, business registration, address and banking ownership.</p></div><b>Verified</b></article><article><span>02</span><div><h3>Insurance and licences</h3><p>Coverage dates and trade credentials monitored for expiration.</p></div><b>Monitored</b></article><article><span>03</span><div><h3>Work history</h3><p>Completed jobs, cancellations, disputes and warranties—not anonymous reviews.</p></div><b>Ongoing</b></article><article><span>04</span><div><h3>Fraud screening</h3><p>Duplicate accounts, stolen photos, payment risk and suspicious activity.</p></div><b>Always on</b></article></div></div>
+          <div className="protection-grid"><article className="protection-main"><p className="section-label light">During the job</p><h2>Your money moves<br />when the work does.</h2><p>Payments are tied to accepted quotes and signed changes. Contractors never receive your card details, and extra work cannot become an unexpected charge.</p><div className="protection-flow"><span><b>1</b>Approve quote</span><i>→</i><span><b>2</b>Funds protected</span><i>→</i><span><b>3</b>Release by milestone</span></div></article><aside><p className="aside-label">Protection includes</p><ul><li><span>✓</span>Secure in-app payments</li><li><span>✓</span>Signed change orders</li><li><span>✓</span>Dispute documentation</li><li><span>✓</span>Warranty record storage</li><li><span>✓</span>Fraud and chargeback screening</li></ul></aside></div>
+          <div className="trust-score-explain"><div><p className="section-label">The JobDrop Trust Score</p><h2>Reviews are one signal.<br />Performance is the full picture.</h2></div><div className="signal-grid"><article><b>25%</b><span>Verified job outcomes</span></article><article><b>20%</b><span>On-time arrival</span></article><article><b>20%</b><span>Communication</span></article><article><b>15%</b><span>Repeat customers</span></article><article><b>10%</b><span>Warranty history</span></article><article><b>10%</b><span>Credential status</span></article></div></div>
+          <div className="trust-cta"><h2>Post with confidence.</h2><p>Your contact details stay private until you choose a professional.</p><button onClick={() => beginRequest()}>Start a protected request →</button></div>
+        </section>
+      )}
+
+      {view === "help" && (
+        <section className="help-page">
+          <div className="help-hero"><p className="step-kicker">JobDrop support</p><h1>How can we help?</h1><label><span>⌕</span><input placeholder="Search jobs, payments, contractors…" /></label><p>Popular: changing a quote · contractor verification · payment protection</p></div>
+          <div className="help-body">
+            <div className="help-categories"><button><span>HM</span><b>For homeowners</b><small>Requests, quotes and hiring</small></button><button><span>PR</span><b>For professionals</b><small>Matching, quotes and plans</small></button><button><span>PY</span><b>Payments</b><small>Deposits, payouts and refunds</small></button><button><span>TS</span><b>Trust & safety</b><small>Verification and protection</small></button></div>
+            <div className="help-layout"><div className="faq-list"><p className="section-label">Frequently asked</p><h2>Quick answers.</h2><details open><summary>Does posting a job cost anything?<span>+</span></summary><p>No. Homeowners can post requests and compare matched quotes for free. A booking and protection fee only applies when a job is paid through JobDrop.</p></details><details><summary>How many contractors see my request?<span>+</span></summary><p>Only qualified professionals matching the service, location, availability and trust requirements are notified. Customers see no more than five top matches.</p></details><details><summary>When does the contractor get paid?<span>+</span></summary><p>Funds are released according to the milestones accepted in the contract. Changes require approval before they can affect the total.</p></details><details><summary>What happens if something goes wrong?<span>+</span></summary><p>Keep communication and payments inside JobDrop. Our support team can review the quote, contract, messages, progress updates and payment record.</p></details><details><summary>Do contractors pay for leads?<span>+</span></summary><p>No. Contractors subscribe to the business platform. JobDrop does not sell individual customer contact details or charge per lead.</p></details></div>
+              <aside className="contact-card"><p className="aside-label">Still need help?</p><h3>Talk to a real person.</h3><p>Send a message with your job number. A support specialist will reply in the app.</p>{supportSent ? <div className="support-success"><span>✓</span><b>Message received</b><small>We’ll reply within 2 business hours.</small></div> : <form onSubmit={(event) => { event.preventDefault(); setSupportSent(true); }}><label>Your email<input type="email" defaultValue="niall@example.com" required /></label><label>Job number<input defaultValue="JD-2048" /></label><label>How can we help?<textarea rows={4} required placeholder="Tell us what happened…" /></label><button type="submit">Send to support →</button></form>}<div className="emergency-help"><b>Immediate safety issue?</b><p>Call emergency services first. Then contact JobDrop safety at 1-800-JOBDROP.</p></div></aside></div>
+          </div>
+        </section>
+      )}
+
+      {view === "onboarding" && (
+        <section className="onboarding-shell">
+          <div className="onboarding-progress"><button onClick={() => onboardingStep === 0 ? go("discover") : setOnboardingStep(onboardingStep - 1)}>← {onboardingStep === 0 ? "Exit" : "Back"}</button><div>{["Business", "Services", "Verification", "Plan"].map((label, index) => <span key={label} className={index <= onboardingStep ? "done" : ""}><i />{label}</span>)}</div><small>{onboardingStep < 4 ? `${Math.round(((onboardingStep + 1) / 4) * 100)}% complete` : "Complete"}</small></div>
+          {onboardingStep < 4 ? <div className="onboarding-layout"><div className="onboarding-form">
+            {onboardingStep === 0 && <><p className="step-kicker">Step 1 of 4</p><h1>Tell us about your business.</h1><p>Start with the details customers will see. You can update these anytime.</p><div className="two-fields"><label>Legal business name<input defaultValue="North & Beam Drywall Inc." /></label><label>Public business name<input defaultValue="North & Beam Drywall" /></label></div><label>Business address<input defaultValue="225 King Street W, Hamilton, ON" /></label><div className="two-fields"><label>Business phone<input defaultValue="(905) 555-0148" /></label><label>Years in business<select defaultValue="8"><option>0–2</option><option>3–5</option><option value="8">6–10</option><option>10+</option></select></label></div><label>About your company<textarea rows={4} defaultValue="Residential and light-commercial drywall installation, repair and finishing across Hamilton and surrounding communities." /></label></>}
+            {onboardingStep === 1 && <><p className="step-kicker">Step 2 of 4</p><h1>Choose your work and territory.</h1><p>There is no extra charge for verified services. Matching only uses work you select.</p><label>Primary service<select defaultValue="Drywall"><option>Drywall</option><option>Painting</option><option>Roofing</option><option>Plumbing</option></select></label><p className="field-label">Additional services</p><div className="onboarding-options">{["Drywall repair", "Drywall installation", "Taping & finishing", "Plaster repair", "Interior painting", "Insulation"].map((item, index) => <label key={item}><input type="checkbox" defaultChecked={index < 4} /><span>✓</span>{item}</label>)}</div><div className="two-fields"><label>Home base<input defaultValue="Hamilton, Ontario" /></label><label>Service radius<select defaultValue="30"><option>15 km</option><option value="30">30 km</option><option>50 km</option></select></label></div><label className="availability-check"><input type="checkbox" defaultChecked /><span />Available for emergency requests</label></>}
+            {onboardingStep === 2 && <><p className="step-kicker">Step 3 of 4</p><h1>Build a verified profile.</h1><p>Documents stay private. Customers only see the verified status and expiry monitoring.</p><div className="verification-uploads"><button><span>✓</span><div><b>Government ID</b><small>Alex Morgan · Verified</small></div><em>Complete</em></button><button><span>✓</span><div><b>Business registration</b><small>Ontario Corporation · Verified</small></div><em>Complete</em></button><button><span>+</span><div><b>Liability insurance</b><small>Upload certificate · PDF or photo</small></div><em>Required</em></button><button><span>+</span><div><b>Trade licence</b><small>Only required for regulated services</small></div><em>Optional</em></button></div><div className="verification-note"><span>▣</span><div><b>Your information is encrypted.</b><p>JobDrop uses verification data only for trust, fraud prevention and payment compliance.</p></div></div></>}
+            {onboardingStep === 3 && <><p className="step-kicker">Step 4 of 4</p><h1>Choose how you grow.</h1><p>No lead fees. No charge for each service. Cancel or change plans anytime.</p><div className="onboarding-plans"><label><input type="radio" name="plan" /><div><span>Starter</span><b>$49<small>/month</small></b><p>1 user · 25 km territory · Quoting and invoicing</p></div></label><label className="recommended"><input type="radio" name="plan" defaultChecked /><div><span>Growth · Recommended</span><b>$129<small>/month</small></b><p>5 users · 50 km territory · Scheduling and insights</p></div></label><label><input type="radio" name="plan" /><div><span>Pro</span><b>$299<small>/month</small></b><p>Unlimited team · Multiple territories · Advanced operations</p></div></label></div><div className="trial-note"><span>30</span><div><b>Your first month is free.</b><p>You won’t be charged until August 22. Cancel before then and pay nothing.</p></div></div></>}
+            <div className="onboarding-footer"><span>Saved automatically</span><button onClick={() => setOnboardingStep(onboardingStep + 1)}>{onboardingStep === 3 ? "Submit application" : "Continue"} →</button></div>
+          </div><aside className="onboarding-aside"><div className="onboarding-quote"><span>“</span><p>JobDrop gives us fewer opportunities than lead sites—but they’re the right jobs. We spend time quoting work we can actually win.</p><div><b>Marcus T.</b><small>General contractor · Hamilton</small></div></div><div className="onboarding-promise"><p className="aside-label">The JobDrop promise</p><ul><li>✓ Never pay per lead</li><li>✓ Keep your quoted labour price</li><li>✓ Control services and territory</li><li>✓ Pause matching anytime</li></ul></div></aside></div> : <div className="onboarding-complete"><span>✓</span><p className="step-kicker">Application submitted</p><h1>Welcome to JobDrop.</h1><p>Your identity and business are approved. Insurance review normally takes one business day; the contractor workspace is ready to explore now.</p><div><span><b>3</b> matching jobs ready</span><span><b>30</b> days free</span><span><b>0</b> lead fees</span></div><button onClick={() => { setProTab("overview"); go("contractor"); }}>Open contractor workspace →</button></div>}
+        </section>
+      )}
+
       {view === "contractor" && (
         <section className="pro-shell">
           <div className="pro-banner">
             <div className="pro-company"><span>NB</span><div><b>North & Beam Drywall</b><small>Verified business · Hamilton, ON</small></div></div>
-            <div className="pro-availability"><span><i /></span><div><b>Accepting new work</b><small>Visible to matched customers</small></div></div>
+            <div className="pro-banner-actions"><div className="pro-availability"><span><i /></span><div><b>Accepting new work</b><small>Visible to matched customers</small></div></div><button onClick={() => go("onboarding")}>View onboarding</button></div>
           </div>
 
           {proTab === "overview" && (
@@ -526,7 +608,7 @@ export default function Home() {
       <footer>
         <div className="brand footer-brand"><span className="brand-mark"><i /></span><span>JobDrop</span></div>
         <p>Local work, matched better.</p>
-        <div><button onClick={() => go("discover")}>How it works</button><button>Trust & safety</button><button onClick={() => go("contractor")}>For contractors</button><button>Help</button></div>
+        <div><button onClick={() => go("discover")}>How it works</button><button onClick={() => go("trust")}>Trust & safety</button><button onClick={() => go("onboarding")}>Join as a contractor</button><button onClick={() => go("help")}>Help</button></div>
         <span>© 2026 JobDrop · Hamilton, Ontario</span>
       </footer>
     </main>
