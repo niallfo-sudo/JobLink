@@ -1,6 +1,6 @@
 import { and, asc, eq, ne } from "drizzle-orm";
 import { getDb } from "../../../../../db";
-import { jobEvents, jobRequests, paymentRecords, quotes, users } from "../../../../../db/schema";
+import { documentRecords, jobEvents, jobRequests, paymentRecords, quotes, users } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -12,7 +12,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
   try {
     const db = getDb();
-    const [job] = await db.select({ id: jobRequests.id }).from(jobRequests).where(and(eq(jobRequests.id, jobId), eq(jobRequests.ownerEmail, user.email))).limit(1);
+    const [job] = await db.select().from(jobRequests).where(and(eq(jobRequests.id, jobId), eq(jobRequests.ownerEmail, user.email))).limit(1);
     if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
     const rows = await db.select().from(quotes).where(eq(quotes.jobId, jobId)).orderBy(asc(quotes.amountCents));
     return Response.json({ quotes: rows });
@@ -87,6 +87,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       subtotalCents: selected.amountCents, customerFeeCents, totalCents: selected.amountCents + customerFeeCents,
       contractorPayoutCents: selected.amountCents, status: "processor_setup_required", processor: "unconfigured", updatedAt: new Date(),
     } });
+    const documentBase = { jobId, quoteId, ownerEmail: user.email, contractorEmail: selected.contractorEmail };
+    const snapshot = JSON.stringify({ jobNumber: job.externalId, jobTitle: job.title, scope: job.description, timeline: job.timeline, contractorName: selected.contractorName, amountCents: selected.amountCents, customerFeeCents });
+    await db.insert(documentRecords).values([
+      { ...documentBase, externalId: `AGR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "service_agreement", title: "Service agreement", status: "ready_for_signature", content: snapshot },
+      { ...documentBase, externalId: `QTE-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "accepted_quote", title: "Accepted quote", status: "accepted", content: snapshot },
+      { ...documentBase, externalId: `INV-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "invoice", title: "Invoice", status: "payment_setup_required", content: snapshot },
+    ]).onConflictDoNothing();
     await db.insert(jobEvents).values({ jobId, eventType: "quote_accepted", label: `${selected.contractorName} selected for the job`, metadata: JSON.stringify({ quoteId, amountCents: selected.amountCents }) });
     return Response.json({ acceptedQuote: { ...selected, status: "accepted" } });
   } catch (error) {

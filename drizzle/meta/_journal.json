@@ -29,6 +29,13 @@
       "when": 1784704254625,
       "tag": "0003_massive_glorian",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784704571447,
+      "tag": "0004_jazzy_valkyrie",
+      "breakpoints": true
     }
   ]
 }

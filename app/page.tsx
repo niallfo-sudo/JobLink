@@ -13,6 +13,7 @@ type RoomMessage = { id: number; body: string; mine: boolean; createdAt: string 
 type RoomEvent = { id: number; label: string; eventType: string; createdAt: string | number };
 type ContractorProfile = { businessName: string; legalName: string; phone: string; about: string; primaryService: string; services: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: "starter" | "growth" | "pro"; verificationStatus: string };
 type PaymentRecord = { id: number; externalId: string; title: string; contractorName: string; subtotalCents: number; customerFeeCents: number; totalCents: number; contractorPayoutCents: number; status: string; processor: string; viewerRole: "homeowner" | "contractor"; createdAt: string | number };
+type GeneratedDocument = { id: number; externalId: string; jobTitle: string; jobNumber: string; documentType: string; title: string; status: string; createdAt: string | number };
 
 const categories = [
   ["Drywall", "DW"],
@@ -131,6 +132,7 @@ export default function Home() {
   const [selectedPlan, setSelectedPlan] = useState<"starter" | "growth" | "pro">("growth");
   const [profileStatus, setProfileStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([]);
+  const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
 
   const jobBrief = useMemo(
     () =>
@@ -153,6 +155,14 @@ export default function Home() {
       .then((data: { payments?: PaymentRecord[] }) => setPaymentRecords(data.payments ?? []))
       .catch(() => undefined);
   }, [view, accountTab, proTab, acceptedQuoteId]);
+
+  useEffect(() => {
+    if (view !== "account" && view !== "contractor") return;
+    fetch("/api/documents")
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data: { documents?: GeneratedDocument[] }) => setGeneratedDocuments(data.documents ?? []))
+      .catch(() => undefined);
+  }, [view, accountTab, acceptedQuoteId]);
 
   useEffect(() => {
     if (view !== "contractor") return;
@@ -710,9 +720,9 @@ export default function Home() {
                 <div className="payment-explainer"><span>◎</span><div><b>You stay in control of every payment.</b><p>Funds are only released when milestones are approved. Changes require a signed change order before any extra charge.</p></div></div>
               </>}
               {accountTab === "documents" && <>
-                <div className="account-section-head"><div><p className="aside-label">Paperwork</p><h2>Documents</h2></div><span>6 files</span></div>
-                <div className="document-group"><h3>Basement drywall repair <small>JD-2048</small></h3><article><span className="doc-icon">PDF</span><div><b>Signed service contract</b><small>Signed July 21 · 184 KB</small></div><button>Download ↓</button></article><article><span className="doc-icon">PDF</span><div><b>Accepted quote</b><small>Issued July 21 · 96 KB</small></div><button>Download ↓</button></article><article><span className="doc-icon muted">IMG</span><div><b>Before-work photos</b><small>8 photos · 14.2 MB</small></div><button>View ↗</button></article></div>
-                <div className="document-group"><h3>Past jobs</h3><article><span className="doc-icon">PDF</span><div><b>Painting warranty certificate</b><small>Valid until June 2031</small></div><button>Download ↓</button></article><article><span className="doc-icon">PDF</span><div><b>2026 home-services receipts</b><small>2 receipts · Tax-ready bundle</small></div><button>Download ↓</button></article></div>
+                <div className="account-section-head"><div><p className="aside-label">Paperwork</p><h2>Documents</h2></div><span>{generatedDocuments.length} generated</span></div>
+                <div className="document-readiness"><span>✦</span><div><b>Paperwork is generated from accepted quotes.</b><p>Each secure document captures the job scope, selected professional, accepted amount and current payment status.</p></div></div>
+                {generatedDocuments.length === 0 ? <div className="documents-empty"><span>DOC</span><h3>No generated paperwork yet</h3><p>Accept a quote to create the service agreement, accepted quote and invoice.</p></div> : <div className="document-group"><h3>JobDrop documents</h3>{generatedDocuments.map((document) => <article key={document.id}><span className="doc-icon">{document.documentType === "invoice" ? "INV" : document.documentType === "accepted_quote" ? "QTE" : "AGR"}</span><div><b>{document.title}</b><small>{document.jobNumber} · {document.jobTitle} · {document.status.replaceAll("_", " ")}</small></div><button onClick={() => window.open(`/api/documents/${document.id}`, "_blank", "noopener,noreferrer")}>Open printable ↗</button></article>)}</div>}
               </>}
               {accountTab === "saved" && <>
                 <div className="account-section-head"><div><p className="aside-label">Your network</p><h2>Saved professionals</h2></div></div>

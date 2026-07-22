@@ -102,3 +102,23 @@ export const paymentRecords = sqliteTable("payment_records", {
   index("payment_records_owner_idx").on(table.ownerEmail),
   index("payment_records_contractor_idx").on(table.contractorEmail),
 ]);
+
+export const documentRecords = sqliteTable("document_records", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  externalId: text("external_id").notNull(),
+  jobId: integer("job_id").notNull().references(() => jobRequests.id, { onDelete: "cascade" }),
+  quoteId: integer("quote_id").references(() => quotes.id, { onDelete: "set null" }),
+  ownerEmail: text("owner_email").notNull(),
+  contractorEmail: text("contractor_email"),
+  documentType: text("document_type").notNull(),
+  title: text("title").notNull(),
+  status: text("status").notNull().default("generated"),
+  content: text("content").notNull().default("{}"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("document_records_external_unique").on(table.externalId),
+  uniqueIndex("document_records_job_type_unique").on(table.jobId, table.documentType),
+  index("document_records_owner_idx").on(table.ownerEmail),
+  index("document_records_contractor_idx").on(table.contractorEmail),
+]);
