@@ -133,6 +133,8 @@ export default function Home() {
   const [profileStatus, setProfileStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([]);
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
+  const [progressUpdatingId, setProgressUpdatingId] = useState<number | null>(null);
+  const [progressError, setProgressError] = useState<string | null>(null);
 
   const jobBrief = useMemo(
     () =>
@@ -390,6 +392,25 @@ export default function Home() {
       setProfileStatus("saved");
     } catch {
       setProfileStatus("error");
+    }
+  }
+
+  async function updateJobProgress(job: PersistedJob, stage: "crew_dispatched" | "materials_collected" | "work_started" | "halfway" | "cleaning" | "finished") {
+    setProgressUpdatingId(job.id);
+    setProgressError(null);
+    try {
+      const response = await fetch(`/api/jobs/${job.id}/progress`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage }) });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "Unable to update progress");
+      }
+      const data = (await response.json()) as { job: { status: string } };
+      setConversations((current) => current.map((item) => item.id === job.id ? { ...item, status: data.job.status } : item));
+      if (roomJob?.id === job.id) await openJobRoom({ ...job, status: data.job.status });
+    } catch (error) {
+      setProgressError(error instanceof Error ? error.message : "Unable to update progress");
+    } finally {
+      setProgressUpdatingId(null);
     }
   }
 
@@ -838,6 +859,7 @@ export default function Home() {
             <div className="pro-page">
               <div className="pro-page-heading"><div><p className="step-kicker">Operations</p><h1>Jobs and schedule.</h1><p>Everything booked, underway and waiting for payment.</p></div><button className="primary-action">+ Add off-platform job</button></div>
               <div className="job-tabs"><button className="selected">Active <span>3</span></button><button>Upcoming <span>4</span></button><button>Completed</button><button>Quotes <span>4</span></button></div>
+              {conversations.filter((job) => ["booked", "in_progress", "completed"].includes(job.status)).length > 0 && <div className="live-operations"><div className="pro-panel-head"><div><p className="aside-label">Live JobDrop jobs</p><h2>Update customer progress</h2></div><span>Every update is timestamped</span></div>{progressError && <p className="progress-error">{progressError}</p>}{conversations.filter((job) => ["booked", "in_progress", "completed"].includes(job.status)).map((job) => <article key={job.id}><div className="live-job-heading"><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status.replaceAll("_", " ")}</small><h3>{job.title}</h3></div><button onClick={() => openJobRoom(job)}>Job Room ↗</button></div><div className="milestone-actions">{([['crew_dispatched','Crew leaving'],['materials_collected','Materials picked up'],['work_started','Started'],['halfway','50% complete'],['cleaning','Cleaning'],['finished','Finished']] as const).map(([stage,label]) => <button key={stage} disabled={progressUpdatingId === job.id || job.status === "completed"} onClick={() => updateJobProgress(job, stage)}>{progressUpdatingId === job.id ? "Updating…" : label}</button>)}</div></article>)}</div>}
               <div className="jobs-board">
                 <article className="active-job-feature">
                   <div className="active-job-top"><span className="status-live">In progress</span><small>JD-2048</small></div><h2>Basement drywall repair</h2><p>Niall L. · West Hamilton</p>
