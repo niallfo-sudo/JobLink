@@ -122,3 +122,27 @@ export const documentRecords = sqliteTable("document_records", {
   index("document_records_owner_idx").on(table.ownerEmail),
   index("document_records_contractor_idx").on(table.contractorEmail),
 ]);
+
+export const changeOrders = sqliteTable("change_orders", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  externalId: text("external_id").notNull(),
+  jobId: integer("job_id").notNull().references(() => jobRequests.id, { onDelete: "cascade" }),
+  quoteId: integer("quote_id").references(() => quotes.id, { onDelete: "set null" }),
+  ownerEmail: text("owner_email").notNull(),
+  contractorEmail: text("contractor_email").notNull(),
+  contractorName: text("contractor_name").notNull(),
+  reason: text("reason").notNull(),
+  description: text("description").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  scheduleImpact: text("schedule_impact").notNull().default("No schedule impact"),
+  status: text("status").notNull().default("pending"),
+  decisionName: text("decision_name"),
+  decidedAt: integer("decided_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("change_orders_external_unique").on(table.externalId),
+  index("change_orders_job_idx").on(table.jobId),
+  index("change_orders_owner_idx").on(table.ownerEmail),
+  index("change_orders_contractor_idx").on(table.contractorEmail),
+]);

@@ -14,6 +14,7 @@ type RoomEvent = { id: number; label: string; eventType: string; createdAt: stri
 type ContractorProfile = { businessName: string; legalName: string; phone: string; about: string; primaryService: string; services: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: "starter" | "growth" | "pro"; verificationStatus: string };
 type PaymentRecord = { id: number; externalId: string; title: string; contractorName: string; subtotalCents: number; customerFeeCents: number; totalCents: number; contractorPayoutCents: number; status: string; processor: string; viewerRole: "homeowner" | "contractor"; createdAt: string | number };
 type GeneratedDocument = { id: number; externalId: string; jobTitle: string; jobNumber: string; documentType: string; title: string; status: string; createdAt: string | number };
+type ChangeOrderRecord = { id: number; externalId: string; reason: string; description: string; amountCents: number; scheduleImpact: string; status: string; contractorName: string; decisionName?: string | null };
 
 const categories = [
   ["Drywall", "DW"],
@@ -135,6 +136,13 @@ export default function Home() {
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
   const [progressUpdatingId, setProgressUpdatingId] = useState<number | null>(null);
   const [progressError, setProgressError] = useState<string | null>(null);
+  const [roomChangeOrders, setRoomChangeOrders] = useState<ChangeOrderRecord[]>([]);
+  const [liveChangeOrderJob, setLiveChangeOrderJob] = useState<PersistedJob | null>(null);
+  const [changeReason, setChangeReason] = useState("Hidden damage discovered");
+  const [changeDescription, setChangeDescription] = useState("Replace damaged material discovered after work began.");
+  const [changeAmount, setChangeAmount] = useState("425");
+  const [changeSchedule, setChangeSchedule] = useState("Adds approximately 2 hours");
+  const [changeStatus, setChangeStatus] = useState<"idle" | "saving" | "error">("idle");
 
   const jobBrief = useMemo(
     () =>
@@ -334,9 +342,10 @@ export default function Home() {
     try {
       const response = await fetch(`/api/jobs/${job.id}`);
       if (!response.ok) throw new Error("Unable to load job room");
-      const data = (await response.json()) as { messages?: RoomMessage[]; events?: RoomEvent[] };
+      const data = (await response.json()) as { messages?: RoomMessage[]; events?: RoomEvent[]; changeOrders?: ChangeOrderRecord[] };
       setRoomMessages(data.messages ?? []);
       setRoomEvents(data.events ?? []);
+      setRoomChangeOrders(data.changeOrders ?? []);
       setRoomStatus("idle");
     } catch {
       setRoomStatus("error");
@@ -412,6 +421,27 @@ export default function Home() {
     } finally {
       setProgressUpdatingId(null);
     }
+  }
+
+  async function submitLiveChangeOrder() {
+    if (!liveChangeOrderJob) return;
+    setChangeStatus("saving");
+    try {
+      const response = await fetch(`/api/jobs/${liveChangeOrderJob.id}/change-orders`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: changeReason, description: changeDescription, amount: Number(changeAmount), scheduleImpact: changeSchedule }) });
+      if (!response.ok) throw new Error("Unable to create change order");
+      setChangeStatus("idle"); setLiveChangeOrderJob(null);
+    } catch { setChangeStatus("error"); }
+  }
+
+  async function decideChangeOrder(order: ChangeOrderRecord, decision: "approved" | "declined") {
+    if (!roomJob) return;
+    setRoomStatus("sending");
+    try {
+      const response = await fetch(`/api/jobs/${roomJob.id}/change-orders`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ changeOrderId: order.id, decision, decisionName: "Niall L." }) });
+      if (!response.ok) throw new Error("Unable to record decision");
+      setRoomChangeOrders((current) => current.map((item) => item.id === order.id ? { ...item, status: decision, decisionName: "Niall L." } : item));
+      setRoomStatus("idle");
+    } catch { setRoomStatus("error"); }
   }
 
   return (
@@ -859,7 +889,7 @@ export default function Home() {
             <div className="pro-page">
               <div className="pro-page-heading"><div><p className="step-kicker">Operations</p><h1>Jobs and schedule.</h1><p>Everything booked, underway and waiting for payment.</p></div><button className="primary-action">+ Add off-platform job</button></div>
               <div className="job-tabs"><button className="selected">Active <span>3</span></button><button>Upcoming <span>4</span></button><button>Completed</button><button>Quotes <span>4</span></button></div>
-              {conversations.filter((job) => ["booked", "in_progress", "completed"].includes(job.status)).length > 0 && <div className="live-operations"><div className="pro-panel-head"><div><p className="aside-label">Live JobDrop jobs</p><h2>Update customer progress</h2></div><span>Every update is timestamped</span></div>{progressError && <p className="progress-error">{progressError}</p>}{conversations.filter((job) => ["booked", "in_progress", "completed"].includes(job.status)).map((job) => <article key={job.id}><div className="live-job-heading"><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status.replaceAll("_", " ")}</small><h3>{job.title}</h3></div><button onClick={() => openJobRoom(job)}>Job Room ↗</button></div><div className="milestone-actions">{([['crew_dispatched','Crew leaving'],['materials_collected','Materials picked up'],['work_started','Started'],['halfway','50% complete'],['cleaning','Cleaning'],['finished','Finished']] as const).map(([stage,label]) => <button key={stage} disabled={progressUpdatingId === job.id || job.status === "completed"} onClick={() => updateJobProgress(job, stage)}>{progressUpdatingId === job.id ? "Updating…" : label}</button>)}</div></article>)}</div>}
+              {conversations.filter((job) => ["booked", "in_progress", "completed"].includes(job.status)).length > 0 && <div className="live-operations"><div className="pro-panel-head"><div><p className="aside-label">Live JobDrop jobs</p><h2>Update customer progress</h2></div><span>Every update is timestamped</span></div>{progressError && <p className="progress-error">{progressError}</p>}{conversations.filter((job) => ["booked", "in_progress", "completed"].includes(job.status)).map((job) => <article key={job.id}><div className="live-job-heading"><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status.replaceAll("_", " ")}</small><h3>{job.title}</h3></div><div className="live-job-actions"><button onClick={() => setLiveChangeOrderJob(job)}>+ Change order</button><button onClick={() => openJobRoom(job)}>Job Room ↗</button></div></div><div className="milestone-actions">{([['crew_dispatched','Crew leaving'],['materials_collected','Materials picked up'],['work_started','Started'],['halfway','50% complete'],['cleaning','Cleaning'],['finished','Finished']] as const).map(([stage,label]) => <button key={stage} disabled={progressUpdatingId === job.id || job.status === "completed"} onClick={() => updateJobProgress(job, stage)}>{progressUpdatingId === job.id ? "Updating…" : label}</button>)}</div></article>)}</div>}
               <div className="jobs-board">
                 <article className="active-job-feature">
                   <div className="active-job-top"><span className="status-live">In progress</span><small>JD-2048</small></div><h2>Basement drywall repair</h2><p>Niall L. · West Hamilton</p>
@@ -946,7 +976,9 @@ export default function Home() {
         </section>
       )}
 
-      {roomJob && <div className="job-room-overlay" role="dialog" aria-modal="true" aria-labelledby="job-room-title"><button className="job-room-close" aria-label="Close Job Room" onClick={() => setRoomJob(null)}>×</button><div className="job-room"><header><div><p className="step-kicker">Shared Job Room · {roomJob.externalId}</p><h2 id="job-room-title">{roomJob.title}</h2><p>{roomJob.category} · {roomJob.status}</p></div><span><i /> Private to this job</span></header>{roomStatus === "loading" ? <div className="job-room-loading">Opening your Job Room…</div> : roomStatus === "error" && !roomMessages.length ? <div className="job-room-loading error">The Job Room could not be loaded. Please close it and try again.</div> : <div className="job-room-grid"><aside><p className="aside-label">Job activity</p><div className="room-timeline">{roomEvents.map((event, index) => <article key={event.id}><span>{index + 1}</span><div><b>{event.label}</b><small>{new Date(event.createdAt).toLocaleString()}</small></div></article>)}</div></aside><section><div className="room-chat-head"><div><span>JD</span><div><b>Job conversation</b><small>Keep details and decisions documented here</small></div></div></div><div className="room-chat-body">{roomMessages.length === 0 && <div className="room-empty"><span>✦</span><b>Start the conversation</b><p>Messages stay attached to this job for both sides.</p></div>}{roomMessages.map((message) => <div className={`room-message ${message.mine ? "mine" : "theirs"}`} key={message.id}><p>{message.body}</p><small>{new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small></div>)}</div><form className="room-composer" onSubmit={sendRoomMessage}><input value={roomText} onChange={(event) => setRoomText(event.target.value)} placeholder="Write a message about this job…" aria-label="Job message" /><button disabled={roomStatus === "sending" || !roomText.trim()}>{roomStatus === "sending" ? "Sending…" : "Send →"}</button></form></section></div>}</div></div>}
+      {liveChangeOrderJob && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="live-change-title"><button className="overlay-close" onClick={() => setLiveChangeOrderJob(null)} aria-label="Close change order">×</button><div className="quote-drawer change-drawer"><p className="step-kicker">{liveChangeOrderJob.externalId} · Change order</p><h2 id="live-change-title">Document extra work.</h2><p className="quote-job-title">{liveChangeOrderJob.title}</p><div className="change-alert"><span>!</span><p>The homeowner must approve this change before additional work begins.</p></div><label className="field-label">Reason<input value={changeReason} onChange={(event) => setChangeReason(event.target.value)} /></label><label className="field-label">Additional work<textarea rows={4} value={changeDescription} onChange={(event) => setChangeDescription(event.target.value)} /></label><label className="field-label">Additional amount<div className="price-input"><span>$</span><input value={changeAmount} onChange={(event) => setChangeAmount(event.target.value)} inputMode="decimal" /><em>CAD</em></div></label><label className="field-label">Schedule impact<select value={changeSchedule} onChange={(event) => setChangeSchedule(event.target.value)}><option>Adds approximately 2 hours</option><option>No schedule impact</option><option>Adds 1 business day</option></select></label>{changeStatus === "error" && <p className="quote-submit-error">The change order could not be sent.</p>}<button className="send-quote" disabled={changeStatus === "saving"} onClick={submitLiveChangeOrder}>{changeStatus === "saving" ? "Sending…" : `Send $${Number(changeAmount || 0).toLocaleString()} change order →`}</button></div></div>}
+
+      {roomJob && <div className="job-room-overlay" role="dialog" aria-modal="true" aria-labelledby="job-room-title"><button className="job-room-close" aria-label="Close Job Room" onClick={() => setRoomJob(null)}>×</button><div className="job-room"><header><div><p className="step-kicker">Shared Job Room · {roomJob.externalId}</p><h2 id="job-room-title">{roomJob.title}</h2><p>{roomJob.category} · {roomJob.status}</p></div><span><i /> Private to this job</span></header>{roomStatus === "loading" ? <div className="job-room-loading">Opening your Job Room…</div> : roomStatus === "error" && !roomMessages.length ? <div className="job-room-loading error">The Job Room could not be loaded. Please close it and try again.</div> : <div className="job-room-grid"><aside><p className="aside-label">Job activity</p><div className="room-timeline">{roomEvents.map((event, index) => <article key={event.id}><span>{index + 1}</span><div><b>{event.label}</b><small>{new Date(event.createdAt).toLocaleString()}</small></div></article>)}</div>{roomChangeOrders.length > 0 && <div className="room-change-orders"><p className="aside-label">Change orders</p>{roomChangeOrders.map((order) => <article key={order.id}><div><small>{order.externalId} · {order.status}</small><b>{order.reason}</b><p>{order.description}</p><strong>+${(order.amountCents / 100).toLocaleString()}</strong></div>{order.status === "pending" && <div><button onClick={() => decideChangeOrder(order, "declined")}>Decline</button><button onClick={() => decideChangeOrder(order, "approved")}>Approve & sign</button></div>}</article>)}</div>}</aside><section><div className="room-chat-head"><div><span>JD</span><div><b>Job conversation</b><small>Keep details and decisions documented here</small></div></div></div><div className="room-chat-body">{roomMessages.length === 0 && <div className="room-empty"><span>✦</span><b>Start the conversation</b><p>Messages stay attached to this job for both sides.</p></div>}{roomMessages.map((message) => <div className={`room-message ${message.mine ? "mine" : "theirs"}`} key={message.id}><p>{message.body}</p><small>{new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small></div>)}</div><form className="room-composer" onSubmit={sendRoomMessage}><input value={roomText} onChange={(event) => setRoomText(event.target.value)} placeholder="Write a message about this job…" aria-label="Job message" /><button disabled={roomStatus === "sending" || !roomText.trim()}>{roomStatus === "sending" ? "Sending…" : "Send →"}</button></form></section></div>}</div></div>}
 
       <footer>
         <div className="brand footer-brand"><span className="brand-mark"><i /></span><span>JobDrop</span></div>

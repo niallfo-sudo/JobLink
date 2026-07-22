@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { jobEvents, jobRequests, messages, quotes } from "../../../../db/schema";
+import { changeOrders, jobEvents, jobRequests, messages, quotes } from "../../../../db/schema";
 import { getChatGPTUser } from "../../../chatgpt-auth";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -17,16 +17,18 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const [contractorAccess] = await db.select({ jobId: quotes.jobId }).from(quotes).where(and(eq(quotes.jobId, jobId), eq(quotes.contractorEmail, user.email))).limit(1);
     if (job.ownerEmail !== user.email && !contractorAccess) return Response.json({ error: "Job not found" }, { status: 404 });
 
-    const [eventRows, messageRows, quoteRows] = await Promise.all([
+    const [eventRows, messageRows, quoteRows, changeOrderRows] = await Promise.all([
       db.select().from(jobEvents).where(eq(jobEvents.jobId, jobId)).orderBy(asc(jobEvents.createdAt)),
       db.select().from(messages).where(eq(messages.jobId, jobId)).orderBy(asc(messages.createdAt)),
       db.select().from(quotes).where(eq(quotes.jobId, jobId)).orderBy(asc(quotes.createdAt)),
+      db.select().from(changeOrders).where(eq(changeOrders.jobId, jobId)).orderBy(asc(changeOrders.createdAt)),
     ]);
     return Response.json({
       job,
       events: eventRows,
       messages: messageRows.map((message) => ({ ...message, mine: message.senderEmail === user.email })),
       quotes: quoteRows,
+      changeOrders: changeOrderRows,
       viewerRole: job.ownerEmail === user.email ? "homeowner" : "contractor",
     });
   } catch (error) {
