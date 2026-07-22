@@ -16,6 +16,7 @@ type PaymentRecord = { id: number; externalId: string; title: string; contractor
 type GeneratedDocument = { id: number; externalId: string; jobTitle: string; jobNumber: string; documentType: string; title: string; status: string; createdAt: string | number };
 type ChangeOrderRecord = { id: number; externalId: string; reason: string; description: string; amountCents: number; scheduleImpact: string; status: string; contractorName: string; decisionName?: string | null };
 type VerifiedReview = { id: number; workmanship: number; communication: number; punctuality: number; cleanliness: number; averageScore: number; comment: string };
+type AppNotification = { id: number; jobId: number | null; notificationType: string; title: string; body: string; readAt: string | number | null; createdAt: string | number };
 
 const categories = [
   ["Drywall", "DW"],
@@ -149,6 +150,8 @@ export default function Home() {
   const [reviewComment, setReviewComment] = useState("");
   const [reviewStatus, setReviewStatus] = useState<"idle" | "saving" | "error">("idle");
   const [reputation, setReputation] = useState<{ verifiedReviewCount: number; averageStars: number | null; verifiedReviewScore: number | null }>({ verifiedReviewCount: 0, averageStars: null, verifiedReviewScore: null });
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const jobBrief = useMemo(
     () =>
@@ -163,6 +166,10 @@ export default function Home() {
       .then((data: { jobs?: PersistedJob[] }) => setPersistedJobs(data.jobs ?? []))
       .catch(() => undefined);
   }, [view]);
+
+  useEffect(() => {
+    fetch("/api/notifications").then((response) => response.ok ? response.json() : Promise.reject()).then((data: { notifications?: AppNotification[] }) => setNotifications(data.notifications ?? [])).catch(() => undefined);
+  }, [view, quoteSent, acceptedQuoteId, roomMessages.length, roomEvents.length]);
 
   useEffect(() => {
     if (view !== "account" && view !== "contractor") return;
@@ -467,6 +474,28 @@ export default function Home() {
     } catch { setReviewStatus("error"); }
   }
 
+  async function openNotification(notification: AppNotification) {
+    await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: notification.id }) }).catch(() => undefined);
+    setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt: Date.now() } : item));
+    setNotificationsOpen(false);
+    if (notification.jobId) {
+      try {
+        const response = await fetch(`/api/jobs/${notification.jobId}`);
+        if (response.ok) {
+          const data = (await response.json()) as { job: PersistedJob };
+          await openJobRoom(data.job);
+          return;
+        }
+      } catch { /* fall through to workspace */ }
+    }
+    if (view === "contractor") setProTab("inbox"); else { setAccountTab("jobs"); go("account"); }
+  }
+
+  async function markAllNotificationsRead() {
+    await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) }).catch(() => undefined);
+    setNotifications((current) => current.map((item) => ({ ...item, readAt: item.readAt || Date.now() })));
+  }
+
   return (
     <main>
       <header className={`site-header ${view === "contractor" ? "pro-header" : ""}`}>
@@ -491,9 +520,12 @@ export default function Home() {
         )}
         <div className="header-actions">
           <button className="text-button" onClick={() => go(view === "contractor" ? "discover" : "contractor")}>{view === "contractor" ? "Homeowner view" : "For contractors"}</button>
+          <button className="notification-button" aria-label="Open notifications" onClick={() => setNotificationsOpen(!notificationsOpen)}>AL{notifications.filter((item) => !item.readAt).length > 0 && <b>{notifications.filter((item) => !item.readAt).length}</b>}</button>
           <button className="avatar-button" aria-label="Open profile" onClick={() => view === "contractor" ? setProTab("business") : go("account")}>{view === "contractor" ? "NB" : "NL"}</button>
         </div>
       </header>
+
+      {notificationsOpen && <aside className="notification-centre"><div className="notification-centre-head"><div><p className="aside-label">JobDrop alerts</p><h2>Notifications</h2></div><button onClick={markAllNotificationsRead}>Mark all read</button></div>{notifications.length === 0 ? <div className="notification-empty">You’re all caught up.</div> : <div className="notification-list">{notifications.map((notification) => <button key={notification.id} className={!notification.readAt ? "unread" : ""} onClick={() => openNotification(notification)}><span>{notification.notificationType.slice(0,2).toUpperCase()}</span><div><b>{notification.title}</b><p>{notification.body}</p><small>{new Date(notification.createdAt).toLocaleString()}</small></div></button>)}</div>}</aside>}
 
       {view === "discover" && (
         <>

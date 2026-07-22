@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { jobEvents, jobRequests, quotes, verifiedReviews } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
+import { notify } from "../../../../../lib/notifications";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const user = await getChatGPTUser();
@@ -19,6 +20,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const [review] = await db.insert(verifiedReviews).values({ jobId, ownerEmail: user.email, contractorEmail: quote.contractorEmail, contractorName: quote.contractorName, workmanship: scores[0], communication: scores[1], punctuality: scores[2], cleanliness: scores[3], averageScore, comment: payload.comment?.trim().slice(0, 1000) || "" }).onConflictDoNothing().returning();
     if (!review) return Response.json({ error: "This completed job has already been reviewed" }, { status: 409 });
     await db.insert(jobEvents).values({ jobId, eventType: "verified_review_submitted", label: "Verified homeowner review submitted", metadata: JSON.stringify({ reviewId: review.id, averageScore }) });
+    await notify(quote.contractorEmail, { jobId, type: "verified_review", title: "New verified review", body: `Your completed job received a ${(averageScore / 100).toFixed(1)}-star verified review.` });
     return Response.json({ review }, { status: 201 });
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 }); }
 }

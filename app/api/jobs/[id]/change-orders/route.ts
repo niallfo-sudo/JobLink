@@ -2,6 +2,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { changeOrders, documentRecords, jobEvents, jobRequests, paymentRecords, quotes } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
+import { notify } from "../../../../../lib/notifications";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const user = await getChatGPTUser();
@@ -26,6 +27,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!job || !quote) return Response.json({ error: "Only the selected contractor can create a change order" }, { status: 403 });
     const [changeOrder] = await db.insert(changeOrders).values({ externalId: `CO-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, jobId, quoteId: quote.id, ownerEmail: job.ownerEmail, contractorEmail: user.email, contractorName: quote.contractorName, reason: payload.reason.trim(), description: payload.description.trim(), amountCents, scheduleImpact: payload.scheduleImpact?.trim() || "No schedule impact" }).returning();
     await db.insert(jobEvents).values({ jobId, eventType: "change_order_requested", label: `Change order ${changeOrder.externalId} awaiting approval`, metadata: JSON.stringify({ changeOrderId: changeOrder.id, amountCents }) });
+    await notify(job.ownerEmail, { jobId, type: "change_order_requested", title: "Change order needs approval", body: `${quote.contractorName} requested an additional $${(amountCents / 100).toLocaleString()} for ${job.externalId}.` });
     return Response.json({ changeOrder }, { status: 201 });
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 }); }
 }
@@ -50,6 +52,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       await db.insert(documentRecords).values({ externalId: order.externalId, jobId, quoteId: order.quoteId, ownerEmail: user.email, contractorEmail: order.contractorEmail, documentType: `change_order_${order.id}`, title: "Approved change order", status: "approved", content }).onConflictDoNothing();
     }
     await db.insert(jobEvents).values({ jobId, eventType: `change_order_${payload.decision}`, label: `Change order ${order.externalId} ${payload.decision}`, metadata: JSON.stringify({ changeOrderId: order.id, decisionName }) });
+    await notify(order.contractorEmail, { jobId, type: `change_order_${payload.decision}`, title: `Change order ${payload.decision}`, body: `${order.externalId} was ${payload.decision} by ${decisionName}.` });
     return Response.json({ changeOrder: { ...order, status: payload.decision, decisionName } });
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 }); }
 }

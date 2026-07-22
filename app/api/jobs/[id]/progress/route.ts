@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { documentRecords, jobEvents, jobRequests, quotes } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
+import { notify } from "../../../../../lib/notifications";
 
 const stages = {
   crew_dispatched: { label: "Crew is on the way", jobStatus: "booked", rank: 1 },
@@ -31,6 +32,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
     await db.update(jobRequests).set({ status: stage.jobStatus, updatedAt: new Date() }).where(eq(jobRequests.id, jobId));
     await db.insert(jobEvents).values({ jobId, eventType: payload.stage, label: stage.label, metadata: JSON.stringify({ rank: stage.rank, updatedBy: "contractor" }) });
+    await notify(job.ownerEmail, { jobId, type: payload.stage, title: stage.label, body: `${acceptedQuote.contractorName} updated ${job.externalId}.` });
 
     if (payload.stage === "finished") {
       const warrantySnapshot = JSON.stringify({ jobNumber: job.externalId, jobTitle: job.title, scope: job.description, timeline: job.timeline, contractorName: acceptedQuote.contractorName, amountCents: acceptedQuote.amountCents, warrantyTerm: "Workmanship coverage recorded by the contractor. Final terms are subject to the signed service agreement." });

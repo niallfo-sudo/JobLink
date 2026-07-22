@@ -2,6 +2,7 @@ import { and, asc, eq, ne } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { documentRecords, jobEvents, jobRequests, paymentRecords, quotes, users } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
+import { notify } from "../../../../../lib/notifications";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const user = await getChatGPTUser();
@@ -52,6 +53,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       set: { contractorName, amountCents, message: payload.message?.trim() || "Quote includes labour, materials and cleanup.", availableAt: payload.availableAt?.trim() || "Schedule to be confirmed", status: "submitted", createdAt: new Date() },
     }).returning();
     await db.insert(jobEvents).values({ jobId, eventType: "quote_submitted", label: `Quote received from ${contractorName}`, metadata: JSON.stringify({ quoteId: quote.id, amountCents }) });
+    const [ownerJob] = await db.select({ ownerEmail: jobRequests.ownerEmail, externalId: jobRequests.externalId }).from(jobRequests).where(eq(jobRequests.id, jobId)).limit(1);
+    await notify(ownerJob?.ownerEmail, { jobId, type: "quote_received", title: "New quote received", body: `${contractorName} quoted $${(amountCents / 100).toLocaleString()} for ${ownerJob?.externalId}.` });
     return Response.json({ quote }, { status: 201 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
@@ -95,6 +98,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       { ...documentBase, externalId: `INV-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "invoice", title: "Invoice", status: "payment_setup_required", content: snapshot },
     ]).onConflictDoNothing();
     await db.insert(jobEvents).values({ jobId, eventType: "quote_accepted", label: `${selected.contractorName} selected for the job`, metadata: JSON.stringify({ quoteId, amountCents: selected.amountCents }) });
+    await notify(selected.contractorEmail, { jobId, type: "quote_accepted", title: "Your quote was accepted", body: `${job.externalId} is now booked. Open the Job Room to coordinate the work.` });
     return Response.json({ acceptedQuote: { ...selected, status: "accepted" } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });

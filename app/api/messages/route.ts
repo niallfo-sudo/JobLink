@@ -2,6 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { jobRequests, messages, quotes } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { notify } from "../../../lib/notifications";
 
 async function accessibleJob(jobId: number, email: string) {
   const [job] = await getDb().select({ id: jobRequests.id }).from(jobRequests).where(and(eq(jobRequests.id, jobId), eq(jobRequests.ownerEmail, email))).limit(1);
@@ -34,6 +35,10 @@ export async function POST(request: Request) {
     if (!Number.isInteger(jobId) || !body) return Response.json({ error: "jobId and body are required" }, { status: 400 });
     if (!(await accessibleJob(jobId, user.email))) return Response.json({ error: "Job not found" }, { status: 404 });
     const [message] = await getDb().insert(messages).values({ jobId, senderEmail: user.email, body }).returning();
+    const [job] = await getDb().select({ ownerEmail: jobRequests.ownerEmail, externalId: jobRequests.externalId }).from(jobRequests).where(eq(jobRequests.id, jobId)).limit(1);
+    const [acceptedQuote] = await getDb().select({ contractorEmail: quotes.contractorEmail }).from(quotes).where(and(eq(quotes.jobId, jobId), eq(quotes.status, "accepted"))).limit(1);
+    const recipient = job?.ownerEmail === user.email ? acceptedQuote?.contractorEmail : job?.ownerEmail;
+    await notify(recipient, { jobId, type: "new_message", title: "New Job Room message", body: `${user.displayName} sent a message about ${job?.externalId}.` });
     return Response.json({ message: { ...message, mine: true } }, { status: 201 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });

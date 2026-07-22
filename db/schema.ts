@@ -164,3 +164,14 @@ export const verifiedReviews = sqliteTable("verified_reviews", {
   uniqueIndex("verified_reviews_job_unique").on(table.jobId),
   index("verified_reviews_contractor_idx").on(table.contractorEmail),
 ]);
+
+export const notifications = sqliteTable("notifications", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  recipientEmail: text("recipient_email").notNull(),
+  jobId: integer("job_id").references(() => jobRequests.id, { onDelete: "cascade" }),
+  notificationType: text("notification_type").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  readAt: integer("read_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [index("notifications_recipient_created_idx").on(table.recipientEmail, table.createdAt)]);
