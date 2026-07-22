@@ -89,9 +89,10 @@ test("wires existing controls and contractor service matching", async () => {
 });
 
 test("supports custom request terms and persistent employee operations", async () => {
-  const [page, operationsRoute, schema, migration] = await Promise.all([
+  const [page, operationsRoute, jobRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),
     source("../app/api/operations/route.ts"),
+    source("../app/api/jobs/[id]/route.ts"),
     source("../db/schema.ts"),
     source("../drizzle/0010_magical_zarda.sql"),
   ]);
@@ -103,11 +104,19 @@ test("supports custom request terms and persistent employee operations", async (
   assert.match(page, /filteredOperationsCases/);
   assert.match(page, /updateOperationsCase/);
   assert.match(page, /operations-drawer/);
+  assert.match(page, /submitEmergencyRequest/);
+  assert.match(page, /updateEmergencyRequestStatus/);
+  assert.match(page, /filteredHelpFaqs/);
+  assert.match(page, /filteredConversations/);
+  assert.match(page, /visibleContractorJobs/);
+  assert.doesNotMatch(page, /Off-platform job import is ready/);
   const incompleteButtons = [...page.matchAll(/<button\b([^>]*)>/g)].filter(([, attributes]) => !/onClick=|type="submit"|disabled=/.test(attributes));
   assert.deepEqual(incompleteButtons.map((match) => match[0]), []);
   assert.match(operationsRoute, /Employee access required/);
   assert.match(operationsRoute, /operationsCaseNotes/);
   assert.match(operationsRoute, /export async function PATCH/);
+  assert.match(jobRoute, /emergency_responder_confirmed/);
+  assert.match(jobRoute, /request_cancelled/);
   assert.match(schema, /sqliteTable\("operations_cases"/);
   assert.match(schema, /sqliteTable\("operations_case_notes"/);
   assert.match(migration, /CREATE TABLE `operations_cases`/);

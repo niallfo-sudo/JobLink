@@ -39,3 +39,23 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }
 }
+
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  const user = await getChatGPTUser();
+  if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
+  const { id } = await context.params;
+  const jobId = Number(id);
+  if (!Number.isInteger(jobId)) return Response.json({ error: "Invalid job id" }, { status: 400 });
+  const payload = (await request.json()) as { status?: string };
+  if (!payload.status || !["booked", "cancelled"].includes(payload.status)) return Response.json({ error: "Invalid job status" }, { status: 400 });
+  try {
+    const db = getDb();
+    const [job] = await db.select().from(jobRequests).where(eq(jobRequests.id, jobId)).limit(1);
+    if (!job || job.ownerEmail !== user.email) return Response.json({ error: "Job not found" }, { status: 404 });
+    const [updated] = await db.update(jobRequests).set({ status: payload.status, updatedAt: new Date() }).where(eq(jobRequests.id, jobId)).returning();
+    await db.insert(jobEvents).values({ jobId, eventType: payload.status === "booked" ? "emergency_responder_confirmed" : "request_cancelled", label: payload.status === "booked" ? "Emergency responder confirmed" : "Emergency request cancelled", metadata: "{}" });
+    return Response.json({ job: updated });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Unable to update job" }, { status: 500 });
+  }
+}

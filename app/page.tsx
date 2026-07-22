@@ -134,6 +134,17 @@ const serviceProviderNames: Record<string, string[]> = {
   "General contracting": ["Citywide Renovations", "Hamilton Build Group", "True North Contracting"],
 };
 
+const helpFaqs = [
+  { topic: "homeowners", question: "Does posting a job cost anything?", answer: "No. Homeowners can post requests and compare matched quotes for free. A booking and protection fee only applies when a job is paid through JobLink." },
+  { topic: "homeowners", question: "How many contractors see my request?", answer: "Only qualified professionals matching the service, location, availability and trust requirements are notified. Customers see no more than five top matches." },
+  { topic: "professionals", question: "Do contractors pay for leads?", answer: "No. Contractors subscribe to the business platform. JobLink does not sell individual customer contact details or charge per lead." },
+  { topic: "professionals", question: "How do I pause new matching?", answer: "Open the contractor workspace and use the Accepting new work control. Existing jobs and conversations remain available while matching is paused." },
+  { topic: "payments", question: "When does the contractor get paid?", answer: "Funds are released according to the milestones accepted in the contract. Changes require approval before they can affect the total." },
+  { topic: "payments", question: "How are change orders charged?", answer: "A contractor submits the reason, added scope, amount and schedule impact. The customer must approve and sign before the contract total changes." },
+  { topic: "trust", question: "What happens if something goes wrong?", answer: "Keep communication and payments inside JobLink. Support can review the quote, contract, messages, progress updates and payment record." },
+  { topic: "trust", question: "How are professionals verified?", answer: "JobLink checks identity and business records, then monitors insurance and required trade licences. Work history and disputes continue to affect the Trust Score." },
+];
+
 const steps = ["Describe", "Details", "Timing", "Review"];
 
 const opportunities: Opportunity[] = [
@@ -176,6 +187,11 @@ export default function Home() {
   const [changeOrderOpen, setChangeOrderOpen] = useState(false);
   const [changeOrderSent, setChangeOrderSent] = useState(false);
   const [emergencyStage, setEmergencyStage] = useState(0);
+  const [emergencyDescription, setEmergencyDescription] = useState("Water is leaking from a pipe under the kitchen sink. Main shutoff is accessible.");
+  const [emergencyAddress, setEmergencyAddress] = useState("225 King Street W, Hamilton, ON");
+  const [emergencyConsent, setEmergencyConsent] = useState(true);
+  const [emergencyJob, setEmergencyJob] = useState<{ id: number; externalId: string } | null>(null);
+  const [emergencyStatus, setEmergencyStatus] = useState<"idle" | "saving" | "error">("idle");
   const [silentStage, setSilentStage] = useState(0);
   const [adminTab, setAdminTab] = useState<AdminTab>("overview");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -233,6 +249,8 @@ export default function Home() {
   const [dismissedOpportunities, setDismissedOpportunities] = useState<string[]>([]);
   const [jobView, setJobView] = useState<"active" | "upcoming" | "completed" | "quotes">("active");
   const [helpTopic, setHelpTopic] = useState("homeowners");
+  const [helpSearch, setHelpSearch] = useState("");
+  const [messageSearch, setMessageSearch] = useState("");
   const [verificationFiles, setVerificationFiles] = useState<string[]>([]);
   const [verificationTarget, setVerificationTarget] = useState("");
   const [operationsCases, setOperationsCases] = useState<OperationsCase[]>([]);
@@ -406,6 +424,19 @@ export default function Home() {
     return !query || [item.externalId, item.title, item.subject, item.summary, item.assignee].some((value) => value.toLowerCase().includes(query));
   }), [operationsCases, adminTab, operationStatusFilter, operationSearch]);
 
+  const filteredHelpFaqs = useMemo(() => helpFaqs.filter((item) => {
+    const matchesTopic = item.topic === helpTopic;
+    const query = helpSearch.trim().toLowerCase();
+    return matchesTopic && (!query || `${item.question} ${item.answer}`.toLowerCase().includes(query));
+  }), [helpTopic, helpSearch]);
+
+  const filteredConversations = useMemo(() => {
+    const query = messageSearch.trim().toLowerCase();
+    return conversations.filter((job) => !query || `${job.externalId} ${job.category} ${job.title} ${job.status}`.toLowerCase().includes(query));
+  }, [conversations, messageSearch]);
+
+  const visibleContractorJobs = useMemo(() => conversations.filter((job) => jobView === "active" ? job.status === "in_progress" : jobView === "upcoming" ? job.status === "booked" : jobView === "completed" ? job.status === "completed" : false), [conversations, jobView]);
+
   async function updateOperationsCase(updates: Partial<Pick<OperationsCase, "status" | "risk" | "assignee" | "resolution">>, includeNote = false) {
     if (!selectedOperationCase) return;
     setOperationsStatus("saving");
@@ -506,6 +537,40 @@ export default function Home() {
       go("matches");
     } catch {
       setSaveStatus("error");
+    }
+  }
+
+  async function submitEmergencyRequest() {
+    if (!emergencyConsent || emergencyDescription.trim().length < 10 || emergencyAddress.trim().length < 5) {
+      setEmergencyStatus("error");
+      return;
+    }
+    const emergencyCategory = emergencyType === "Active water leak" ? "Plumbing" : emergencyType === "No heat / HVAC" ? "HVAC" : emergencyType === "Electrical issue" ? "Electrical" : "Roofing";
+    setEmergencyStatus("saving");
+    try {
+      const response = await fetch("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category: emergencyCategory, title: emergencyType, description: `${emergencyDescription.trim()} Service address: ${emergencyAddress.trim()}`, size: "Emergency assessment required", timeline: "Immediate priority dispatch", budget: "Emergency rates accepted; confirm before extra work", postalCode: emergencyAddress.trim(), emergency: true }) });
+      if (!response.ok) throw new Error("Emergency request failed");
+      const data = (await response.json()) as { job: { id: number; externalId: string } };
+      setEmergencyJob(data.job);
+      setSavedRequestId(data.job.externalId);
+      setEmergencyStatus("idle");
+      setEmergencyStage(1);
+    } catch {
+      setEmergencyStatus("error");
+    }
+  }
+
+  async function updateEmergencyRequestStatus(status: "booked" | "cancelled") {
+    if (!emergencyJob) return;
+    setEmergencyStatus("saving");
+    try {
+      const response = await fetch(`/api/jobs/${emergencyJob.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
+      if (!response.ok) throw new Error("Emergency update failed");
+      setEmergencyStatus("idle");
+      if (status === "cancelled") { setEmergencyStage(0); setEmergencyJob(null); }
+      else setEmergencyStage(2);
+    } catch {
+      setEmergencyStatus("error");
     }
   }
 
@@ -1032,7 +1097,7 @@ export default function Home() {
 
       {view === "emergency" && (
         <section className="emergency-page" aria-label={`${emergencyType} emergency request`}>
-          {emergencyStage === 0 ? <div className="emergency-intake"><div className="emergency-copy"><span className="emergency-mark">!</span><p className="section-label">Priority dispatch</p><h1>Get the right help,<br /><em>right now.</em></h1><p>For urgent home-service problems—not police, fire or medical emergencies. JobLink alerts verified available professionals nearby.</p><div className="emergency-warning"><b>Immediate danger?</b><p>Call 911 or your local emergency service first.</p></div></div><div className="emergency-form"><p className="step-kicker">Emergency request</p><h2>What’s happening?</h2><div className="emergency-types">{[["PL","Active water leak"],["HV","No heat / HVAC"],["EL","Electrical issue"],["LK","Locked out"]].map(([code,label]) => <button type="button" key={label} className={emergencyType === label ? "selected" : ""} onClick={() => { setEmergencyType(label); showNotice(`${label} selected.`); }}><span>{code}</span>{label}</button>)}</div><label>Describe the situation<textarea rows={3} defaultValue="Water is leaking from a pipe under the kitchen sink. Main shutoff is accessible." /></label><label>Service address<input defaultValue="225 King Street W, Hamilton, ON" /></label><label className="emergency-consent"><input type="checkbox" defaultChecked /><span>✓</span>I agree to share my approximate location with matched emergency professionals.</label><button onClick={() => setEmergencyStage(1)}>Alert nearby emergency professionals →</button></div></div> : <div className="dispatch-live"><div className="dispatch-header"><span className="pulse-emergency"><i /></span><div><small>Priority dispatch active · ER-8421</small><h1>Help is responding.</h1><p>We alerted 6 verified emergency professionals within 12 km for: {emergencyType.toLowerCase()}.</p></div><button onClick={() => setEmergencyStage(0)}>Cancel request</button></div><div className="dispatch-grid"><div className="dispatch-map"><div className="road road-one"/><div className="road road-two"/><div className="road road-three"/><span className="dispatch-home">⌂</span><span className="dispatch-pro pro-a">HP</span><span className="dispatch-pro pro-b">JP</span><span className="dispatch-pro pro-c">CF</span><div className="dispatch-radius"/></div><aside><p className="aside-label">Best responder</p><div className="responder-head"><span>HP</span><div><h2>Harbour Home Response</h2><p>4.9 ★ · 97 Trust Score</p></div></div><div className="arrival-time"><small>Estimated arrival</small><b>18 min</b></div><dl><div><dt>Emergency callout</dt><dd>$185</dd></div><div><dt>Hourly rate after arrival</dt><dd>$145</dd></div><div><dt>Identity & insurance</dt><dd>Verified ✓</dd></div></dl><button onClick={() => setEmergencyStage(2)}>Confirm emergency responder →</button></aside></div>{emergencyStage === 2 && <div className="dispatch-confirmed"><span>✓</span><div><b>Harbour Home Response is on the way.</b><p>Track arrival and message the professional from this screen.</p></div><button onClick={() => go("tracking")}>Open live tracking →</button></div>}</div>}
+          {emergencyStage === 0 ? <div className="emergency-intake"><div className="emergency-copy"><span className="emergency-mark">!</span><p className="section-label">Priority dispatch</p><h1>Get the right help,<br /><em>right now.</em></h1><p>For urgent home-service problems—not police, fire or medical emergencies. JobLink alerts verified available professionals nearby.</p><div className="emergency-warning"><b>Immediate danger?</b><p>Call 911 or your local emergency service first.</p></div></div><div className="emergency-form"><p className="step-kicker">Emergency request</p><h2>What’s happening?</h2><div className="emergency-types">{[["PL","Active water leak"],["HV","No heat / HVAC"],["EL","Electrical issue"],["RF","Emergency roof damage"]].map(([code,label]) => <button type="button" key={label} className={emergencyType === label ? "selected" : ""} onClick={() => setEmergencyType(label)}><span>{code}</span>{label}</button>)}</div><label>Describe the situation<textarea rows={3} value={emergencyDescription} onChange={(event) => setEmergencyDescription(event.target.value)} /></label><label>Service address<input value={emergencyAddress} onChange={(event) => setEmergencyAddress(event.target.value)} /></label><label className="emergency-consent"><input type="checkbox" checked={emergencyConsent} onChange={(event) => setEmergencyConsent(event.target.checked)} /><span>✓</span>I agree to share my approximate location with matched emergency professionals.</label>{emergencyStatus === "error" && <p className="emergency-form-error">Enter the situation and address, then confirm location sharing.</p>}<button disabled={emergencyStatus === "saving"} onClick={() => void submitEmergencyRequest()}>{emergencyStatus === "saving" ? "Creating priority request…" : "Alert nearby emergency professionals →"}</button></div></div> : <div className="dispatch-live"><div className="dispatch-header"><span className="pulse-emergency"><i /></span><div><small>Priority dispatch active · {emergencyJob?.externalId ?? "Emergency"}</small><h1>Help is responding.</h1><p>Your request is saved. We alerted verified emergency professionals nearby for: {emergencyType.toLowerCase()}.</p></div><button disabled={emergencyStatus === "saving" || emergencyStage === 2} onClick={() => void updateEmergencyRequestStatus("cancelled")}>Cancel request</button></div><div className="dispatch-grid"><div className="dispatch-map"><div className="road road-one"/><div className="road road-two"/><div className="road road-three"/><span className="dispatch-home">⌂</span><span className="dispatch-pro pro-a">HP</span><span className="dispatch-pro pro-b">JP</span><span className="dispatch-pro pro-c">CF</span><div className="dispatch-radius"/></div><aside><p className="aside-label">Best responder</p><div className="responder-head"><span>HP</span><div><h2>Harbour Home Response</h2><p>4.9 ★ · 97 Trust Score</p></div></div><div className="arrival-time"><small>Estimated arrival</small><b>18 min</b></div><dl><div><dt>Emergency callout</dt><dd>$185</dd></div><div><dt>Hourly rate after arrival</dt><dd>$145</dd></div><div><dt>Identity & insurance</dt><dd>Verified ✓</dd></div></dl><button disabled={emergencyStatus === "saving" || emergencyStage === 2} onClick={() => void updateEmergencyRequestStatus("booked")}>{emergencyStage === 2 ? "Responder confirmed ✓" : emergencyStatus === "saving" ? "Confirming…" : "Confirm emergency responder →"}</button></aside></div>{emergencyStage === 2 && <div className="dispatch-confirmed"><span>✓</span><div><b>Harbour Home Response is on the way.</b><p>The booking and response timeline are saved to {emergencyJob?.externalId}.</p></div><button onClick={() => go("account")}>Open saved job →</button></div>}</div>}
         </section>
       )}
 
@@ -1114,10 +1179,10 @@ export default function Home() {
 
       {view === "help" && (
         <section className="help-page">
-          <div className="help-hero"><p className="step-kicker">JobLink support</p><h1>How can we help?</h1><label><span>⌕</span><input placeholder="Search jobs, payments, contractors…" /></label><p>Popular: changing a quote · contractor verification · payment protection</p></div>
+          <div className="help-hero"><p className="step-kicker">JobLink support</p><h1>How can we help?</h1><label><span>⌕</span><input value={helpSearch} onChange={(event) => setHelpSearch(event.target.value)} placeholder="Search jobs, payments, contractors…" /></label><p>Popular: changing a quote · contractor verification · payment protection</p></div>
           <div className="help-body">
-            <div className="help-categories"><button className={helpTopic === "homeowners" ? "selected" : ""} onClick={() => { setHelpTopic("homeowners"); showNotice("Showing homeowner help topics."); }}><span>HM</span><b>For homeowners</b><small>Requests, quotes and hiring</small></button><button className={helpTopic === "professionals" ? "selected" : ""} onClick={() => { setHelpTopic("professionals"); showNotice("Showing professional help topics."); }}><span>PR</span><b>For professionals</b><small>Matching, quotes and plans</small></button><button className={helpTopic === "payments" ? "selected" : ""} onClick={() => { setHelpTopic("payments"); showNotice("Showing payment help topics."); }}><span>PY</span><b>Payments</b><small>Deposits, payouts and refunds</small></button><button className={helpTopic === "trust" ? "selected" : ""} onClick={() => { setHelpTopic("trust"); showNotice("Showing trust and safety help topics."); }}><span>TS</span><b>Trust & safety</b><small>Verification and protection</small></button></div>
-            <div className="help-layout"><div className="faq-list"><p className="section-label">Frequently asked</p><h2>Quick answers.</h2><details open><summary>Does posting a job cost anything?<span>+</span></summary><p>No. Homeowners can post requests and compare matched quotes for free. A booking and protection fee only applies when a job is paid through JobLink.</p></details><details><summary>How many contractors see my request?<span>+</span></summary><p>Only qualified professionals matching the service, location, availability and trust requirements are notified. Customers see no more than five top matches.</p></details><details><summary>When does the contractor get paid?<span>+</span></summary><p>Funds are released according to the milestones accepted in the contract. Changes require approval before they can affect the total.</p></details><details><summary>What happens if something goes wrong?<span>+</span></summary><p>Keep communication and payments inside JobLink. Our support team can review the quote, contract, messages, progress updates and payment record.</p></details><details><summary>Do contractors pay for leads?<span>+</span></summary><p>No. Contractors subscribe to the business platform. JobLink does not sell individual customer contact details or charge per lead.</p></details></div>
+            <div className="help-categories"><button className={helpTopic === "homeowners" ? "selected" : ""} onClick={() => setHelpTopic("homeowners")}><span>HM</span><b>For homeowners</b><small>Requests, quotes and hiring</small></button><button className={helpTopic === "professionals" ? "selected" : ""} onClick={() => setHelpTopic("professionals")}><span>PR</span><b>For professionals</b><small>Matching, quotes and plans</small></button><button className={helpTopic === "payments" ? "selected" : ""} onClick={() => setHelpTopic("payments")}><span>PY</span><b>Payments</b><small>Deposits, payouts and refunds</small></button><button className={helpTopic === "trust" ? "selected" : ""} onClick={() => setHelpTopic("trust")}><span>TS</span><b>Trust & safety</b><small>Verification and protection</small></button></div>
+            <div className="help-layout"><div className="faq-list"><p className="section-label">Frequently asked</p><h2>Quick answers.</h2>{filteredHelpFaqs.length ? filteredHelpFaqs.map((item, index) => <details key={item.question} open={index === 0}><summary>{item.question}<span>+</span></summary><p>{item.answer}</p></details>) : <div className="help-no-results"><b>No help articles found.</b><p>Try different words or send a message to support.</p><button onClick={() => setHelpSearch("")}>Clear search</button></div>}</div>
               <aside className="contact-card"><p className="aside-label">Still need help?</p><h3>Talk to a real person.</h3><p>Send a message with your job number. A support specialist will reply in the app.</p>{supportStatus === "sent" ? <div className="support-success"><span>✓</span><b>Request {supportReference} received</b><small>We’ll reply within 2 business hours.</small></div> : <form onSubmit={submitSupportRequest}><label>Topic<select name="topic" defaultValue="job"><option value="job">A job or contractor</option><option value="payment">Payment or invoice</option><option value="account">Account or verification</option><option value="safety">Trust and safety</option><option value="general">Something else</option></select></label><label>Job number (optional)<input name="jobExternalId" placeholder="JL-2048" /></label><label>How can we help?<textarea name="message" rows={4} minLength={10} required placeholder="Tell us what happened…" /></label>{supportStatus === "error" && <p className="support-error">We couldn’t save your request. Please try again.</p>}<button type="submit" disabled={supportStatus === "sending"}>{supportStatus === "sending" ? "Sending…" : "Send to support →"}</button></form>}<div className="emergency-help"><b>Immediate safety issue?</b><p>Call emergency services first. Then contact JobLink safety at 1-800-JOBLINK.</p></div></aside></div>
           </div>
         </section>
@@ -1205,11 +1270,12 @@ export default function Home() {
 
           {proTab === "jobs" && (
             <div className="pro-page">
-              <div className="pro-page-heading"><div><p className="step-kicker">Operations</p><h1>Jobs and schedule.</h1><p>Everything booked, underway and waiting for payment.</p></div><button className="primary-action" onClick={() => showNotice("Off-platform job import is ready for your next calendar connection.")}>+ Add off-platform job</button></div>
-              <div className="job-tabs"><button className={jobView === "active" ? "selected" : ""} onClick={() => setJobView("active")}>Active <span>3</span></button><button className={jobView === "upcoming" ? "selected" : ""} onClick={() => setJobView("upcoming")}>Upcoming <span>4</span></button><button className={jobView === "completed" ? "selected" : ""} onClick={() => setJobView("completed")}>Completed</button><button className={jobView === "quotes" ? "selected" : ""} onClick={() => setJobView("quotes")}>Quotes <span>4</span></button></div>
+              <div className="pro-page-heading"><div><p className="step-kicker">Operations</p><h1>Jobs and schedule.</h1><p>Every JobLink booking, progress update, quote and completed record in one place.</p></div></div>
+              <div className="job-tabs"><button className={jobView === "active" ? "selected" : ""} onClick={() => setJobView("active")}>Active <span>{conversations.filter((job) => job.status === "in_progress").length}</span></button><button className={jobView === "upcoming" ? "selected" : ""} onClick={() => setJobView("upcoming")}>Upcoming <span>{conversations.filter((job) => job.status === "booked").length}</span></button><button className={jobView === "completed" ? "selected" : ""} onClick={() => setJobView("completed")}>Completed <span>{conversations.filter((job) => job.status === "completed").length}</span></button><button className={jobView === "quotes" ? "selected" : ""} onClick={() => setJobView("quotes")}>Quotes <span>{quoteSent ? 1 : 0}</span></button></div>
               <div className="job-view-summary"><b>{jobView === "active" ? "Active work" : jobView === "upcoming" ? "Upcoming schedule" : jobView === "completed" ? "Completed jobs" : "Quotes awaiting a decision"}</b><span>{jobView === "active" ? "Live milestones and customer communication" : jobView === "upcoming" ? "Your next four confirmed bookings" : jobView === "completed" ? "Completed work and warranty records" : "Four quotes are still open"}</span></div>
-              {conversations.filter((job) => ["booked", "in_progress", "completed"].includes(job.status)).length > 0 && <div className="live-operations"><div className="pro-panel-head"><div><p className="aside-label">Live JobLink jobs</p><h2>Update customer progress</h2></div><span>Every update is timestamped</span></div>{progressError && <p className="progress-error">{progressError}</p>}{conversations.filter((job) => ["booked", "in_progress", "completed"].includes(job.status)).map((job) => <article key={job.id}><div className="live-job-heading"><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status.replaceAll("_", " ")}</small><h3>{job.title}</h3></div><div className="live-job-actions"><button onClick={() => setLiveChangeOrderJob(job)}>+ Change order</button><button onClick={() => openJobRoom(job)}>Job Room ↗</button></div></div><div className="milestone-actions">{([['crew_dispatched','Crew leaving'],['materials_collected','Materials picked up'],['work_started','Started'],['halfway','50% complete'],['cleaning','Cleaning'],['finished','Finished']] as const).map(([stage,label]) => <button key={stage} disabled={progressUpdatingId === job.id || job.status === "completed"} onClick={() => updateJobProgress(job, stage)}>{progressUpdatingId === job.id ? "Updating…" : label}</button>)}</div></article>)}</div>}
-              <div className="jobs-board">
+              {jobView !== "quotes" && visibleContractorJobs.length > 0 && <div className="live-operations"><div className="pro-panel-head"><div><p className="aside-label">Live JobLink jobs</p><h2>{jobView === "completed" ? "Completed job records" : "Update customer progress"}</h2></div><span>Every update is timestamped</span></div>{progressError && <p className="progress-error">{progressError}</p>}{visibleContractorJobs.map((job) => <article key={job.id}><div className="live-job-heading"><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status.replaceAll("_", " ")}</small><h3>{job.title}</h3></div><div className="live-job-actions"><button disabled={job.status === "completed"} onClick={() => setLiveChangeOrderJob(job)}>+ Change order</button><button onClick={() => openJobRoom(job)}>Job Room ↗</button></div></div>{job.status !== "completed" && <div className="milestone-actions">{([['crew_dispatched','Crew leaving'],['materials_collected','Materials picked up'],['work_started','Started'],['halfway','50% complete'],['cleaning','Cleaning'],['finished','Finished']] as const).map(([stage,label]) => <button key={stage} disabled={progressUpdatingId === job.id} onClick={() => updateJobProgress(job, stage)}>{progressUpdatingId === job.id ? "Updating…" : label}</button>)}</div>}</article>)}</div>}
+              <div className="contractor-job-records">{jobView === "quotes" ? quoteSent ? <article><span>QT</span><div><small>{quoteSent} · Quote submitted</small><h3>Your quote is awaiting a customer decision</h3><p>Open Opportunities to review other matched work.</p></div><button onClick={() => setProTab("opportunities")}>View opportunities →</button></article> : <div className="contractor-jobs-empty"><b>No submitted quotes waiting.</b><p>Build a quote from an available opportunity.</p><button onClick={() => setProTab("opportunities")}>Find opportunities</button></div> : visibleContractorJobs.length ? visibleContractorJobs.map((job) => <article key={job.id}><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status.replaceAll("_", " ")}</small><h3>{job.title}</h3><p>{job.category} · {job.budget}</p></div><button onClick={() => openJobRoom(job)}>Open Job Room →</button></article>) : <div className="contractor-jobs-empty"><b>No {jobView} jobs.</b><p>Jobs move here automatically as customers accept quotes and work progresses.</p></div>}</div>
+              <div className="jobs-board" aria-hidden="true" style={{ display: "none" }}>
                 <article className="active-job-feature">
                   <div className="active-job-top"><span className="status-live">In progress</span><small>JL-2048</small></div><h2>Basement drywall repair</h2><p>Niall L. · West Hamilton</p>
                   <div className="progress-line"><i /></div><div className="progress-labels"><span>Started 8:31 AM</span><b>45% complete</b><span>Est. finish 4:30 PM</span></div>
@@ -1232,11 +1298,9 @@ export default function Home() {
               <div className="pro-page-heading"><div><p className="step-kicker">Messages</p><h1>Customer conversations.</h1></div></div>
               <div className="inbox-layout">
                 <aside className="conversation-list">
-                  <label><span>⌕</span><input placeholder="Search messages" /></label>
-                  {conversations.map((job) => <button key={job.id} className="live-conversation" onClick={() => openJobRoom(job)}><span className="person-avatar orange">{job.category.slice(0,2).toUpperCase()}</span><div><b>{job.title}</b><p>Open the live Job Room</p><small>{job.externalId} · {job.status}</small></div><em>Live</em></button>)}
-                  <button className="selected" onClick={() => showNotice("Niall’s conversation is open.")}><span className="person-avatar orange">NL</span><div><b>Niall L.</b><p>Great, see you shortly.</p><small>Basement drywall · Today</small></div><em>2m</em></button>
-                  <button onClick={() => showNotice("Melissa’s conversation is selected.")}><span className="person-avatar green">MR</span><div><b>Melissa R.</b><p>I’ve added two more photos.</p><small>Ceiling patch · Tomorrow</small></div><em>1h</em></button>
-                  <button onClick={() => showNotice("Steve’s conversation is selected.")}><span className="person-avatar blue">SK</span><div><b>Steve K.</b><p>Friday at 7:30 works.</p><small>Garage · Friday</small></div><em>4h</em></button>
+                  <label><span>⌕</span><input value={messageSearch} onChange={(event) => setMessageSearch(event.target.value)} placeholder="Search messages" /></label>
+                  {filteredConversations.map((job) => <button key={job.id} className="live-conversation" onClick={() => openJobRoom(job)}><span className="person-avatar orange">{job.category.slice(0,2).toUpperCase()}</span><div><b>{job.title}</b><p>Open the live Job Room</p><small>{job.externalId} · {job.status}</small></div><em>Live</em></button>)}
+                  {filteredConversations.length === 0 && <div className="conversation-empty"><b>{messageSearch ? "No conversations match" : "No customer conversations yet"}</b><p>{messageSearch ? "Try another job number or service." : "Accepted jobs will appear here with a private Job Room."}</p>{messageSearch && <button onClick={() => setMessageSearch("")}>Clear search</button>}</div>}
                 </aside>
                 <div className="chat-panel">
                   <div className="chat-head"><div><span className="person-avatar orange">NL</span><div><b>Niall L.</b><small>Basement drywall repair · JL-2048</small></div></div><button onClick={() => setProTab("jobs")}>Job details</button></div>
