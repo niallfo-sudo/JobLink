@@ -192,3 +192,19 @@ export const supportRequests = sqliteTable("support_requests", {
   index("support_requests_requester_created_idx").on(table.requesterEmail, table.createdAt),
   index("support_requests_status_created_idx").on(table.status, table.createdAt),
 ]);
+
+export const jobAttachments = sqliteTable("job_attachments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobId: integer("job_id").notNull().references(() => jobRequests.id, { onDelete: "cascade" }),
+  ownerEmail: text("owner_email").notNull(),
+  storageKey: text("storage_key").notNull(),
+  filename: text("filename").notNull(),
+  contentType: text("content_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  kind: text("kind").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("job_attachments_storage_key_unique").on(table.storageKey),
+  index("job_attachments_job_created_idx").on(table.jobId, table.createdAt),
+  index("job_attachments_owner_idx").on(table.ownerEmail),
+]);

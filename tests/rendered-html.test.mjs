@@ -37,3 +37,23 @@ test("persists authenticated support requests with JobLink references", async ()
   assert.match(page, /fetch\("\/api\/support"/);
   assert.match(page, /Request \{supportReference\} received/);
 });
+
+test("stores private job media in R2 with D1 ownership metadata", async () => {
+  const [uploadRoute, downloadRoute, schema, hosting, page] = await Promise.all([
+    source("../app/api/jobs/[id]/attachments/route.ts"),
+    source("../app/api/jobs/[id]/attachments/[attachmentId]/route.ts"),
+    source("../db/schema.ts"),
+    source("../.openai/hosting.json"),
+    source("../app/page.tsx"),
+  ]);
+
+  assert.match(uploadRoute, /getChatGPTUser/);
+  assert.match(uploadRoute, /maxFileBytes = 25 \* 1024 \* 1024/);
+  assert.match(uploadRoute, /UPLOADS/);
+  assert.match(downloadRoute, /Content-Disposition/);
+  assert.match(downloadRoute, /X-Content-Type-Options/);
+  assert.match(schema, /sqliteTable\("job_attachments"/);
+  assert.match(hosting, /"r2": "UPLOADS"/);
+  assert.match(page, /chooseRequestFiles/);
+  assert.match(page, /job-media-tray/);
+});

@@ -17,6 +17,7 @@ type GeneratedDocument = { id: number; externalId: string; jobTitle: string; job
 type ChangeOrderRecord = { id: number; externalId: string; reason: string; description: string; amountCents: number; scheduleImpact: string; status: string; contractorName: string; decisionName?: string | null };
 type VerifiedReview = { id: number; workmanship: number; communication: number; punctuality: number; cleanliness: number; averageScore: number; comment: string };
 type AppNotification = { id: number; jobId: number | null; notificationType: string; title: string; body: string; readAt: string | number | null; createdAt: string | number };
+type JobAttachment = { id: number; filename: string; contentType: string; sizeBytes: number; kind: "image" | "video"; url: string; createdAt: string | number };
 
 const categories = [
   ["Drywall", "DW"],
@@ -153,6 +154,9 @@ export default function Home() {
   const [reputation, setReputation] = useState<{ verifiedReviewCount: number; averageStars: number | null; verifiedReviewScore: number | null }>({ verifiedReviewCount: 0, averageStars: null, verifiedReviewScore: null });
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [requestFiles, setRequestFiles] = useState<File[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [roomAttachments, setRoomAttachments] = useState<JobAttachment[]>([]);
 
   const jobBrief = useMemo(
     () =>
@@ -274,6 +278,16 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function chooseRequestFiles(files: FileList | null) {
+    const selected = Array.from(files ?? []);
+    const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "video/mp4", "video/quicktime", "video/webm"]);
+    if (selected.length > 5) return setUploadError("Choose up to 5 photos or videos.");
+    if (selected.some((file) => !allowed.has(file.type))) return setUploadError("Use JPG, PNG, WebP, HEIC, MP4, MOV or WebM files.");
+    if (selected.some((file) => file.size > 25 * 1024 * 1024) || selected.reduce((sum, file) => sum + file.size, 0) > 50 * 1024 * 1024) return setUploadError("Files are limited to 25 MB each and 50 MB total.");
+    setRequestFiles(selected);
+    setUploadError(null);
+  }
+
   async function saveJobRequest() {
     setSaveStatus("saving");
     try {
@@ -283,8 +297,15 @@ export default function Home() {
         body: JSON.stringify({ category, title: scope, description: jobBrief, size, timeline, budget, postalCode: "L8P 1A1", emergency: false }),
       });
       if (!response.ok) throw new Error("Unable to save request");
-      const data = (await response.json()) as { job: { externalId: string } };
+      const data = (await response.json()) as { job: { id: number; externalId: string } };
       setSavedRequestId(data.job.externalId);
+      if (requestFiles.length) {
+        const form = new FormData();
+        requestFiles.forEach((file) => form.append("files", file));
+        const uploadResponse = await fetch(`/api/jobs/${data.job.id}/attachments`, { method: "POST", body: form });
+        if (!uploadResponse.ok) setUploadError("Your request was posted, but the files did not finish uploading.");
+        else { setRequestFiles([]); setUploadError(null); }
+      }
       setSaveStatus("saved");
       go("matches");
     } catch {
@@ -361,11 +382,12 @@ export default function Home() {
     try {
       const response = await fetch(`/api/jobs/${job.id}`);
       if (!response.ok) throw new Error("Unable to load job room");
-      const data = (await response.json()) as { messages?: RoomMessage[]; events?: RoomEvent[]; changeOrders?: ChangeOrderRecord[]; review?: VerifiedReview | null };
+      const data = (await response.json()) as { messages?: RoomMessage[]; events?: RoomEvent[]; changeOrders?: ChangeOrderRecord[]; review?: VerifiedReview | null; attachments?: JobAttachment[] };
       setRoomMessages(data.messages ?? []);
       setRoomEvents(data.events ?? []);
       setRoomChangeOrders(data.changeOrders ?? []);
       setRoomReview(data.review ?? null);
+      setRoomAttachments(data.attachments ?? []);
       setRoomStatus("idle");
     } catch {
       setRoomStatus("error");
@@ -665,7 +687,9 @@ export default function Home() {
                 <div className="option-grid">
                   {["Materials", "Site protection", "Cleanup", "Disposal"].map((option) => <label key={option} className="check-option"><input type="checkbox" defaultChecked /><span>✓</span>{option}</label>)}
                 </div>
-                <button className="upload-box" type="button"><span>+</span><b>Add photos or a video</b><small>Optional, but helps improve quote accuracy</small></button>
+                <label className="upload-box"><input type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,video/mp4,video/quicktime,video/webm" onChange={(event) => chooseRequestFiles(event.target.files)} /><span>+</span><b>{requestFiles.length ? `${requestFiles.length} file${requestFiles.length === 1 ? "" : "s"} ready` : "Add photos or a video"}</b><small>Up to 5 files · 25 MB each · 50 MB total</small></label>
+                {requestFiles.length > 0 && <div className="selected-upload-list">{requestFiles.map((file, index) => <div key={`${file.name}-${file.size}`}><span>{file.type.startsWith("video/") ? "VID" : "IMG"}</span><p><b>{file.name}</b><small>{(file.size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setRequestFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>)}</div>}
+                {uploadError && <p className="upload-error">{uploadError}</p>}
               </>}
               {step === 2 && <>
                 <p className="step-kicker">Step 3 of 4</p>
@@ -687,7 +711,7 @@ export default function Home() {
                   <div className="brief-head"><span>{category}</span><button type="button" onClick={() => setStep(0)}>Edit</button></div>
                   <h3>{scope}</h3>
                   <p>{jobBrief}</p>
-                  <div className="brief-tags"><span>◷ {timeline}</span><span>⌂ Hamilton, ON</span><span>◎ {budget}</span></div>
+                  <div className="brief-tags"><span>◷ {timeline}</span><span>⌂ Hamilton, ON</span><span>◎ {budget}</span>{requestFiles.length > 0 && <span>▣ {requestFiles.length} visual{requestFiles.length === 1 ? "" : "s"}</span>}</div>
                 </div>
                 <div className="privacy-note"><span>✓</span><p><b>Your contact details stay private.</b> Pros can only message through JobLink until you choose one.</p></div>
               </>}
@@ -713,7 +737,7 @@ export default function Home() {
       {view === "matches" && (
         <section className="app-shell matches-shell">
           <div className="dashboard-heading">
-            <div><p className="step-kicker">Request {savedRequestId ?? "JL-2048"}</p><h1>Your best matches.</h1><p>We ranked 12 available pros. Here are the top 3 for your drywall repair.</p>{savedRequestId && <span className="persisted-note">✓ Saved to your JobLink account</span>}</div>
+            <div><p className="step-kicker">Request {savedRequestId ?? "JL-2048"}</p><h1>Your best matches.</h1><p>We ranked 12 available pros. Here are the top 3 for your drywall repair.</p>{savedRequestId && <span className="persisted-note">✓ Saved to your JobLink account</span>}{uploadError && <span className="persisted-note upload-warning">! {uploadError}</span>}</div>
             <div className="matching-status"><span><i /></span><div><b>Quotes are live</b><small>Last updated just now</small></div></div>
           </div>
           <div className="job-summary-strip"><span><b>Drywall repair</b>Finished basement · Hamilton</span><span><b>Target</b>Before Friday</span><span><b>Budget</b>$2,000–$2,500</span><button onClick={() => { setStep(3); go("request"); }}>View request</button></div>
@@ -1058,6 +1082,8 @@ export default function Home() {
       {liveChangeOrderJob && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="live-change-title"><button className="overlay-close" onClick={() => setLiveChangeOrderJob(null)} aria-label="Close change order">×</button><div className="quote-drawer change-drawer"><p className="step-kicker">{liveChangeOrderJob.externalId} · Change order</p><h2 id="live-change-title">Document extra work.</h2><p className="quote-job-title">{liveChangeOrderJob.title}</p><div className="change-alert"><span>!</span><p>The homeowner must approve this change before additional work begins.</p></div><label className="field-label">Reason<input value={changeReason} onChange={(event) => setChangeReason(event.target.value)} /></label><label className="field-label">Additional work<textarea rows={4} value={changeDescription} onChange={(event) => setChangeDescription(event.target.value)} /></label><label className="field-label">Additional amount<div className="price-input"><span>$</span><input value={changeAmount} onChange={(event) => setChangeAmount(event.target.value)} inputMode="decimal" /><em>CAD</em></div></label><label className="field-label">Schedule impact<select value={changeSchedule} onChange={(event) => setChangeSchedule(event.target.value)}><option>Adds approximately 2 hours</option><option>No schedule impact</option><option>Adds 1 business day</option></select></label>{changeStatus === "error" && <p className="quote-submit-error">The change order could not be sent.</p>}<button className="send-quote" disabled={changeStatus === "saving"} onClick={submitLiveChangeOrder}>{changeStatus === "saving" ? "Sending…" : `Send $${Number(changeAmount || 0).toLocaleString()} change order →`}</button></div></div>}
 
       {roomJob && <div className="job-room-overlay" role="dialog" aria-modal="true" aria-labelledby="job-room-title"><button className="job-room-close" aria-label="Close Job Room" onClick={() => setRoomJob(null)}>×</button><div className="job-room"><header><div><p className="step-kicker">Shared Job Room · {roomJob.externalId}</p><h2 id="job-room-title">{roomJob.title}</h2><p>{roomJob.category} · {roomJob.status}</p></div><span><i /> Private to this job</span></header>{roomStatus === "loading" ? <div className="job-room-loading">Opening your Job Room…</div> : roomStatus === "error" && !roomMessages.length ? <div className="job-room-loading error">The Job Room could not be loaded. Please close it and try again.</div> : <div className="job-room-grid"><aside><p className="aside-label">Job activity</p><div className="room-timeline">{roomEvents.map((event, index) => <article key={event.id}><span>{index + 1}</span><div><b>{event.label}</b><small>{new Date(event.createdAt).toLocaleString()}</small></div></article>)}</div>{roomChangeOrders.length > 0 && <div className="room-change-orders"><p className="aside-label">Change orders</p>{roomChangeOrders.map((order) => <article key={order.id}><div><small>{order.externalId} · {order.status}</small><b>{order.reason}</b><p>{order.description}</p><strong>+${(order.amountCents / 100).toLocaleString()}</strong></div>{order.status === "pending" && <div><button onClick={() => decideChangeOrder(order, "declined")}>Decline</button><button onClick={() => decideChangeOrder(order, "approved")}>Approve & sign</button></div>}</article>)}</div>}{roomJob.status === "completed" && <div className="verified-review-box"><p className="aside-label">Verified job review</p>{roomReview ? <div className="review-complete"><b>{(roomReview.averageScore / 100).toFixed(1)} ★</b><span>Verified completed job</span><p>{roomReview.comment || "Review submitted without a written comment."}</p></div> : <><div className="review-dimensions">{(["workmanship","communication","punctuality","cleanliness"] as const).map((dimension) => <div key={dimension}><span>{dimension}</span><select value={reviewScores[dimension]} onChange={(event) => setReviewScores((current) => ({ ...current, [dimension]: Number(event.target.value) }))}><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="3">3 · Average</option><option value="2">2 · Poor</option><option value="1">1 · Very poor</option></select></div>)}</div><textarea rows={3} value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} placeholder="What should future customers know?" />{reviewStatus === "error" && <p className="review-error">The review could not be submitted.</p>}<button disabled={reviewStatus === "saving"} onClick={submitVerifiedReview}>{reviewStatus === "saving" ? "Submitting…" : "Submit verified review"}</button></>}</div>}</aside><section><div className="room-chat-head"><div><span>JD</span><div><b>Job conversation</b><small>Keep details and decisions documented here</small></div></div></div><div className="room-chat-body">{roomMessages.length === 0 && <div className="room-empty"><span>✦</span><b>Start the conversation</b><p>Messages stay attached to this job for both sides.</p></div>}{roomMessages.map((message) => <div className={`room-message ${message.mine ? "mine" : "theirs"}`} key={message.id}><p>{message.body}</p><small>{new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small></div>)}</div><form className="room-composer" onSubmit={sendRoomMessage}><input value={roomText} onChange={(event) => setRoomText(event.target.value)} placeholder="Write a message about this job…" aria-label="Job message" /><button disabled={roomStatus === "sending" || !roomText.trim()}>{roomStatus === "sending" ? "Sending…" : "Send →"}</button></form></section></div>}</div></div>}
+
+      {roomJob && roomAttachments.length > 0 && <aside className="job-media-tray" aria-label="Job photos and videos"><p className="aside-label">Job photos & video</p><div>{roomAttachments.map((attachment) => <a key={attachment.id} href={attachment.url} target="_blank" rel="noreferrer"><span>{attachment.kind === "video" ? "VID" : "IMG"}</span><p><b>{attachment.filename}</b><small>{(attachment.sizeBytes / 1024 / 1024).toFixed(1)} MB</small></p><em>↗</em></a>)}</div></aside>}
 
       <footer>
         <div className="brand footer-brand"><span className="brand-mark"><i /></span><span>JobLink</span></div>
