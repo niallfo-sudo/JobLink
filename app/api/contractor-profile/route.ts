@@ -4,6 +4,7 @@ import { contractorProfiles, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 
 const plans = new Set(["starter", "growth", "pro"]);
+const serviceCategories = new Set(["Drywall", "Roofing", "Painting", "Plumbing", "Electrical", "HVAC", "Junk removal", "Landscaping", "Snow removal", "Moving", "Cleaning", "Carpentry", "Flooring", "General contracting", "Appliance repair", "Locksmith", "Pest control", "Auto detailing", "Dog walking"]);
 
 export async function GET() {
   const user = await getChatGPTUser();
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
     const businessName = payload.businessName?.trim() ?? "";
     const primaryService = payload.primaryService?.trim() ?? "";
     const plan = payload.plan?.toLowerCase() ?? "growth";
-    if (!businessName || !primaryService || !plans.has(plan)) return Response.json({ error: "Business name, primary service and a valid plan are required" }, { status: 400 });
+    if (!businessName || !serviceCategories.has(primaryService) || !plans.has(plan)) return Response.json({ error: "Business name, primary service and a valid plan are required" }, { status: 400 });
     const radius = Math.min(100, Math.max(5, Number(payload.serviceRadiusKm) || 30));
     const teamSize = Math.min(500, Math.max(1, Number(payload.teamSize) || 1));
     const db = getDb();
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
     const values = {
       ownerEmail: user.email, businessName, legalName: payload.legalName?.trim() || businessName,
       phone: payload.phone?.trim() || "", about: payload.about?.trim() || "", primaryService,
-      services: JSON.stringify((payload.services ?? [primaryService]).slice(0, 20)), homeBase: payload.homeBase?.trim() || "Hamilton, Ontario",
+      services: JSON.stringify(Array.from(new Set([primaryService, ...(payload.services ?? [])].map((service) => service.trim()).filter(Boolean))).slice(0, 20)), homeBase: payload.homeBase?.trim() || "Hamilton, Ontario",
       serviceRadiusKm: radius, teamSize, emergencyAvailable: Boolean(payload.emergencyAvailable),
       acceptingWork: payload.acceptingWork !== false, plan, verificationStatus: "pending_review", updatedAt: new Date(),
     };

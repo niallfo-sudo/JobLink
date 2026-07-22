@@ -30,6 +30,28 @@ const categories = [
   ["Junk removal", "JR"],
 ] as const;
 
+const contractorServiceCatalog: Record<string, string[]> = {
+  Drywall: ["Drywall repair", "Drywall installation", "Taping & finishing", "Plaster repair", "Texture matching", "Insulation"],
+  Roofing: ["Roof repair", "Roof replacement", "Leak diagnosis", "Shingle installation", "Flat roofing", "Eavestroughs"],
+  Painting: ["Interior painting", "Exterior painting", "Cabinet refinishing", "Deck staining", "Commercial painting", "Wallpaper removal"],
+  Plumbing: ["Leak repair", "Fixture installation", "Drain cleaning", "Water heaters", "Sump pumps", "Emergency plumbing"],
+  Electrical: ["Electrical repair", "Lighting installation", "Panel upgrades", "EV chargers", "Home rewiring", "Emergency electrical"],
+  HVAC: ["Furnace repair", "Air conditioning", "Heat pumps", "Ductwork", "Maintenance", "Emergency HVAC"],
+  "Junk removal": ["Household junk", "Construction debris", "Appliance removal", "Estate cleanout", "Yard waste", "Commercial cleanup"],
+  Landscaping: ["Lawn care", "Garden maintenance", "Interlock", "Fencing", "Tree and shrub care", "Seasonal cleanup"],
+  "Snow removal": ["Driveway clearing", "Walkway clearing", "Salting", "Commercial lots", "Seasonal contracts", "Emergency clearing"],
+  Moving: ["Local moving", "Long-distance moving", "Packing", "Furniture delivery", "Office moving", "Heavy-item moving"],
+  Cleaning: ["Home cleaning", "Deep cleaning", "Move-in cleaning", "Post-construction cleaning", "Office cleaning", "Carpet cleaning"],
+  Carpentry: ["Finish carpentry", "Framing", "Decks", "Cabinetry", "Doors and trim", "Custom woodwork"],
+  Flooring: ["Hardwood", "Laminate", "Vinyl plank", "Tile", "Carpet", "Floor repair"],
+  "General contracting": ["Renovations", "Basements", "Kitchens", "Bathrooms", "Additions", "Project management"],
+  "Appliance repair": ["Refrigerators", "Washers and dryers", "Dishwashers", "Ovens", "Microwaves", "Installation"],
+  Locksmith: ["Lockouts", "Lock replacement", "Rekeying", "Smart locks", "Commercial locks", "Emergency locksmith"],
+  "Pest control": ["Rodents", "Insects", "Wildlife", "Bed bugs", "Preventive treatment", "Commercial pest control"],
+  "Auto detailing": ["Interior detailing", "Exterior detailing", "Paint correction", "Ceramic coating", "Fleet detailing", "Mobile detailing"],
+  "Dog walking": ["Scheduled walks", "Drop-in visits", "Pet sitting", "Puppy visits", "Senior pet care", "Group walks"],
+};
+
 const contractors = [
   {
     initials: "NB",
@@ -103,8 +125,6 @@ export default function Home() {
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [supportStatus, setSupportStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [supportReference, setSupportReference] = useState("");
-  const [negotiating, setNegotiating] = useState(false);
-  const [negotiated, setNegotiated] = useState(false);
   const [changeOrderOpen, setChangeOrderOpen] = useState(false);
   const [changeOrderSent, setChangeOrderSent] = useState(false);
   const [emergencyStage, setEmergencyStage] = useState(0);
@@ -157,12 +177,39 @@ export default function Home() {
   const [requestFiles, setRequestFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [roomAttachments, setRoomAttachments] = useState<JobAttachment[]>([]);
+  const [uiNotice, setUiNotice] = useState<string | null>(null);
+  const [selectedProfile, setSelectedProfile] = useState<(typeof contractors)[number] | null>(null);
+  const [emergencyType, setEmergencyType] = useState("Active water leak");
+  const [opportunitySort, setOpportunitySort] = useState<"match" | "nearest" | "newest">("match");
+  const [opportunityRadius, setOpportunityRadius] = useState(30);
+  const [dismissedOpportunities, setDismissedOpportunities] = useState<string[]>([]);
+  const [jobView, setJobView] = useState<"active" | "upcoming" | "completed" | "quotes">("active");
+  const [helpTopic, setHelpTopic] = useState("homeowners");
+  const [verificationFiles, setVerificationFiles] = useState<string[]>([]);
+  const [verificationTarget, setVerificationTarget] = useState("");
 
   const jobBrief = useMemo(
     () =>
       `Looking for an experienced ${category.toLowerCase()} contractor to ${scope.toLowerCase()}. Scope is approximately ${size.toLowerCase()} and includes protection, materials, finishing and cleanup. Customer prefers completion ${timeline.toLowerCase()} with a target budget of ${budget}.`,
     [category, scope, size, timeline, budget],
   );
+
+  function showNotice(message: string) {
+    setUiNotice(message);
+    window.setTimeout(() => setUiNotice((current) => current === message ? null : current), 3200);
+  }
+
+  function openActiveJobRoom() {
+    const job = conversations.find((item) => ["booked", "in_progress"].includes(item.status)) ?? persistedJobs.find((item) => ["booked", "in_progress"].includes(item.status));
+    if (job) void openJobRoom(job);
+    else showNotice("Your active Job Room will appear here once a live booking is available.");
+  }
+
+  function openDocument(documentType: string) {
+    const document = generatedDocuments.find((item) => item.documentType === documentType);
+    if (document) window.open(`/api/documents/${document.id}`, "_blank", "noopener,noreferrer");
+    else showNotice("This document will be generated when a live quote is accepted.");
+  }
 
   useEffect(() => {
     if (view !== "account") return;
@@ -250,8 +297,18 @@ export default function Home() {
 
   const availableOpportunities = useMemo(() => {
     const liveIds = new Set(liveOpportunities.map((job) => job.id));
-    return [...liveOpportunities, ...opportunities.filter((job) => !liveIds.has(job.id))];
-  }, [liveOpportunities]);
+    const enabledServices = [primaryService, ...selectedServices].map((service) => service.toLowerCase());
+    const matchesService = (job: Opportunity) => enabledServices.some((service) => service.includes(job.service.toLowerCase()) || job.service.toLowerCase().includes(service));
+    const combined = [...liveOpportunities, ...opportunities.filter((job) => !liveIds.has(job.id))]
+      .filter((job) => !dismissedOpportunities.includes(job.id) && matchesService(job))
+      .filter((job) => job.distance === "Within service area" || Number.parseFloat(job.distance) <= opportunityRadius);
+    return [...combined].sort((a, b) => opportunitySort === "nearest" ? Number.parseFloat(a.distance) - Number.parseFloat(b.distance) : opportunitySort === "newest" ? combined.indexOf(a) - combined.indexOf(b) : b.match - a.match);
+  }, [liveOpportunities, primaryService, selectedServices, dismissedOpportunities, opportunityRadius, opportunitySort]);
+
+  function changePrimaryService(service: string) {
+    setPrimaryService(service);
+    setSelectedServices([service]);
+  }
 
   function beginRequest(value?: string, picked?: string) {
     if (picked) setCategory(picked);
@@ -420,7 +477,7 @@ export default function Home() {
       const response = await fetch("/api/contractor-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessName, legalName, phone: businessPhone, about: businessAbout, primaryService, services: selectedServices, homeBase, serviceRadiusKm: serviceRadius, teamSize: 4, emergencyAvailable, acceptingWork: true, plan: selectedPlan }),
+        body: JSON.stringify({ businessName, legalName, phone: businessPhone, about: businessAbout, primaryService, services: Array.from(new Set([primaryService, ...selectedServices])), homeBase, serviceRadiusKm: serviceRadius, teamSize: 4, emergencyAvailable, acceptingWork: true, plan: selectedPlan }),
       });
       if (!response.ok) throw new Error("Unable to save profile");
       const data = (await response.json()) as { profile: ContractorProfile };
@@ -752,7 +809,7 @@ export default function Home() {
                     <div className="pro-facts"><span><b>★ {pro.rating}</b> ({pro.reviews})</span><span>{pro.jobs}</span><span>Insured</span><span>Background checked</span></div>
                     <div className="quote-row"><div><small>Available</small><b>{pro.arrival}</b></div><div><small>Estimated quote</small><b className="quote-price">{pro.price}</b></div></div>
                     <p className="quote-note">✓ {pro.note}</p>
-                    <div className="card-actions"><button className="secondary-action">View profile</button><button className="primary-action" onClick={() => setAccepted(pro.name)}>{accepted === pro.name ? "Quote accepted ✓" : "Choose this pro"}</button></div>
+                    <div className="card-actions"><button className="secondary-action" onClick={() => setSelectedProfile(pro)}>View profile</button><button className="primary-action" onClick={() => setAccepted(pro.name)}>{accepted === pro.name ? "Quote accepted ✓" : "Choose this pro"}</button></div>
                   </div>
                 </article>
               ))}
@@ -764,10 +821,8 @@ export default function Home() {
               <p>They’re 8 km away, have completed 42 similar jobs and respond 37% faster than average.</p>
               <div><span>Job similarity</span><b>98%</b></div><div><span>Schedule fit</span><b>95%</b></div><div><span>Price confidence</span><b>High</b></div>
               <button onClick={() => setAccepted("North & Beam Drywall")}>Choose best match →</button>
-              <button className="negotiate-button" onClick={() => { setNegotiating(true); setNegotiated(false); }}>Ask AI to negotiate</button>
             </aside>
           </div>
-          {negotiating && <div className="negotiation-panel"><div className="negotiation-head"><span>✦</span><div><p className="aside-label">AI negotiation</p><h3>{negotiated ? "A better option is ready." : "What would make this quote work?"}</h3></div><button onClick={() => setNegotiating(false)}>×</button></div>{negotiated ? <div className="negotiation-result"><div><span>Original quote</span><s>$2,280</s></div><div><span>Updated quote</span><b>$2,150</b></div><p>North & Beam can reduce the price by $130 if the work starts tomorrow and you provide clear access to the basement before 8:00 AM.</p><button onClick={() => { setAccepted("North & Beam Drywall"); setNegotiating(false); }}>Accept $2,150 quote →</button></div> : <><div className="negotiation-options"><button onClick={() => setNegotiated(true)}>My budget is $2,150</button><button onClick={() => setNegotiated(true)}>Can the scope be adjusted?</button><button onClick={() => setNegotiated(true)}>I can be flexible on timing</button></div><label>Add a note<input placeholder="e.g. I can clear the room before arrival" /></label></>}</div>}
           {accepted && <div className="accepted-banner"><span>✓</span><div><b>{accepted} has been selected.</b><p>Your booking is ready. Follow the live job timeline from arrival to completion.</p></div><button onClick={() => go("tracking")}>Track this job →</button></div>}
         </section>
       )}
@@ -776,7 +831,7 @@ export default function Home() {
         <section className="app-shell tracking-shell">
           <div className="tracking-top">
             <div><p className="step-kicker">Active job · JL-2048</p><h1>Your job is underway.</h1><p>Drywall repair with North & Beam Drywall</p></div>
-            <button className="support-button">Need help?</button>
+            <button className="support-button" onClick={() => go("help")}>Need help?</button>
           </div>
           <div className="tracking-layout">
             <div className="live-card">
@@ -785,7 +840,7 @@ export default function Home() {
                 <div className="map-label label-one">Dundurn St.</div><div className="map-label label-two">Main St. W.</div>
                 <span className="home-pin">⌂</span><span className="crew-pin">NB</span>
               </div>
-              <div className="arrival-panel"><span className="pulse-icon"><i /></span><div><small>Crew is on the way</small><h2>Arriving in 14 minutes</h2><p>Alex and Jordan · white Ford Transit</p></div><button>Message crew</button></div>
+              <div className="arrival-panel"><span className="pulse-icon"><i /></span><div><small>Crew is on the way</small><h2>Arriving in 14 minutes</h2><p>Alex and Jordan · white Ford Transit</p></div><button onClick={openActiveJobRoom}>Message crew</button></div>
             </div>
             <aside className="job-detail-card">
               <p className="aside-label">Today’s progress</p>
@@ -801,7 +856,7 @@ export default function Home() {
           <div className="tracking-bottom">
             <div><p className="aside-label">Project details</p><h3>Basement drywall repair</h3><span>Today · 8:30 AM–4:30 PM</span></div>
             <div><p className="aside-label">Agreed quote</p><h3>$2,280</h3><span>Payment protected by JobLink</span></div>
-            <div><p className="aside-label">Documents</p><button>View contract ↗</button><button>View quote ↗</button></div>
+            <div><p className="aside-label">Documents</p><button onClick={() => openDocument("service_agreement")}>View contract ↗</button><button onClick={() => openDocument("accepted_quote")}>View quote ↗</button></div>
           </div>
         </section>
       )}
@@ -824,13 +879,13 @@ export default function Home() {
       )}
 
       {view === "emergency" && (
-        <section className="emergency-page">
+        <section className="emergency-page" aria-label={`${emergencyType} emergency request`} onClick={(event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".emergency-types button"); if (!button) return; button.parentElement?.querySelectorAll("button").forEach((item) => item.classList.toggle("selected", item === button)); const label = button.textContent?.replace(/^[A-Z]{2}/, "").trim() || "Emergency request"; setEmergencyType(label); showNotice(`${label} selected.`); }}>
           {emergencyStage === 0 ? <div className="emergency-intake"><div className="emergency-copy"><span className="emergency-mark">!</span><p className="section-label">Priority dispatch</p><h1>Get the right help,<br /><em>right now.</em></h1><p>For urgent home-service problems—not police, fire or medical emergencies. JobLink alerts verified available professionals nearby.</p><div className="emergency-warning"><b>Immediate danger?</b><p>Call 911 or your local emergency service first.</p></div></div><div className="emergency-form"><p className="step-kicker">Emergency request</p><h2>What’s happening?</h2><div className="emergency-types"><button className="selected"><span>PL</span>Active water leak</button><button><span>HV</span>No heat / HVAC</button><button><span>EL</span>Electrical issue</button><button><span>LK</span>Locked out</button></div><label>Describe the situation<textarea rows={3} defaultValue="Water is leaking from a pipe under the kitchen sink. Main shutoff is accessible." /></label><label>Service address<input defaultValue="225 King Street W, Hamilton, ON" /></label><label className="emergency-consent"><input type="checkbox" defaultChecked /><span>✓</span>I agree to share my approximate location with matched emergency professionals.</label><button onClick={() => setEmergencyStage(1)}>Alert emergency plumbers →</button></div></div> : <div className="dispatch-live"><div className="dispatch-header"><span className="pulse-emergency"><i /></span><div><small>Priority dispatch active · ER-8421</small><h1>Help is responding.</h1><p>We alerted 6 verified emergency plumbers within 12 km.</p></div><button onClick={() => setEmergencyStage(0)}>Cancel request</button></div><div className="dispatch-grid"><div className="dispatch-map"><div className="road road-one"/><div className="road road-two"/><div className="road road-three"/><span className="dispatch-home">⌂</span><span className="dispatch-pro pro-a">HP</span><span className="dispatch-pro pro-b">JP</span><span className="dispatch-pro pro-c">CF</span><div className="dispatch-radius"/></div><aside><p className="aside-label">Best responder</p><div className="responder-head"><span>HP</span><div><h2>Harbour Plumbing</h2><p>4.9 ★ · 97 Trust Score</p></div></div><div className="arrival-time"><small>Estimated arrival</small><b>18 min</b></div><dl><div><dt>Emergency callout</dt><dd>$185</dd></div><div><dt>Hourly rate after arrival</dt><dd>$145</dd></div><div><dt>Identity & insurance</dt><dd>Verified ✓</dd></div></dl><button onClick={() => setEmergencyStage(2)}>Confirm Harbour Plumbing →</button></aside></div>{emergencyStage === 2 && <div className="dispatch-confirmed"><span>✓</span><div><b>Harbour Plumbing is on the way.</b><p>Track arrival and message the plumber from this screen.</p></div><button onClick={() => go("tracking")}>Open live tracking →</button></div>}</div>}
         </section>
       )}
 
       {view === "admin" && (
-        <section className="admin-shell">
+        <section className="admin-shell" onClick={(event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button"); if (!button) return; const label = button.textContent?.trim() || "Action"; if (["Filter queue", "Open review →", "Freeze payouts and investigate →", "Open evidence →", "View policy guide", "Review case →"].some((action) => label.includes(action.replace(" →", "")))) showNotice(`${label.replace("→", "").trim()} opened in the operations workspace.`); }}>
           <header className="admin-head"><div><span className="admin-logo">JL</span><div><b>JobLink Operations</b><small>Hamilton marketplace · Live</small></div></div><button onClick={() => go("discover")}>Exit operations</button></header>
           <div className="admin-layout"><aside className="admin-nav"><p>Workspace</p><button className={adminTab === "overview" ? "selected" : ""} onClick={() => setAdminTab("overview")}><span>OV</span>Overview</button><button className={adminTab === "verification" ? "selected" : ""} onClick={() => setAdminTab("verification")}><span>VR</span>Verification <b>12</b></button><button className={adminTab === "fraud" ? "selected" : ""} onClick={() => setAdminTab("fraud")}><span>FR</span>Fraud review <b>4</b></button><button className={adminTab === "disputes" ? "selected" : ""} onClick={() => setAdminTab("disputes")}><span>DS</span>Disputes <b>3</b></button><div className="admin-system"><span><i /></span><div><b>All systems normal</b><small>Last checked just now</small></div></div></aside><div className="admin-content">
             {adminTab === "overview" && <><div className="admin-title"><div><p className="step-kicker">Wednesday, July 22</p><h1>Marketplace health.</h1></div><div><span><i /></span>Live monitoring</div></div><div className="admin-kpis"><article><span>Jobs posted today</span><b>184</b><small>↑ 14% vs. last Wednesday</small></article><article><span>Match success</span><b>92.4%</b><small>Target: above 90%</small></article><article><span>Active job value</span><b>$428K</b><small>Across 237 jobs</small></article><article><span>Median first quote</span><b>11 min</b><small>↓ 3 min this month</small></article></div><div className="admin-overview-grid"><div className="admin-panel"><div className="admin-panel-title"><h2>Live marketplace</h2><span>Last 60 minutes</span></div><div className="market-bars">{[["Drywall",72],["Plumbing",91],["Painting",60],["Electrical",48],["HVAC",82],["Moving",36]].map(([name,value])=><div key={name}><span>{name}</span><i><b style={{width:`${value}%`}}/></i><strong>{value}</strong></div>)}</div></div><div className="admin-panel alert-panel"><div className="admin-panel-title"><h2>Needs attention</h2><span>19 items</span></div><article><span className="risk red">High</span><div><b>Possible duplicate contractor</b><p>2 businesses · matching bank account</p></div><button onClick={() => setAdminTab("fraud")}>Review</button></article><article><span className="risk amber">Due</span><div><b>Insurance expires tomorrow</b><p>Northcrest Electric · 3 open jobs</p></div><button onClick={() => setAdminTab("verification")}>Review</button></article><article><span className="risk blue">New</span><div><b>Change-order dispute</b><p>JL-2164 · $1,280 contested</p></div><button onClick={() => setAdminTab("disputes")}>Review</button></article></div></div><div className="admin-panel emergency-monitor"><div className="admin-panel-title"><h2>Emergency dispatch</h2><span>3 active</span></div><div><article><span className="pulse-emergency"><i /></span><div><b>Active water leak</b><p>West Hamilton · ER-8421</p></div><strong>Responder arriving in 18 min</strong></article><article><span className="pulse-emergency amber"><i /></span><div><b>No heat · senior resident</b><p>Stoney Creek · ER-8419</p></div><strong>Matching 4 HVAC pros</strong></article></div></div></>}
@@ -859,11 +914,11 @@ export default function Home() {
               {accountTab === "jobs" && <>
                 {persistedJobs.length > 0 && <div className="saved-request-list"><div className="account-section-head"><div><p className="aside-label">Saved to JobLink</p><h2>Your submitted requests</h2></div><span>{persistedJobs.length} stored</span></div>{persistedJobs.map((job) => <article key={job.id} className={selectedSavedJob?.id === job.id ? "selected-request" : ""}><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status}</small><h3>{job.title}</h3><p>{job.budget}</p></div><button onClick={() => loadSavedQuotes(job)}>Compare quotes →</button></article>)}{selectedSavedJob && <div className="saved-quote-panel"><div className="saved-quote-heading"><div><p className="aside-label">Live quote comparison</p><h3>{selectedSavedJob.externalId}</h3></div><div className="saved-quote-heading-actions"><button onClick={() => openJobRoom(selectedSavedJob)}>Open Job Room</button><button aria-label="Close quote comparison" onClick={() => setSelectedSavedJob(null)}>×</button></div></div>{savedQuotesStatus === "loading" && !savedQuotes.length ? <p className="quote-panel-state">Loading quotes…</p> : savedQuotesStatus === "error" ? <p className="quote-panel-state error">Quotes could not be loaded. Please try again.</p> : <div className="saved-quote-grid">{savedQuotes.map((quote, index) => <article key={quote.id} className={quote.status === "accepted" ? "accepted" : ""}><div><span>{index === 0 ? "Best value" : "Verified pro"}</span><b>{quote.contractorName}</b></div><strong>${(quote.amountCents / 100).toLocaleString()}</strong><p>{quote.message}</p><small>Available {quote.availableAt}</small><button disabled={savedQuotesStatus === "loading" || (acceptedQuoteId !== null && acceptedQuoteId !== quote.id)} onClick={() => acceptSavedQuote(quote)}>{quote.status === "accepted" ? "Selected ✓" : quote.status === "declined" ? "Another pro selected" : "Choose this pro →"}</button></article>)}</div>}</div>}</div>}
                 <div className="account-section-head"><div><p className="aside-label">Current</p><h2>Active job</h2></div><button onClick={() => go("tracking")}>Open live tracking →</button></div>
-                <article className="account-active-job"><div className="account-job-status"><span><i /></span><div><small>In progress · Arriving in 14 min</small><h3>Basement drywall repair</h3><p>North & Beam Drywall · JL-2048</p></div><b>$2,280</b></div><div className="account-progress"><i /></div><div className="account-job-actions"><span>Started today at 8:31 AM</span><button onClick={() => go("tracking")}>Track job</button><button>Message pro</button></div></article>
+                <article className="account-active-job"><div className="account-job-status"><span><i /></span><div><small>In progress · Arriving in 14 min</small><h3>Basement drywall repair</h3><p>North & Beam Drywall · JL-2048</p></div><b>$2,280</b></div><div className="account-progress"><i /></div><div className="account-job-actions"><span>Started today at 8:31 AM</span><button onClick={() => go("tracking")}>Track job</button><button onClick={openActiveJobRoom}>Message pro</button></div></article>
                 <div className="account-section-head history-head"><div><p className="aside-label">History</p><h2>Past requests</h2></div></div>
                 <div className="job-history-list">
-                  <article><span className="history-icon">PT</span><div><small>Completed · June 18</small><h3>Main-floor painting</h3><p>Brightline Painting · 5.0 ★</p></div><b>$3,460</b><button>View details →</button></article>
-                  <article><span className="history-icon green">PL</span><div><small>Completed · April 3</small><h3>Kitchen faucet replacement</h3><p>Harbour Plumbing · 4.9 ★</p></div><b>$385</b><button>View details →</button></article>
+                  <article><span className="history-icon">PT</span><div><small>Completed · June 18</small><h3>Main-floor painting</h3><p>Brightline Painting · 5.0 ★</p></div><b>$3,460</b><button onClick={() => showNotice("Past job JL-1984: completed June 18 for $3,460.")}>View details →</button></article>
+                  <article><span className="history-icon green">PL</span><div><small>Completed · April 3</small><h3>Kitchen faucet replacement</h3><p>Harbour Plumbing · 4.9 ★</p></div><b>$385</b><button onClick={() => showNotice("Past job JL-1762: completed April 3 for $385.")}>View details →</button></article>
                 </div>
               </>}
               {accountTab === "payments" && <>
@@ -901,7 +956,7 @@ export default function Home() {
         <section className="help-page">
           <div className="help-hero"><p className="step-kicker">JobLink support</p><h1>How can we help?</h1><label><span>⌕</span><input placeholder="Search jobs, payments, contractors…" /></label><p>Popular: changing a quote · contractor verification · payment protection</p></div>
           <div className="help-body">
-            <div className="help-categories"><button><span>HM</span><b>For homeowners</b><small>Requests, quotes and hiring</small></button><button><span>PR</span><b>For professionals</b><small>Matching, quotes and plans</small></button><button><span>PY</span><b>Payments</b><small>Deposits, payouts and refunds</small></button><button><span>TS</span><b>Trust & safety</b><small>Verification and protection</small></button></div>
+            <div className="help-categories"><button className={helpTopic === "homeowners" ? "selected" : ""} onClick={() => { setHelpTopic("homeowners"); showNotice("Showing homeowner help topics."); }}><span>HM</span><b>For homeowners</b><small>Requests, quotes and hiring</small></button><button className={helpTopic === "professionals" ? "selected" : ""} onClick={() => { setHelpTopic("professionals"); showNotice("Showing professional help topics."); }}><span>PR</span><b>For professionals</b><small>Matching, quotes and plans</small></button><button className={helpTopic === "payments" ? "selected" : ""} onClick={() => { setHelpTopic("payments"); showNotice("Showing payment help topics."); }}><span>PY</span><b>Payments</b><small>Deposits, payouts and refunds</small></button><button className={helpTopic === "trust" ? "selected" : ""} onClick={() => { setHelpTopic("trust"); showNotice("Showing trust and safety help topics."); }}><span>TS</span><b>Trust & safety</b><small>Verification and protection</small></button></div>
             <div className="help-layout"><div className="faq-list"><p className="section-label">Frequently asked</p><h2>Quick answers.</h2><details open><summary>Does posting a job cost anything?<span>+</span></summary><p>No. Homeowners can post requests and compare matched quotes for free. A booking and protection fee only applies when a job is paid through JobLink.</p></details><details><summary>How many contractors see my request?<span>+</span></summary><p>Only qualified professionals matching the service, location, availability and trust requirements are notified. Customers see no more than five top matches.</p></details><details><summary>When does the contractor get paid?<span>+</span></summary><p>Funds are released according to the milestones accepted in the contract. Changes require approval before they can affect the total.</p></details><details><summary>What happens if something goes wrong?<span>+</span></summary><p>Keep communication and payments inside JobLink. Our support team can review the quote, contract, messages, progress updates and payment record.</p></details><details><summary>Do contractors pay for leads?<span>+</span></summary><p>No. Contractors subscribe to the business platform. JobLink does not sell individual customer contact details or charge per lead.</p></details></div>
               <aside className="contact-card"><p className="aside-label">Still need help?</p><h3>Talk to a real person.</h3><p>Send a message with your job number. A support specialist will reply in the app.</p>{supportStatus === "sent" ? <div className="support-success"><span>✓</span><b>Request {supportReference} received</b><small>We’ll reply within 2 business hours.</small></div> : <form onSubmit={submitSupportRequest}><label>Topic<select name="topic" defaultValue="job"><option value="job">A job or contractor</option><option value="payment">Payment or invoice</option><option value="account">Account or verification</option><option value="safety">Trust and safety</option><option value="general">Something else</option></select></label><label>Job number (optional)<input name="jobExternalId" placeholder="JL-2048" /></label><label>How can we help?<textarea name="message" rows={4} minLength={10} required placeholder="Tell us what happened…" /></label>{supportStatus === "error" && <p className="support-error">We couldn’t save your request. Please try again.</p>}<button type="submit" disabled={supportStatus === "sending"}>{supportStatus === "sending" ? "Sending…" : "Send to support →"}</button></form>}<div className="emergency-help"><b>Immediate safety issue?</b><p>Call emergency services first. Then contact JobLink safety at 1-800-JOBLINK.</p></div></aside></div>
           </div>
@@ -909,11 +964,11 @@ export default function Home() {
       )}
 
       {view === "onboarding" && (
-        <section className="onboarding-shell">
+        <section className="onboarding-shell" onClick={(event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".verification-uploads button"); if (!button) return; const label = button.textContent?.trim() || "Verification document"; if (label.includes("Complete")) showNotice("This verification check is already complete."); else { setVerificationTarget(label.includes("Liability") ? "Liability insurance" : "Trade licence"); window.setTimeout(() => document.getElementById("verification-file-input")?.click(), 0); } }}>
           <div className="onboarding-progress"><button onClick={() => onboardingStep === 0 ? go("discover") : setOnboardingStep(onboardingStep - 1)}>← {onboardingStep === 0 ? "Exit" : "Back"}</button><div>{["Business", "Services", "Verification", "Plan"].map((label, index) => <span key={label} className={index <= onboardingStep ? "done" : ""}><i />{label}</span>)}</div><small>{onboardingStep < 4 ? `${Math.round(((onboardingStep + 1) / 4) * 100)}% complete` : "Complete"}</small></div>
           {onboardingStep < 4 ? <div className="onboarding-layout"><div className="onboarding-form">
             {onboardingStep === 0 && <><p className="step-kicker">Step 1 of 4</p><h1>Tell us about your business.</h1><p>Start with the details customers will see. You can update these anytime.</p><div className="two-fields"><label>Legal business name<input value={legalName} onChange={(event) => setLegalName(event.target.value)} /></label><label>Public business name<input value={businessName} onChange={(event) => setBusinessName(event.target.value)} /></label></div><label>Business address<input defaultValue="225 King Street W, Hamilton, ON" /></label><div className="two-fields"><label>Business phone<input value={businessPhone} onChange={(event) => setBusinessPhone(event.target.value)} /></label><label>Years in business<select defaultValue="8"><option>0–2</option><option>3–5</option><option value="8">6–10</option><option>10+</option></select></label></div><label>About your company<textarea rows={4} value={businessAbout} onChange={(event) => setBusinessAbout(event.target.value)} /></label></>}
-            {onboardingStep === 1 && <><p className="step-kicker">Step 2 of 4</p><h1>Choose your work and territory.</h1><p>There is no extra charge for verified services. Matching only uses work you select.</p><label>Primary service<select value={primaryService} onChange={(event) => setPrimaryService(event.target.value)}><option>Drywall</option><option>Painting</option><option>Roofing</option><option>Plumbing</option></select></label><p className="field-label">Additional services</p><div className="onboarding-options">{["Drywall repair", "Drywall installation", "Taping & finishing", "Plaster repair", "Interior painting", "Insulation"].map((item) => <label key={item}><input type="checkbox" checked={selectedServices.includes(item)} onChange={() => setSelectedServices((current) => current.includes(item) ? current.filter((service) => service !== item) : [...current, item])} /><span>✓</span>{item}</label>)}</div><div className="two-fields"><label>Home base<input value={homeBase} onChange={(event) => setHomeBase(event.target.value)} /></label><label>Service radius<select value={serviceRadius} onChange={(event) => setServiceRadius(Number(event.target.value))}><option value="15">15 km</option><option value="30">30 km</option><option value="50">50 km</option></select></label></div><label className="availability-check"><input type="checkbox" checked={emergencyAvailable} onChange={(event) => setEmergencyAvailable(event.target.checked)} /><span />Available for emergency requests</label></>}
+            {onboardingStep === 1 && <><p className="step-kicker">Step 2 of 4</p><h1>Choose your work and territory.</h1><p>There is no extra charge for verified services. Matching only uses work you select.</p><label>Primary service<select value={primaryService} onChange={(event) => changePrimaryService(event.target.value)}>{Object.keys(contractorServiceCatalog).map((service) => <option key={service}>{service}</option>)}</select></label><div className="service-selection-heading"><p className="field-label">Services offered</p><span>{selectedServices.filter((service) => service !== primaryService).length} selected</span></div><div className="onboarding-options">{contractorServiceCatalog[primaryService].map((item) => <label key={item}><input type="checkbox" checked={selectedServices.includes(item)} onChange={() => setSelectedServices((current) => current.includes(item) ? current.filter((service) => service !== item) : [...current, item])} /><span>✓</span>{item}</label>)}</div><div className="two-fields"><label>Home base<input value={homeBase} onChange={(event) => setHomeBase(event.target.value)} /></label><label>Service radius<select value={serviceRadius} onChange={(event) => setServiceRadius(Number(event.target.value))}><option value="15">15 km</option><option value="30">30 km</option><option value="50">50 km</option><option value="75">75 km</option><option value="100">100 km</option></select></label></div><label className="availability-check"><input type="checkbox" checked={emergencyAvailable} onChange={(event) => setEmergencyAvailable(event.target.checked)} /><span />Available for emergency requests</label></>}
             {onboardingStep === 2 && <><p className="step-kicker">Step 3 of 4</p><h1>Build a verified profile.</h1><p>Documents stay private. Customers only see the verified status and expiry monitoring.</p><div className="verification-uploads"><button><span>✓</span><div><b>Government ID</b><small>Alex Morgan · Verified</small></div><em>Complete</em></button><button><span>✓</span><div><b>Business registration</b><small>Ontario Corporation · Verified</small></div><em>Complete</em></button><button><span>+</span><div><b>Liability insurance</b><small>Upload certificate · PDF or photo</small></div><em>Required</em></button><button><span>+</span><div><b>Trade licence</b><small>Only required for regulated services</small></div><em>Optional</em></button></div><div className="verification-note"><span>▣</span><div><b>Your information is encrypted.</b><p>JobLink uses verification data only for trust, fraud prevention and payment compliance.</p></div></div></>}
             {onboardingStep === 3 && <><p className="step-kicker">Step 4 of 4</p><h1>Choose how you grow.</h1><p>No lead fees. No charge for each service. Cancel or change plans anytime.</p><div className="onboarding-plans"><label><input type="radio" name="plan" checked={selectedPlan === "starter"} onChange={() => setSelectedPlan("starter")} /><div><span>Starter</span><b>$49<small>/month</small></b><p>1 user · 25 km territory · Quoting and invoicing</p></div></label><label className="recommended"><input type="radio" name="plan" checked={selectedPlan === "growth"} onChange={() => setSelectedPlan("growth")} /><div><span>Growth · Recommended</span><b>$129<small>/month</small></b><p>5 users · 50 km territory · Scheduling and insights</p></div></label><label><input type="radio" name="plan" checked={selectedPlan === "pro"} onChange={() => setSelectedPlan("pro")} /><div><span>Pro</span><b>$299<small>/month</small></b><p>Unlimited team · Multiple territories · Advanced operations</p></div></label></div><div className="trial-note"><span>30</span><div><b>Your first month is free.</b><p>You won’t be charged until August 22. Cancel before then and pay nothing.</p></div></div></>}
             {profileStatus === "error" && <p className="profile-save-error">Your business profile could not be saved. Please try again.</p>}<div className="onboarding-footer"><span>{profileStatus === "saving" ? "Saving securely…" : profileStatus === "saved" ? "Profile saved ✓" : "Your progress is ready"}</span><button disabled={profileStatus === "saving"} onClick={() => onboardingStep === 3 ? saveContractorProfile() : setOnboardingStep(onboardingStep + 1)}>{onboardingStep === 3 ? "Submit application" : "Continue"} →</button></div>
@@ -969,7 +1024,7 @@ export default function Home() {
           {proTab === "opportunities" && (
             <div className="pro-page">
               <div className="pro-page-heading"><div><p className="step-kicker">Matched for North & Beam</p><h1>New opportunities.</h1><p>Only jobs that fit your services, territory, availability and work history.</p></div><div className="opportunity-count"><b>{availableOpportunities.length}</b><span>available now</span></div></div>
-              <div className="filter-bar"><button className="selected">Best match</button><button>Nearest</button><button>Newest</button><span /><label>Within <select defaultValue="30"><option>15</option><option>30</option><option>50</option></select> km</label></div>
+              <div className="filter-bar"><button className={opportunitySort === "match" ? "selected" : ""} onClick={() => setOpportunitySort("match")}>Best match</button><button className={opportunitySort === "nearest" ? "selected" : ""} onClick={() => setOpportunitySort("nearest")}>Nearest</button><button className={opportunitySort === "newest" ? "selected" : ""} onClick={() => setOpportunitySort("newest")}>Newest</button><span /><label>Within <select value={opportunityRadius} onChange={(event) => setOpportunityRadius(Number(event.target.value))}><option>15</option><option>30</option><option>50</option><option>75</option><option>100</option></select> km</label></div>
               <div className="opportunity-layout">
                 <div className="opportunity-list">
                   {availableOpportunities.map((job, index) => (
@@ -979,7 +1034,7 @@ export default function Home() {
                       <p>{job.details}</p>
                       <div className="job-facts"><span><small>Distance</small><b>{job.distance}</b></span><span><small>Customer budget</small><b>{job.budget}</b></span><span><small>Timeline</small><b>{job.timing}</b></span></div>
                       <div className="job-fit"><span>Why it fits</span><p>{index === 0 ? "42 similar jobs · Schedule open · 6 km away" : index === 1 ? "Painting verified · Strong price history · Repeat area" : "Commercial board experience · Flexible schedule"}</p></div>
-                      <div className="opportunity-card-actions"><button className="secondary-action">Not interested</button><button className="primary-action" onClick={() => openQuote(job)}>{quoteSent === job.id ? "Quote sent ✓" : "Build a quote →"}</button></div>
+                      <div className="opportunity-card-actions"><button className="secondary-action" onClick={() => { setDismissedOpportunities((current) => [...current, job.id]); showNotice(`${job.id} removed from your opportunities.`); }}>Not interested</button><button className="primary-action" onClick={() => openQuote(job)}>{quoteSent === job.id ? "Quote sent ✓" : "Build a quote →"}</button></div>
                     </article>
                   ))}
                 </div>
@@ -990,15 +1045,16 @@ export default function Home() {
 
           {proTab === "jobs" && (
             <div className="pro-page">
-              <div className="pro-page-heading"><div><p className="step-kicker">Operations</p><h1>Jobs and schedule.</h1><p>Everything booked, underway and waiting for payment.</p></div><button className="primary-action">+ Add off-platform job</button></div>
-              <div className="job-tabs"><button className="selected">Active <span>3</span></button><button>Upcoming <span>4</span></button><button>Completed</button><button>Quotes <span>4</span></button></div>
+              <div className="pro-page-heading"><div><p className="step-kicker">Operations</p><h1>Jobs and schedule.</h1><p>Everything booked, underway and waiting for payment.</p></div><button className="primary-action" onClick={() => showNotice("Off-platform job import is ready for your next calendar connection.")}>+ Add off-platform job</button></div>
+              <div className="job-tabs"><button className={jobView === "active" ? "selected" : ""} onClick={() => setJobView("active")}>Active <span>3</span></button><button className={jobView === "upcoming" ? "selected" : ""} onClick={() => setJobView("upcoming")}>Upcoming <span>4</span></button><button className={jobView === "completed" ? "selected" : ""} onClick={() => setJobView("completed")}>Completed</button><button className={jobView === "quotes" ? "selected" : ""} onClick={() => setJobView("quotes")}>Quotes <span>4</span></button></div>
+              <div className="job-view-summary"><b>{jobView === "active" ? "Active work" : jobView === "upcoming" ? "Upcoming schedule" : jobView === "completed" ? "Completed jobs" : "Quotes awaiting a decision"}</b><span>{jobView === "active" ? "Live milestones and customer communication" : jobView === "upcoming" ? "Your next four confirmed bookings" : jobView === "completed" ? "Completed work and warranty records" : "Four quotes are still open"}</span></div>
               {conversations.filter((job) => ["booked", "in_progress", "completed"].includes(job.status)).length > 0 && <div className="live-operations"><div className="pro-panel-head"><div><p className="aside-label">Live JobLink jobs</p><h2>Update customer progress</h2></div><span>Every update is timestamped</span></div>{progressError && <p className="progress-error">{progressError}</p>}{conversations.filter((job) => ["booked", "in_progress", "completed"].includes(job.status)).map((job) => <article key={job.id}><div className="live-job-heading"><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status.replaceAll("_", " ")}</small><h3>{job.title}</h3></div><div className="live-job-actions"><button onClick={() => setLiveChangeOrderJob(job)}>+ Change order</button><button onClick={() => openJobRoom(job)}>Job Room ↗</button></div></div><div className="milestone-actions">{([['crew_dispatched','Crew leaving'],['materials_collected','Materials picked up'],['work_started','Started'],['halfway','50% complete'],['cleaning','Cleaning'],['finished','Finished']] as const).map(([stage,label]) => <button key={stage} disabled={progressUpdatingId === job.id || job.status === "completed"} onClick={() => updateJobProgress(job, stage)}>{progressUpdatingId === job.id ? "Updating…" : label}</button>)}</div></article>)}</div>}
               <div className="jobs-board">
                 <article className="active-job-feature">
                   <div className="active-job-top"><span className="status-live">In progress</span><small>JL-2048</small></div><h2>Basement drywall repair</h2><p>Niall L. · West Hamilton</p>
                   <div className="progress-line"><i /></div><div className="progress-labels"><span>Started 8:31 AM</span><b>45% complete</b><span>Est. finish 4:30 PM</span></div>
                   <div className="crew-line"><div><span>AJ</span><span>JR</span><p><b>Alex & Jordan</b><small>Crew on site</small></p></div><div><b>$2,280</b><small>Protected payment</small></div></div>
-                  <div className="active-job-actions"><button>Message customer</button><button>Update progress</button><button className="primary-action" onClick={() => setChangeOrderOpen(true)}>{changeOrderSent ? "Change order sent ✓" : "Create change order"}</button></div>
+                  <div className="active-job-actions"><button onClick={() => setProTab("inbox")}>Message customer</button><button onClick={() => showNotice("Use the milestone controls above to update live progress.")}>Update progress</button><button className="primary-action" onClick={() => setChangeOrderOpen(true)}>{changeOrderSent ? "Change order sent ✓" : "Create change order"}</button></div>
                 </article>
                 <div className="upcoming-stack">
                   <p className="aside-label">Next up</p>
@@ -1018,12 +1074,12 @@ export default function Home() {
                 <aside className="conversation-list">
                   <label><span>⌕</span><input placeholder="Search messages" /></label>
                   {conversations.map((job) => <button key={job.id} className="live-conversation" onClick={() => openJobRoom(job)}><span className="person-avatar orange">{job.category.slice(0,2).toUpperCase()}</span><div><b>{job.title}</b><p>Open the live Job Room</p><small>{job.externalId} · {job.status}</small></div><em>Live</em></button>)}
-                  <button className="selected"><span className="person-avatar orange">NL</span><div><b>Niall L.</b><p>Great, see you shortly.</p><small>Basement drywall · Today</small></div><em>2m</em></button>
-                  <button><span className="person-avatar green">MR</span><div><b>Melissa R.</b><p>I’ve added two more photos.</p><small>Ceiling patch · Tomorrow</small></div><em>1h</em></button>
-                  <button><span className="person-avatar blue">SK</span><div><b>Steve K.</b><p>Friday at 7:30 works.</p><small>Garage · Friday</small></div><em>4h</em></button>
+                  <button className="selected" onClick={() => showNotice("Niall’s conversation is open.")}><span className="person-avatar orange">NL</span><div><b>Niall L.</b><p>Great, see you shortly.</p><small>Basement drywall · Today</small></div><em>2m</em></button>
+                  <button onClick={() => showNotice("Melissa’s conversation is selected.")}><span className="person-avatar green">MR</span><div><b>Melissa R.</b><p>I’ve added two more photos.</p><small>Ceiling patch · Tomorrow</small></div><em>1h</em></button>
+                  <button onClick={() => showNotice("Steve’s conversation is selected.")}><span className="person-avatar blue">SK</span><div><b>Steve K.</b><p>Friday at 7:30 works.</p><small>Garage · Friday</small></div><em>4h</em></button>
                 </aside>
                 <div className="chat-panel">
-                  <div className="chat-head"><div><span className="person-avatar orange">NL</span><div><b>Niall L.</b><small>Basement drywall repair · JL-2048</small></div></div><button>Job details</button></div>
+                  <div className="chat-head"><div><span className="person-avatar orange">NL</span><div><b>Niall L.</b><small>Basement drywall repair · JL-2048</small></div></div><button onClick={() => setProTab("jobs")}>Job details</button></div>
                   <div className="chat-body">
                     <div className="day-divider"><span>Today</span></div>
                     <div className="message customer"><p>Hi Alex, is everything still on schedule for this morning?</p><small>7:51 AM</small></div>
@@ -1032,7 +1088,7 @@ export default function Home() {
                     <div className="message customer"><p>Great, see you shortly.</p><small>8:03 AM</small></div>
                     {sentMessages.map((message, index) => <div className="message pro" key={`${message}-${index}`}><p>{message}</p><small>Just now · Sent</small></div>)}
                   </div>
-                  <form className="message-composer" onSubmit={(event) => { event.preventDefault(); if (chatMessage.trim()) { setSentMessages([...sentMessages, chatMessage.trim()]); setChatMessage(""); } }}><button type="button">+</button><input value={chatMessage} onChange={(event) => setChatMessage(event.target.value)} placeholder="Write a message…" /><button type="submit">Send →</button></form>
+                  <form className="message-composer" onSubmit={(event) => { event.preventDefault(); if (chatMessage.trim()) { setSentMessages([...sentMessages, chatMessage.trim()]); setChatMessage(""); } }}><button type="button" onClick={() => showNotice("Open the live Job Room to attach job photos or documents.")}>+</button><input value={chatMessage} onChange={(event) => setChatMessage(event.target.value)} placeholder="Write a message…" /><button type="submit">Send →</button></form>
                 </div>
               </div>
             </div>
@@ -1084,6 +1140,12 @@ export default function Home() {
       {roomJob && <div className="job-room-overlay" role="dialog" aria-modal="true" aria-labelledby="job-room-title"><button className="job-room-close" aria-label="Close Job Room" onClick={() => setRoomJob(null)}>×</button><div className="job-room"><header><div><p className="step-kicker">Shared Job Room · {roomJob.externalId}</p><h2 id="job-room-title">{roomJob.title}</h2><p>{roomJob.category} · {roomJob.status}</p></div><span><i /> Private to this job</span></header>{roomStatus === "loading" ? <div className="job-room-loading">Opening your Job Room…</div> : roomStatus === "error" && !roomMessages.length ? <div className="job-room-loading error">The Job Room could not be loaded. Please close it and try again.</div> : <div className="job-room-grid"><aside><p className="aside-label">Job activity</p><div className="room-timeline">{roomEvents.map((event, index) => <article key={event.id}><span>{index + 1}</span><div><b>{event.label}</b><small>{new Date(event.createdAt).toLocaleString()}</small></div></article>)}</div>{roomChangeOrders.length > 0 && <div className="room-change-orders"><p className="aside-label">Change orders</p>{roomChangeOrders.map((order) => <article key={order.id}><div><small>{order.externalId} · {order.status}</small><b>{order.reason}</b><p>{order.description}</p><strong>+${(order.amountCents / 100).toLocaleString()}</strong></div>{order.status === "pending" && <div><button onClick={() => decideChangeOrder(order, "declined")}>Decline</button><button onClick={() => decideChangeOrder(order, "approved")}>Approve & sign</button></div>}</article>)}</div>}{roomJob.status === "completed" && <div className="verified-review-box"><p className="aside-label">Verified job review</p>{roomReview ? <div className="review-complete"><b>{(roomReview.averageScore / 100).toFixed(1)} ★</b><span>Verified completed job</span><p>{roomReview.comment || "Review submitted without a written comment."}</p></div> : <><div className="review-dimensions">{(["workmanship","communication","punctuality","cleanliness"] as const).map((dimension) => <div key={dimension}><span>{dimension}</span><select value={reviewScores[dimension]} onChange={(event) => setReviewScores((current) => ({ ...current, [dimension]: Number(event.target.value) }))}><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="3">3 · Average</option><option value="2">2 · Poor</option><option value="1">1 · Very poor</option></select></div>)}</div><textarea rows={3} value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} placeholder="What should future customers know?" />{reviewStatus === "error" && <p className="review-error">The review could not be submitted.</p>}<button disabled={reviewStatus === "saving"} onClick={submitVerifiedReview}>{reviewStatus === "saving" ? "Submitting…" : "Submit verified review"}</button></>}</div>}</aside><section><div className="room-chat-head"><div><span>JD</span><div><b>Job conversation</b><small>Keep details and decisions documented here</small></div></div></div><div className="room-chat-body">{roomMessages.length === 0 && <div className="room-empty"><span>✦</span><b>Start the conversation</b><p>Messages stay attached to this job for both sides.</p></div>}{roomMessages.map((message) => <div className={`room-message ${message.mine ? "mine" : "theirs"}`} key={message.id}><p>{message.body}</p><small>{new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small></div>)}</div><form className="room-composer" onSubmit={sendRoomMessage}><input value={roomText} onChange={(event) => setRoomText(event.target.value)} placeholder="Write a message about this job…" aria-label="Job message" /><button disabled={roomStatus === "sending" || !roomText.trim()}>{roomStatus === "sending" ? "Sending…" : "Send →"}</button></form></section></div>}</div></div>}
 
       {roomJob && roomAttachments.length > 0 && <aside className="job-media-tray" aria-label="Job photos and videos"><p className="aside-label">Job photos & video</p><div>{roomAttachments.map((attachment) => <a key={attachment.id} href={attachment.url} target="_blank" rel="noreferrer"><span>{attachment.kind === "video" ? "VID" : "IMG"}</span><p><b>{attachment.filename}</b><small>{(attachment.sizeBytes / 1024 / 1024).toFixed(1)} MB</small></p><em>↗</em></a>)}</div></aside>}
+
+      <input id="verification-file-input" className="hidden-file-input" type="file" aria-label={`Verification upload · ${verificationFiles.length} selected`} accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (!file || !verificationTarget) return; setVerificationFiles((current) => [...current.filter((item) => !item.startsWith(`${verificationTarget}:`)), `${verificationTarget}:${file.name}`]); showNotice(`${verificationTarget} selected: ${file.name}`); event.target.value = ""; }} />
+
+      {selectedProfile && <div className="profile-overlay" role="dialog" aria-modal="true" aria-labelledby="profile-title"><button className="profile-overlay-close" onClick={() => setSelectedProfile(null)} aria-label="Close contractor profile">×</button><article className="contractor-profile-card"><div className="profile-card-head"><span style={{ background:selectedProfile.color }}>{selectedProfile.initials}</span><div><p className="aside-label">Verified professional</p><h2 id="profile-title">{selectedProfile.name}</h2><small>★ {selectedProfile.rating} · {selectedProfile.reviews} verified reviews</small></div></div><div className="profile-score-row"><div><b>{selectedProfile.score}</b><span>Trust score</span></div><div><b>{selectedProfile.jobs}</b><span>completed</span></div><div><b>100%</b><span>insured</span></div></div><p>{selectedProfile.name} specializes in residential drywall repair and finishing across Hamilton. Identity, insurance and work history are verified by JobLink.</p><ul><li>✓ {selectedProfile.note}</li><li>✓ Available {selectedProfile.arrival}</li><li>✓ Background and insurance checked</li></ul><div><button onClick={() => setSelectedProfile(null)}>Back to matches</button><button onClick={() => { setAccepted(selectedProfile.name); setSelectedProfile(null); }}>Choose {selectedProfile.name} →</button></div></article></div>}
+
+      {uiNotice && <div className="ui-notice" role="status"><span>✓</span>{uiNotice}<button onClick={() => setUiNotice(null)} aria-label="Dismiss message">×</button></div>}
 
       <footer>
         <div className="brand footer-brand"><span className="brand-mark"><i /></span><span>JobLink</span></div>

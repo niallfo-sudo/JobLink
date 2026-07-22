@@ -1,6 +1,6 @@
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { jobRequests } from "../../../db/schema";
+import { contractorProfiles, jobRequests } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 
 export async function GET() {
@@ -8,7 +8,10 @@ export async function GET() {
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
 
   try {
-    const jobs = await getDb().select({
+    const db = getDb();
+    const [profile] = await db.select().from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, user.email)).limit(1);
+    if (profile?.acceptingWork === false) return Response.json({ jobs: [] });
+    const jobs = await db.select({
       id: jobRequests.id,
       externalId: jobRequests.externalId,
       category: jobRequests.category,
@@ -21,7 +24,8 @@ export async function GET() {
       status: jobRequests.status,
       createdAt: jobRequests.createdAt,
     }).from(jobRequests).orderBy(desc(jobRequests.createdAt)).limit(20);
-    return Response.json({ jobs: jobs.filter((job) => job.status === "matching") });
+    const enabledServices = profile ? [profile.primaryService, ...(JSON.parse(profile.services) as string[])].map((service) => service.toLowerCase()) : [];
+    return Response.json({ jobs: jobs.filter((job) => job.status === "matching" && (!profile || enabledServices.some((service) => service.includes(job.category.toLowerCase()) || job.category.toLowerCase().includes(service))) && (!job.emergency || profile?.emergencyAvailable !== false)) });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }

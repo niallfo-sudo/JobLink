@@ -57,3 +57,22 @@ test("stores private job media in R2 with D1 ownership metadata", async () => {
   assert.match(page, /chooseRequestFiles/);
   assert.match(page, /job-media-tray/);
 });
+
+test("wires existing controls and contractor service matching", async () => {
+  const [page, profileRoute, opportunitiesRoute] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/contractor-profile/route.ts"),
+    source("../app/api/opportunities/route.ts"),
+  ]);
+
+  assert.match(page, /contractorServiceCatalog/);
+  assert.match(page, /"General contracting"/);
+  assert.match(page, /"Dog walking"/);
+  assert.match(page, /setOpportunitySort\("nearest"\)/);
+  assert.match(page, /setDismissedOpportunities/);
+  assert.match(page, /setSelectedProfile\(pro\)/);
+  assert.doesNotMatch(page, /Ask AI to negotiate|negotiating &&/);
+  assert.match(profileRoute, /serviceCategories/);
+  assert.match(opportunitiesRoute, /contractorProfiles/);
+  assert.match(opportunitiesRoute, /acceptingWork/);
+});
