@@ -59,10 +59,11 @@ test("stores private job media in R2 with D1 ownership metadata", async () => {
 });
 
 test("wires existing controls and contractor service matching", async () => {
-  const [page, profileRoute, opportunitiesRoute] = await Promise.all([
+  const [page, profileRoute, opportunitiesRoute, jobsRoute] = await Promise.all([
     source("../app/page.tsx"),
     source("../app/api/contractor-profile/route.ts"),
     source("../app/api/opportunities/route.ts"),
+    source("../app/api/jobs/route.ts"),
   ]);
 
   assert.match(page, /contractorServiceCatalog/);
@@ -73,8 +74,18 @@ test("wires existing controls and contractor service matching", async () => {
   assert.match(page, /setOpportunitySort\("nearest"\)/);
   assert.match(page, /setDismissedOpportunities/);
   assert.match(page, /setSelectedProfile\(pro\)/);
+  assert.match(page, /serviceIntakeCatalog/);
+  assert.match(page, /selectedJobDetails/);
+  assert.match(page, /matchedContractors/);
+  for (const service of ["Drywall", "Roofing", "Painting", "Plumbing", "Electrical", "HVAC", "Junk removal", "Landscaping", "Moving", "Carpentry", "Flooring", "General contracting"]) {
+    assert.match(page, new RegExp(`${service.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:?`));
+  }
+  const incompleteButtons = [...page.matchAll(/<button\b([^>]*)>/g)].filter(([, attributes]) => !/onClick=|type="submit"|disabled=/.test(attributes));
+  assert.deepEqual(incompleteButtons.map((match) => match[0]), []);
   assert.doesNotMatch(page, /Ask AI to negotiate|negotiating &&/);
   assert.match(profileRoute, /serviceCategories/);
   assert.match(opportunitiesRoute, /contractorProfiles/);
   assert.match(opportunitiesRoute, /acceptingWork/);
+  assert.match(jobsRoute, /quoteProviderNames/);
+  assert.match(jobsRoute, /providerNames\[0\]/);
 });

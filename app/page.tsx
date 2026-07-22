@@ -25,10 +25,40 @@ const categories = [
   ["Painting", "PT"],
   ["Plumbing", "PL"],
   ["Electrical", "EL"],
+  ["HVAC", "HV"],
   ["Landscaping", "LS"],
   ["Moving", "MV"],
   ["Junk removal", "JR"],
+  ["Carpentry", "CP"],
+  ["Flooring", "FL"],
+  ["General contracting", "GC"],
 ] as const;
+
+type ServiceIntake = {
+  intro: string;
+  prompt: string;
+  sizeQuestion: string;
+  sizePlaceholder: string;
+  defaultScope: string;
+  defaultSize: string;
+  jobTypes: string[];
+  details: string[];
+};
+
+const serviceIntakeCatalog: Record<string, ServiceIntake> = {
+  Drywall: { intro: "Repairs, new board, ceilings, taping and finishing.", prompt: "Example: Repair four water-damaged sheets in my finished basement.", sizeQuestion: "How much wall or ceiling is affected?", sizePlaceholder: "Example: Four 4 x 8 sheets or about 130 sq. ft.", defaultScope: "Repair damaged drywall in a finished basement", defaultSize: "Four 4 x 8 sheets", jobTypes: ["Repair damage", "Install new drywall", "Tape and finish", "Ceiling work"], details: ["Water source is fixed", "Insulation may need replacing", "Texture or finish must match", "Furniture needs protection"] },
+  Roofing: { intro: "Leak repairs, shingles, flat roofs and full replacements.", prompt: "Example: Diagnose an active leak above the upstairs bedroom.", sizeQuestion: "What size and type of roof is involved?", sizePlaceholder: "Example: Two-storey detached home, about 1,600 sq. ft.", defaultScope: "Inspect and repair a roof leak", defaultSize: "Two-storey detached home", jobTypes: ["Repair a leak", "Replace the roof", "Replace shingles", "Eavestrough work"], details: ["Leak is currently active", "Roof is steep or difficult to access", "Old material needs disposal", "Attic inspection is required"] },
+  Painting: { intro: "Interior, exterior, cabinets, trim and commercial painting.", prompt: "Example: Paint the main-floor walls, trim and stairwell.", sizeQuestion: "Which rooms or surfaces need painting?", sizePlaceholder: "Example: Living room, hallway and stairwell; about 900 sq. ft.", defaultScope: "Paint the main floor walls and trim", defaultSize: "Living room, hallway and stairwell", jobTypes: ["Interior painting", "Exterior painting", "Cabinet refinishing", "Staining or specialty finish"], details: ["Walls need patching", "Trim or ceilings are included", "Colour consultation is needed", "Furniture needs moving"] },
+  Plumbing: { intro: "Leaks, drains, fixtures, water heaters and new plumbing.", prompt: "Example: Replace a leaking kitchen faucet and inspect the shutoffs.", sizeQuestion: "How many fixtures or areas are affected?", sizePlaceholder: "Example: One kitchen sink and two shutoff valves.", defaultScope: "Repair a leaking kitchen fixture", defaultSize: "One fixture and nearby shutoff valves", jobTypes: ["Repair a leak", "Install a fixture", "Clear a drain", "Water heater or sump pump"], details: ["Water is currently shut off", "Leak is causing active damage", "New fixture is already purchased", "Access may require opening a wall"] },
+  Electrical: { intro: "Repairs, lighting, panels, EV chargers and rewiring.", prompt: "Example: Install six pot lights and add a dimmer in the living room.", sizeQuestion: "How many devices, rooms or circuits are involved?", sizePlaceholder: "Example: Six lights in one room on an existing panel.", defaultScope: "Install new lighting and update the controls", defaultSize: "One room with six light fixtures", jobTypes: ["Electrical repair", "Lighting installation", "Panel or service upgrade", "EV charger installation"], details: ["Power is currently off", "Panel brand and capacity are known", "Permit may be required", "Drywall access is available"] },
+  HVAC: { intro: "Furnaces, air conditioning, heat pumps and ductwork.", prompt: "Example: Diagnose a furnace that runs but does not produce heat.", sizeQuestion: "What equipment and home size are involved?", sizePlaceholder: "Example: Gas furnace in a 1,800 sq. ft. detached home.", defaultScope: "Diagnose and repair a furnace that is not heating", defaultSize: "One furnace serving a 1,800 sq. ft. home", jobTypes: ["Heating repair", "Air-conditioning repair", "Replace equipment", "Maintenance or ductwork"], details: ["System is completely off", "Unusual noise or smell", "Thermostat is responding", "Equipment model is available"] },
+  "Junk removal": { intro: "Household junk, renovation debris, appliances and cleanouts.", prompt: "Example: Remove renovation debris and an old sofa from the basement.", sizeQuestion: "How much material needs to be removed?", sizePlaceholder: "Example: Half a truckload, including one sofa and drywall debris.", defaultScope: "Remove household junk and renovation debris", defaultSize: "About half a truckload", jobTypes: ["Household junk", "Construction debris", "Appliance removal", "Estate or property cleanout"], details: ["Heavy items are included", "Stairs are required", "Items can be donated", "Same-day pickup preferred"] },
+  Landscaping: { intro: "Lawn care, gardens, interlock, fences and seasonal work.", prompt: "Example: Regrade and sod the back yard after drainage work.", sizeQuestion: "What is the approximate outdoor area?", sizePlaceholder: "Example: Back yard about 35 x 60 ft.", defaultScope: "Restore and improve the back yard", defaultSize: "Back yard about 35 x 60 ft.", jobTypes: ["Lawn and garden care", "Sod or grading", "Interlock or hardscape", "Fence or outdoor structure"], details: ["Materials need to be supplied", "Site has gate access", "Old material needs removal", "Design advice is needed"] },
+  Moving: { intro: "Local moves, packing, furniture delivery and heavy items.", prompt: "Example: Move a two-bedroom apartment within Hamilton.", sizeQuestion: "How large is the move?", sizePlaceholder: "Example: Two-bedroom apartment, about 45 boxes plus furniture.", defaultScope: "Move a two-bedroom home within Hamilton", defaultSize: "Two bedrooms, about 45 boxes plus furniture", jobTypes: ["Full home move", "Apartment move", "Furniture delivery", "Packing help"], details: ["Stairs or elevator are involved", "Packing supplies are needed", "Heavy or fragile items included", "Storage stop is required"] },
+  Carpentry: { intro: "Framing, decks, cabinetry, doors, trim and custom woodwork.", prompt: "Example: Build a pressure-treated rear deck with stairs and railing.", sizeQuestion: "What are the approximate dimensions?", sizePlaceholder: "Example: Deck is 12 x 16 ft. and about 3 ft. above grade.", defaultScope: "Build a new exterior deck with stairs and railing", defaultSize: "Approximately 12 x 16 ft.", jobTypes: ["Finish carpentry", "Framing", "Deck or fence", "Cabinetry or custom work"], details: ["Drawings are available", "Materials need to be supplied", "Demolition is required", "Permit may be required"] },
+  Flooring: { intro: "Hardwood, laminate, vinyl, tile, carpet and repairs.", prompt: "Example: Replace main-floor carpet with luxury vinyl plank.", sizeQuestion: "How much floor area is involved?", sizePlaceholder: "Example: About 850 sq. ft. across four rooms.", defaultScope: "Replace existing flooring with new vinyl plank", defaultSize: "About 850 sq. ft. across four rooms", jobTypes: ["Install new flooring", "Replace existing flooring", "Repair damaged flooring", "Refinish hardwood"], details: ["Old flooring needs removal", "Subfloor may need repair", "Materials are already purchased", "Baseboards are included"] },
+  "General contracting": { intro: "Renovations, basements, kitchens, bathrooms and additions.", prompt: "Example: Renovate a basement into a family room and bathroom.", sizeQuestion: "What rooms and approximate area are involved?", sizePlaceholder: "Example: 900 sq. ft. basement with one new bathroom.", defaultScope: "Renovate a basement into finished living space", defaultSize: "About 900 sq. ft. with one bathroom", jobTypes: ["Basement renovation", "Kitchen renovation", "Bathroom renovation", "Addition or multi-room project"], details: ["Plans or drawings are available", "Permit is required", "Demolition is included", "Customer will remain in the home"] },
+};
 
 const contractorServiceCatalog: Record<string, string[]> = {
   Drywall: ["Drywall repair", "Drywall installation", "Taping & finishing", "Plaster repair", "Texture matching", "Insulation"],
@@ -87,6 +117,21 @@ const contractors = [
   },
 ];
 
+const serviceProviderNames: Record<string, string[]> = {
+  Drywall: ["North & Beam Drywall", "Hamilton Plaster Co.", "Level Finish Inc."],
+  Roofing: ["Peakline Roofing", "Harbour Roofworks", "Escarpment Exteriors"],
+  Painting: ["Brightline Painting", "True Colour Hamilton", "Finish & Field Painting"],
+  Plumbing: ["Harbour Plumbing", "Bluebird Plumbing", "Hamilton Flow & Drain"],
+  Electrical: ["Lakeshore Electric", "Northcrest Electric", "Current Works Hamilton"],
+  HVAC: ["Maple Air & Heat", "Hamilton Climate Co.", "Comfortline Mechanical"],
+  "Junk removal": ["ClearOut Hamilton", "Hammer City Haul", "Green Bin Crew"],
+  Landscaping: ["Escarpment Landscapes", "Greenline Outdoor", "Hamilton Yardworks"],
+  Moving: ["Steel City Moving", "Harbour Movers", "Careful Hands Hamilton"],
+  Carpentry: ["Grain & Beam Carpentry", "Hamilton Finish Works", "Red Oak Custom"],
+  Flooring: ["Level Ground Flooring", "Hamilton Floor Co.", "Plank & Tile Works"],
+  "General contracting": ["Citywide Renovations", "Hamilton Build Group", "True North Contracting"],
+};
+
 const steps = ["Describe", "Details", "Timing", "Review"];
 
 const opportunities: Opportunity[] = [
@@ -101,7 +146,13 @@ export default function Home() {
   const [category, setCategory] = useState("Drywall");
   const [step, setStep] = useState(0);
   const [scope, setScope] = useState("Repair damaged drywall in a finished basement");
-  const [size, setSize] = useState("Four 4 × 8 sheets");
+  const [size, setSize] = useState("Four 4 x 8 sheets");
+  const [selectedJobType, setSelectedJobType] = useState("Repair damage");
+  const [selectedJobDetails, setSelectedJobDetails] = useState<string[]>(["Water source is fixed", "Texture or finish must match"]);
+  const [quoteIncludes, setQuoteIncludes] = useState<string[]>(["Materials", "Site protection", "Cleanup", "Disposal"]);
+  const [additionalDetails, setAdditionalDetails] = useState("");
+  const [postalCode, setPostalCode] = useState("L8P 1A1");
+  const [isEmergency, setIsEmergency] = useState(false);
   const [timeline, setTimeline] = useState("Before Friday");
   const [budget, setBudget] = useState("$2,000–$2,500");
   const [accepted, setAccepted] = useState<string | null>(null);
@@ -181,11 +232,36 @@ export default function Home() {
   const [verificationFiles, setVerificationFiles] = useState<string[]>([]);
   const [verificationTarget, setVerificationTarget] = useState("");
 
+  const serviceIntake = serviceIntakeCatalog[category] ?? serviceIntakeCatalog.Drywall;
+  const matchedContractors = useMemo(() => contractors.map((professional, index) => ({ ...professional, name: (serviceProviderNames[category] ?? serviceProviderNames.Drywall)[index] })), [category]);
+
   const jobBrief = useMemo(
-    () =>
-      `Looking for an experienced ${category.toLowerCase()} contractor to ${scope.toLowerCase()}. Scope is approximately ${size.toLowerCase()} and includes protection, materials, finishing and cleanup. Customer prefers completion ${timeline.toLowerCase()} with a target budget of ${budget}.`,
-    [category, scope, size, timeline, budget],
+    () => {
+      const detailText = selectedJobDetails.length ? ` Important details: ${selectedJobDetails.join(", ").toLowerCase()}.` : "";
+      const includeText = quoteIncludes.length ? ` Quote should include ${quoteIncludes.join(", ").toLowerCase()}.` : "";
+      const notesText = additionalDetails.trim() ? ` Additional notes: ${additionalDetails.trim()}` : "";
+      return `Looking for an experienced ${category.toLowerCase()} professional for ${selectedJobType.toLowerCase()}: ${scope.trim()}. The job covers ${size.trim()}.${detailText}${includeText} Preferred timing is ${timeline.toLowerCase()}, with a target budget of ${budget}.${notesText}`;
+    },
+    [category, selectedJobType, scope, size, selectedJobDetails, quoteIncludes, timeline, budget, additionalDetails],
   );
+
+  function changeRequestCategory(nextCategory: string, keepDescription = false) {
+    const next = serviceIntakeCatalog[nextCategory] ?? serviceIntakeCatalog.Drywall;
+    setCategory(nextCategory);
+    setSelectedJobType(next.jobTypes[0]);
+    setSelectedJobDetails([]);
+    if (!keepDescription) setScope(next.defaultScope);
+    setSize(next.defaultSize);
+    setAdditionalDetails("");
+  }
+
+  function toggleJobDetail(value: string) {
+    setSelectedJobDetails((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
+  }
+
+  function toggleQuoteInclude(value: string) {
+    setQuoteIncludes((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
+  }
 
   function showNotice(message: string) {
     setUiNotice(message);
@@ -304,15 +380,24 @@ export default function Home() {
   }
 
   function beginRequest(value?: string, picked?: string) {
-    if (picked) setCategory(picked);
+    let detectedCategory = picked;
     if (value?.trim()) {
       setScope(value.trim());
       const lower = value.toLowerCase();
-      if (lower.includes("roof")) setCategory("Roofing");
-      else if (lower.includes("paint")) setCategory("Painting");
-      else if (lower.includes("plumb") || lower.includes("leak")) setCategory("Plumbing");
-      else if (lower.includes("electric")) setCategory("Electrical");
+      if (lower.includes("drywall") || lower.includes("plaster")) detectedCategory = "Drywall";
+      else if (lower.includes("roof") || lower.includes("shingle")) detectedCategory = "Roofing";
+      else if (lower.includes("paint")) detectedCategory = "Painting";
+      else if (lower.includes("plumb") || lower.includes("pipe") || lower.includes("drain") || lower.includes("leak")) detectedCategory = "Plumbing";
+      else if (lower.includes("electric") || lower.includes("light") || lower.includes("panel")) detectedCategory = "Electrical";
+      else if (lower.includes("furnace") || lower.includes("air condition") || lower.includes("hvac") || lower.includes("heat pump")) detectedCategory = "HVAC";
+      else if (lower.includes("move") || lower.includes("packing")) detectedCategory = "Moving";
+      else if (lower.includes("junk") || lower.includes("debris") || lower.includes("cleanout")) detectedCategory = "Junk removal";
+      else if (lower.includes("landscap") || lower.includes("lawn") || lower.includes("sod") || lower.includes("garden")) detectedCategory = "Landscaping";
+      else if (lower.includes("floor") || lower.includes("carpet") || lower.includes("hardwood")) detectedCategory = "Flooring";
+      else if (lower.includes("deck") || lower.includes("carpentry") || lower.includes("cabinet")) detectedCategory = "Carpentry";
+      else if (lower.includes("renovat") || lower.includes("basement") || lower.includes("kitchen") || lower.includes("bathroom")) detectedCategory = "General contracting";
     }
+    if (detectedCategory) changeRequestCategory(detectedCategory, Boolean(value?.trim()));
     setStep(0);
     setView("request");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -344,7 +429,7 @@ export default function Home() {
       const response = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category, title: scope, description: jobBrief, size, timeline, budget, postalCode: "L8P 1A1", emergency: false }),
+        body: JSON.stringify({ category, title: scope, description: jobBrief, size, timeline, budget, postalCode, emergency: isEmergency }),
       });
       if (!response.ok) throw new Error("Unable to save request");
       const data = (await response.json()) as { job: { id: number; externalId: string } };
@@ -720,23 +805,34 @@ export default function Home() {
                 <h1>What needs to be done?</h1>
                 <p className="form-intro">Don’t worry about contractor language. Describe it the way you’d tell a neighbour.</p>
                 <label className="field-label" htmlFor="category">Service</label>
-                <select id="category" value={category} onChange={e => setCategory(e.target.value)}>
+                <select id="category" value={category} onChange={e => changeRequestCategory(e.target.value)}>
                   {categories.map(([name]) => <option key={name}>{name}</option>)}
                 </select>
+                <div className="service-intake-summary"><span>{category.slice(0, 2).toUpperCase()}</span><div><b>{category}</b><p>{serviceIntake.intro}</p></div></div>
+                <label className="field-label">What kind of {category.toLowerCase()} job is this?</label>
+                <div className="job-type-grid">
+                  {serviceIntake.jobTypes.map((jobType) => <button type="button" key={jobType} className={selectedJobType === jobType ? "selected" : ""} onClick={() => setSelectedJobType(jobType)}>{jobType}<span>{selectedJobType === jobType ? "✓" : "+"}</span></button>)}
+                </div>
                 <label className="field-label" htmlFor="scope">Describe the job</label>
-                <textarea id="scope" value={scope} onChange={e => setScope(e.target.value)} rows={5} />
+                <textarea id="scope" value={scope} onChange={e => setScope(e.target.value)} rows={5} placeholder={serviceIntake.prompt} />
                 <div className="tip-row"><span>✦</span><p><b>Good start.</b> We’ll ask two details next, then write the full brief for you.</p></div>
               </>}
               {step === 1 && <>
                 <p className="step-kicker">Step 2 of 4</p>
                 <h1>A few useful details.</h1>
                 <p className="form-intro">This helps pros price your job accurately before they contact you.</p>
-                <label className="field-label" htmlFor="size">How large is the area?</label>
-                <input id="size" value={size} onChange={e => setSize(e.target.value)} />
+                <label className="field-label" htmlFor="size">{serviceIntake.sizeQuestion}</label>
+                <input id="size" value={size} onChange={e => setSize(e.target.value)} placeholder={serviceIntake.sizePlaceholder} />
+                <label className="field-label">Select everything a professional should know</label>
+                <div className="option-grid service-detail-options">
+                  {serviceIntake.details.map((option) => <label key={option} className={`check-option ${selectedJobDetails.includes(option) ? "selected" : ""}`}><input type="checkbox" checked={selectedJobDetails.includes(option)} onChange={() => toggleJobDetail(option)} /><span>✓</span>{option}</label>)}
+                </div>
                 <label className="field-label">What should the quote include?</label>
                 <div className="option-grid">
-                  {["Materials", "Site protection", "Cleanup", "Disposal"].map((option) => <label key={option} className="check-option"><input type="checkbox" defaultChecked /><span>✓</span>{option}</label>)}
+                  {["Materials", "Site protection", "Cleanup", "Disposal"].map((option) => <label key={option} className={`check-option ${quoteIncludes.includes(option) ? "selected" : ""}`}><input type="checkbox" checked={quoteIncludes.includes(option)} onChange={() => toggleQuoteInclude(option)} /><span>✓</span>{option}</label>)}
                 </div>
+                <label className="field-label" htmlFor="additional-details">Anything else that could affect the work?</label>
+                <textarea id="additional-details" rows={3} value={additionalDetails} onChange={(event) => setAdditionalDetails(event.target.value)} placeholder="Access restrictions, parking, pets, material preferences or anything else the pro should know." />
                 <label className="upload-box"><input type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,video/mp4,video/quicktime,video/webm" onChange={(event) => chooseRequestFiles(event.target.files)} /><span>+</span><b>{requestFiles.length ? `${requestFiles.length} file${requestFiles.length === 1 ? "" : "s"} ready` : "Add photos or a video"}</b><small>Up to 5 files · 25 MB each · 50 MB total</small></label>
                 {requestFiles.length > 0 && <div className="selected-upload-list">{requestFiles.map((file, index) => <div key={`${file.name}-${file.size}`}><span>{file.type.startsWith("video/") ? "VID" : "IMG"}</span><p><b>{file.name}</b><small>{(file.size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setRequestFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>)}</div>}
                 {uploadError && <p className="upload-error">{uploadError}</p>}
@@ -750,8 +846,8 @@ export default function Home() {
                 <label className="field-label" htmlFor="budget">Target budget</label>
                 <select id="budget" value={budget} onChange={e => setBudget(e.target.value)}><option>$1,000–$2,000</option><option>$2,000–$2,500</option><option>$2,500–$5,000</option><option>Need guidance</option></select>
                 <label className="field-label" htmlFor="postal">Postal code</label>
-                <input id="postal" defaultValue="L8P 1A1" />
-                <label className="emergency-toggle"><input type="checkbox" /><span /><div><b>This is an emergency</b><small>Alert available pros immediately</small></div></label>
+                <input id="postal" value={postalCode} onChange={(event) => setPostalCode(event.target.value)} />
+                <label className="emergency-toggle"><input type="checkbox" checked={isEmergency} onChange={(event) => setIsEmergency(event.target.checked)} /><span /><div><b>This is an emergency</b><small>Alert available pros immediately</small></div></label>
               </>}
               {step === 3 && <>
                 <p className="step-kicker ai-kicker">✦ AI-polished request</p>
@@ -761,7 +857,7 @@ export default function Home() {
                   <div className="brief-head"><span>{category}</span><button type="button" onClick={() => setStep(0)}>Edit</button></div>
                   <h3>{scope}</h3>
                   <p>{jobBrief}</p>
-                  <div className="brief-tags"><span>◷ {timeline}</span><span>⌂ Hamilton, ON</span><span>◎ {budget}</span>{requestFiles.length > 0 && <span>▣ {requestFiles.length} visual{requestFiles.length === 1 ? "" : "s"}</span>}</div>
+                  <div className="brief-tags"><span>{selectedJobType}</span><span>◷ {timeline}</span><span>⌂ {postalCode}</span><span>◎ {budget}</span>{isEmergency && <span>! Emergency</span>}{requestFiles.length > 0 && <span>▣ {requestFiles.length} visual{requestFiles.length === 1 ? "" : "s"}</span>}</div>
                 </div>
                 <div className="privacy-note"><span>✓</span><p><b>Your contact details stay private.</b> Pros can only message through JobLink until you choose one.</p></div>
               </>}
@@ -787,13 +883,13 @@ export default function Home() {
       {view === "matches" && (
         <section className="app-shell matches-shell">
           <div className="dashboard-heading">
-            <div><p className="step-kicker">Request {savedRequestId ?? "JL-2048"}</p><h1>Your best matches.</h1><p>We ranked 12 available pros. Here are the top 3 for your drywall repair.</p>{savedRequestId && <span className="persisted-note">✓ Saved to your JobLink account</span>}{uploadError && <span className="persisted-note upload-warning">! {uploadError}</span>}</div>
+            <div><p className="step-kicker">Request {savedRequestId ?? "JL-2048"}</p><h1>Your best matches.</h1><p>We ranked available {category.toLowerCase()} professionals. Here are the top 3 for your {selectedJobType.toLowerCase()} request.</p>{savedRequestId && <span className="persisted-note">✓ Saved to your JobLink account</span>}{uploadError && <span className="persisted-note upload-warning">! {uploadError}</span>}</div>
             <div className="matching-status"><span><i /></span><div><b>Quotes are live</b><small>Last updated just now</small></div></div>
           </div>
-          <div className="job-summary-strip"><span><b>Drywall repair</b>Finished basement · Hamilton</span><span><b>Target</b>Before Friday</span><span><b>Budget</b>$2,000–$2,500</span><button onClick={() => { setStep(3); go("request"); }}>View request</button></div>
+          <div className="job-summary-strip"><span><b>{category} · {selectedJobType}</b>{size} · {postalCode}</span><span><b>Target</b>{timeline}</span><span><b>Budget</b>{budget}</span><button onClick={() => { setStep(3); go("request"); }}>View request</button></div>
           <div className="match-layout">
             <div className="contractor-list">
-              {contractors.map((pro, index) => (
+              {matchedContractors.map((pro, index) => (
                 <article className={`contractor-card ${index === 0 ? "featured" : ""}`} key={pro.name}>
                   <div className="rank">0{index + 1}</div>
                   <div className="pro-logo" style={{ background: pro.color }}>{pro.initials}</div>
@@ -810,10 +906,10 @@ export default function Home() {
             <aside className="insight-card">
               <span className="insight-icon">✦</span>
               <p className="aside-label">JobLink insight</p>
-              <h3>North & Beam is your strongest fit.</h3>
-              <p>They’re 8 km away, have completed 42 similar jobs and respond 37% faster than average.</p>
+              <h3>{matchedContractors[0].name} is your strongest fit.</h3>
+              <p>They’re 8 km away, have completed 42 similar {category.toLowerCase()} jobs and respond 37% faster than average.</p>
               <div><span>Job similarity</span><b>98%</b></div><div><span>Schedule fit</span><b>95%</b></div><div><span>Price confidence</span><b>High</b></div>
-              <button onClick={() => setAccepted("North & Beam Drywall")}>Choose best match →</button>
+              <button onClick={() => setAccepted(matchedContractors[0].name)}>Choose best match →</button>
             </aside>
           </div>
           {accepted && <div className="accepted-banner"><span>✓</span><div><b>{accepted} has been selected.</b><p>Your booking is ready. Follow the live job timeline from arrival to completion.</p></div><button onClick={() => go("tracking")}>Track this job →</button></div>}
@@ -823,7 +919,7 @@ export default function Home() {
       {view === "tracking" && (
         <section className="app-shell tracking-shell">
           <div className="tracking-top">
-            <div><p className="step-kicker">Active job · JL-2048</p><h1>Your job is underway.</h1><p>Drywall repair with North & Beam Drywall</p></div>
+            <div><p className="step-kicker">Active job · {savedRequestId ?? "JL-2048"}</p><h1>Your job is underway.</h1><p>{category} · {selectedJobType} with {accepted ?? matchedContractors[0].name}</p></div>
             <button className="support-button" onClick={() => go("help")}>Need help?</button>
           </div>
           <div className="tracking-layout">
@@ -872,19 +968,19 @@ export default function Home() {
       )}
 
       {view === "emergency" && (
-        <section className="emergency-page" aria-label={`${emergencyType} emergency request`} onClick={(event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".emergency-types button"); if (!button) return; button.parentElement?.querySelectorAll("button").forEach((item) => item.classList.toggle("selected", item === button)); const label = button.textContent?.replace(/^[A-Z]{2}/, "").trim() || "Emergency request"; setEmergencyType(label); showNotice(`${label} selected.`); }}>
-          {emergencyStage === 0 ? <div className="emergency-intake"><div className="emergency-copy"><span className="emergency-mark">!</span><p className="section-label">Priority dispatch</p><h1>Get the right help,<br /><em>right now.</em></h1><p>For urgent home-service problems—not police, fire or medical emergencies. JobLink alerts verified available professionals nearby.</p><div className="emergency-warning"><b>Immediate danger?</b><p>Call 911 or your local emergency service first.</p></div></div><div className="emergency-form"><p className="step-kicker">Emergency request</p><h2>What’s happening?</h2><div className="emergency-types"><button className="selected"><span>PL</span>Active water leak</button><button><span>HV</span>No heat / HVAC</button><button><span>EL</span>Electrical issue</button><button><span>LK</span>Locked out</button></div><label>Describe the situation<textarea rows={3} defaultValue="Water is leaking from a pipe under the kitchen sink. Main shutoff is accessible." /></label><label>Service address<input defaultValue="225 King Street W, Hamilton, ON" /></label><label className="emergency-consent"><input type="checkbox" defaultChecked /><span>✓</span>I agree to share my approximate location with matched emergency professionals.</label><button onClick={() => setEmergencyStage(1)}>Alert emergency plumbers →</button></div></div> : <div className="dispatch-live"><div className="dispatch-header"><span className="pulse-emergency"><i /></span><div><small>Priority dispatch active · ER-8421</small><h1>Help is responding.</h1><p>We alerted 6 verified emergency plumbers within 12 km.</p></div><button onClick={() => setEmergencyStage(0)}>Cancel request</button></div><div className="dispatch-grid"><div className="dispatch-map"><div className="road road-one"/><div className="road road-two"/><div className="road road-three"/><span className="dispatch-home">⌂</span><span className="dispatch-pro pro-a">HP</span><span className="dispatch-pro pro-b">JP</span><span className="dispatch-pro pro-c">CF</span><div className="dispatch-radius"/></div><aside><p className="aside-label">Best responder</p><div className="responder-head"><span>HP</span><div><h2>Harbour Plumbing</h2><p>4.9 ★ · 97 Trust Score</p></div></div><div className="arrival-time"><small>Estimated arrival</small><b>18 min</b></div><dl><div><dt>Emergency callout</dt><dd>$185</dd></div><div><dt>Hourly rate after arrival</dt><dd>$145</dd></div><div><dt>Identity & insurance</dt><dd>Verified ✓</dd></div></dl><button onClick={() => setEmergencyStage(2)}>Confirm Harbour Plumbing →</button></aside></div>{emergencyStage === 2 && <div className="dispatch-confirmed"><span>✓</span><div><b>Harbour Plumbing is on the way.</b><p>Track arrival and message the plumber from this screen.</p></div><button onClick={() => go("tracking")}>Open live tracking →</button></div>}</div>}
+        <section className="emergency-page" aria-label={`${emergencyType} emergency request`}>
+          {emergencyStage === 0 ? <div className="emergency-intake"><div className="emergency-copy"><span className="emergency-mark">!</span><p className="section-label">Priority dispatch</p><h1>Get the right help,<br /><em>right now.</em></h1><p>For urgent home-service problems—not police, fire or medical emergencies. JobLink alerts verified available professionals nearby.</p><div className="emergency-warning"><b>Immediate danger?</b><p>Call 911 or your local emergency service first.</p></div></div><div className="emergency-form"><p className="step-kicker">Emergency request</p><h2>What’s happening?</h2><div className="emergency-types">{[["PL","Active water leak"],["HV","No heat / HVAC"],["EL","Electrical issue"],["LK","Locked out"]].map(([code,label]) => <button type="button" key={label} className={emergencyType === label ? "selected" : ""} onClick={() => { setEmergencyType(label); showNotice(`${label} selected.`); }}><span>{code}</span>{label}</button>)}</div><label>Describe the situation<textarea rows={3} defaultValue="Water is leaking from a pipe under the kitchen sink. Main shutoff is accessible." /></label><label>Service address<input defaultValue="225 King Street W, Hamilton, ON" /></label><label className="emergency-consent"><input type="checkbox" defaultChecked /><span>✓</span>I agree to share my approximate location with matched emergency professionals.</label><button onClick={() => setEmergencyStage(1)}>Alert nearby emergency professionals →</button></div></div> : <div className="dispatch-live"><div className="dispatch-header"><span className="pulse-emergency"><i /></span><div><small>Priority dispatch active · ER-8421</small><h1>Help is responding.</h1><p>We alerted 6 verified emergency professionals within 12 km for: {emergencyType.toLowerCase()}.</p></div><button onClick={() => setEmergencyStage(0)}>Cancel request</button></div><div className="dispatch-grid"><div className="dispatch-map"><div className="road road-one"/><div className="road road-two"/><div className="road road-three"/><span className="dispatch-home">⌂</span><span className="dispatch-pro pro-a">HP</span><span className="dispatch-pro pro-b">JP</span><span className="dispatch-pro pro-c">CF</span><div className="dispatch-radius"/></div><aside><p className="aside-label">Best responder</p><div className="responder-head"><span>HP</span><div><h2>Harbour Home Response</h2><p>4.9 ★ · 97 Trust Score</p></div></div><div className="arrival-time"><small>Estimated arrival</small><b>18 min</b></div><dl><div><dt>Emergency callout</dt><dd>$185</dd></div><div><dt>Hourly rate after arrival</dt><dd>$145</dd></div><div><dt>Identity & insurance</dt><dd>Verified ✓</dd></div></dl><button onClick={() => setEmergencyStage(2)}>Confirm emergency responder →</button></aside></div>{emergencyStage === 2 && <div className="dispatch-confirmed"><span>✓</span><div><b>Harbour Home Response is on the way.</b><p>Track arrival and message the professional from this screen.</p></div><button onClick={() => go("tracking")}>Open live tracking →</button></div>}</div>}
         </section>
       )}
 
       {view === "admin" && (
-        <section className="admin-shell" onClick={(event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button"); if (!button) return; const label = button.textContent?.trim() || "Action"; if (["Filter queue", "Open review →", "Freeze payouts and investigate →", "Open evidence →", "View policy guide", "Review case →"].some((action) => label.includes(action.replace(" →", "")))) showNotice(`${label.replace("→", "").trim()} opened in the operations workspace.`); }}>
+        <section className="admin-shell">
           <header className="admin-head"><div><span className="admin-logo">JL</span><div><b>JobLink Operations</b><small>Hamilton marketplace · Live</small></div></div><button onClick={() => go("discover")}>Exit operations</button></header>
           <div className="admin-layout"><aside className="admin-nav"><p>Workspace</p><button className={adminTab === "overview" ? "selected" : ""} onClick={() => setAdminTab("overview")}><span>OV</span>Overview</button><button className={adminTab === "verification" ? "selected" : ""} onClick={() => setAdminTab("verification")}><span>VR</span>Verification <b>12</b></button><button className={adminTab === "fraud" ? "selected" : ""} onClick={() => setAdminTab("fraud")}><span>FR</span>Fraud review <b>4</b></button><button className={adminTab === "disputes" ? "selected" : ""} onClick={() => setAdminTab("disputes")}><span>DS</span>Disputes <b>3</b></button><div className="admin-system"><span><i /></span><div><b>All systems normal</b><small>Last checked just now</small></div></div></aside><div className="admin-content">
             {adminTab === "overview" && <><div className="admin-title"><div><p className="step-kicker">Wednesday, July 22</p><h1>Marketplace health.</h1></div><div><span><i /></span>Live monitoring</div></div><div className="admin-kpis"><article><span>Jobs posted today</span><b>184</b><small>↑ 14% vs. last Wednesday</small></article><article><span>Match success</span><b>92.4%</b><small>Target: above 90%</small></article><article><span>Active job value</span><b>$428K</b><small>Across 237 jobs</small></article><article><span>Median first quote</span><b>11 min</b><small>↓ 3 min this month</small></article></div><div className="admin-overview-grid"><div className="admin-panel"><div className="admin-panel-title"><h2>Live marketplace</h2><span>Last 60 minutes</span></div><div className="market-bars">{[["Drywall",72],["Plumbing",91],["Painting",60],["Electrical",48],["HVAC",82],["Moving",36]].map(([name,value])=><div key={name}><span>{name}</span><i><b style={{width:`${value}%`}}/></i><strong>{value}</strong></div>)}</div></div><div className="admin-panel alert-panel"><div className="admin-panel-title"><h2>Needs attention</h2><span>19 items</span></div><article><span className="risk red">High</span><div><b>Possible duplicate contractor</b><p>2 businesses · matching bank account</p></div><button onClick={() => setAdminTab("fraud")}>Review</button></article><article><span className="risk amber">Due</span><div><b>Insurance expires tomorrow</b><p>Northcrest Electric · 3 open jobs</p></div><button onClick={() => setAdminTab("verification")}>Review</button></article><article><span className="risk blue">New</span><div><b>Change-order dispute</b><p>JL-2164 · $1,280 contested</p></div><button onClick={() => setAdminTab("disputes")}>Review</button></article></div></div><div className="admin-panel emergency-monitor"><div className="admin-panel-title"><h2>Emergency dispatch</h2><span>3 active</span></div><div><article><span className="pulse-emergency"><i /></span><div><b>Active water leak</b><p>West Hamilton · ER-8421</p></div><strong>Responder arriving in 18 min</strong></article><article><span className="pulse-emergency amber"><i /></span><div><b>No heat · senior resident</b><p>Stoney Creek · ER-8419</p></div><strong>Matching 4 HVAC pros</strong></article></div></div></>}
-            {adminTab === "verification" && <><div className="admin-title"><div><p className="step-kicker">Trust operations</p><h1>Verification queue.</h1></div><button>Filter queue</button></div><div className="review-table"><div className="review-head"><span>Business</span><span>Check</span><span>Risk</span><span>Submitted</span><span>Action</span></div>{[["Lakeshore Electric","Master electrician licence","Low","8 min ago"],["Peakline Roofing","Liability insurance","Medium","24 min ago"],["Bluebird Plumbing","Business identity","Low","41 min ago"],["Citywide Renovations","Ownership and banking","High","1h ago"]].map((row,index)=><div key={row[0]}><span><b>{row[0]}</b><small>Hamilton, ON · New applicant</small></span><span>{row[1]}</span><em className={`risk ${index===3?"red":index===1?"amber":"blue"}`}>{row[2]}</em><span>{row[3]}</span><button>Open review →</button></div>)}</div></>}
-            {adminTab === "fraud" && <><div className="admin-title"><div><p className="step-kicker">Risk operations</p><h1>Fraud review.</h1></div><span className="fraud-score">4 open alerts</span></div><div className="case-grid"><article className="case-card high"><div><span>High risk · FR-1098</span><small>Detected 6 min ago</small></div><h2>Possible duplicate contractor network</h2><p>Two contractor accounts share a payout account, device fingerprint and six portfolio photos.</p><dl><div><dt>Accounts</dt><dd>Premier Reno / GTA Project Co.</dd></div><div><dt>Shared signals</dt><dd>8 of 10</dd></div><div><dt>Jobs at risk</dt><dd>3 · $18,420</dd></div></dl><button>Freeze payouts and investigate →</button></article><article className="case-card"><div><span>Medium risk · FR-1095</span><small>Detected 38 min ago</small></div><h2>Stolen project photos suspected</h2><p>Reverse-image matching found portfolio images on an unrelated US contractor website.</p><dl><div><dt>Account</dt><dd>Ontario Elite Exteriors</dd></div><div><dt>Matched photos</dt><dd>11 of 18</dd></div><div><dt>Current status</dt><dd>Matching paused</dd></div></dl><button>Open evidence →</button></article></div></>}
-            {adminTab === "disputes" && <><div className="admin-title"><div><p className="step-kicker">Resolution centre</p><h1>Open disputes.</h1></div><button>View policy guide</button></div><div className="dispute-list"><article><div className="dispute-id"><span>DS-304</span><em>Response due in 2h</em></div><div><h2>Unapproved electrical change order</h2><p>Customer says the $1,280 addition was discussed but never approved in the app.</p><span>JL-2164 · East Hamilton · $8,920 contract</span></div><div className="evidence-count"><b>14</b><small>evidence items</small></div><button>Review case →</button></article><article><div className="dispute-id"><span>DS-301</span><em className="normal">Response due tomorrow</em></div><div><h2>Workmanship warranty claim</h2><p>Ceiling seam became visible six weeks after project completion.</p><span>JL-1988 · Dundas · $3,400 contract</span></div><div className="evidence-count"><b>9</b><small>evidence items</small></div><button>Review case →</button></article></div></>}
+            {adminTab === "verification" && <><div className="admin-title"><div><p className="step-kicker">Trust operations</p><h1>Verification queue.</h1></div><button onClick={() => showNotice("Verification queue filters opened.")}>Filter queue</button></div><div className="review-table"><div className="review-head"><span>Business</span><span>Check</span><span>Risk</span><span>Submitted</span><span>Action</span></div>{[["Lakeshore Electric","Master electrician licence","Low","8 min ago"],["Peakline Roofing","Liability insurance","Medium","24 min ago"],["Bluebird Plumbing","Business identity","Low","41 min ago"],["Citywide Renovations","Ownership and banking","High","1h ago"]].map((row,index)=><div key={row[0]}><span><b>{row[0]}</b><small>Hamilton, ON · New applicant</small></span><span>{row[1]}</span><em className={`risk ${index===3?"red":index===1?"amber":"blue"}`}>{row[2]}</em><span>{row[3]}</span><button onClick={() => showNotice(`${row[0]} verification review opened.`)}>Open review →</button></div>)}</div></>}
+            {adminTab === "fraud" && <><div className="admin-title"><div><p className="step-kicker">Risk operations</p><h1>Fraud review.</h1></div><span className="fraud-score">4 open alerts</span></div><div className="case-grid"><article className="case-card high"><div><span>High risk · FR-1098</span><small>Detected 6 min ago</small></div><h2>Possible duplicate contractor network</h2><p>Two contractor accounts share a payout account, device fingerprint and six portfolio photos.</p><dl><div><dt>Accounts</dt><dd>Premier Reno / GTA Project Co.</dd></div><div><dt>Shared signals</dt><dd>8 of 10</dd></div><div><dt>Jobs at risk</dt><dd>3 · $18,420</dd></div></dl><button onClick={() => showNotice("FR-1098 investigation opened and payouts remain protected.")}>Freeze payouts and investigate →</button></article><article className="case-card"><div><span>Medium risk · FR-1095</span><small>Detected 38 min ago</small></div><h2>Stolen project photos suspected</h2><p>Reverse-image matching found portfolio images on an unrelated US contractor website.</p><dl><div><dt>Account</dt><dd>Ontario Elite Exteriors</dd></div><div><dt>Matched photos</dt><dd>11 of 18</dd></div><div><dt>Current status</dt><dd>Matching paused</dd></div></dl><button onClick={() => showNotice("FR-1095 evidence workspace opened.")}>Open evidence →</button></article></div></>}
+            {adminTab === "disputes" && <><div className="admin-title"><div><p className="step-kicker">Resolution centre</p><h1>Open disputes.</h1></div><button onClick={() => go("trust")}>View policy guide</button></div><div className="dispute-list"><article><div className="dispute-id"><span>DS-304</span><em>Response due in 2h</em></div><div><h2>Unapproved electrical change order</h2><p>Customer says the $1,280 addition was discussed but never approved in the app.</p><span>JL-2164 · East Hamilton · $8,920 contract</span></div><div className="evidence-count"><b>14</b><small>evidence items</small></div><button onClick={() => showNotice("DS-304 case workspace opened with 14 evidence items.")}>Review case →</button></article><article><div className="dispute-id"><span>DS-301</span><em className="normal">Response due tomorrow</em></div><div><h2>Workmanship warranty claim</h2><p>Ceiling seam became visible six weeks after project completion.</p><span>JL-1988 · Dundas · $3,400 contract</span></div><div className="evidence-count"><b>9</b><small>evidence items</small></div><button onClick={() => showNotice("DS-301 case workspace opened with 9 evidence items.")}>Review case →</button></article></div></>}
           </div></div>
         </section>
       )}
@@ -957,12 +1053,12 @@ export default function Home() {
       )}
 
       {view === "onboarding" && (
-        <section className="onboarding-shell" onClick={(event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".verification-uploads button"); if (!button) return; const label = button.textContent?.trim() || "Verification document"; if (label.includes("Complete")) showNotice("This verification check is already complete."); else { setVerificationTarget(label.includes("Liability") ? "Liability insurance" : "Trade licence"); window.setTimeout(() => document.getElementById("verification-file-input")?.click(), 0); } }}>
+        <section className="onboarding-shell">
           <div className="onboarding-progress"><button onClick={() => onboardingStep === 0 ? go("discover") : setOnboardingStep(onboardingStep - 1)}>← {onboardingStep === 0 ? "Exit" : "Back"}</button><div>{["Business", "Services", "Verification", "Plan"].map((label, index) => <span key={label} className={index <= onboardingStep ? "done" : ""}><i />{label}</span>)}</div><small>{onboardingStep < 4 ? `${Math.round(((onboardingStep + 1) / 4) * 100)}% complete` : "Complete"}</small></div>
           {onboardingStep < 4 ? <div className="onboarding-layout"><div className="onboarding-form">
             {onboardingStep === 0 && <><p className="step-kicker">Step 1 of 4</p><h1>Tell us about your business.</h1><p>Start with the details customers will see. You can update these anytime.</p><div className="two-fields"><label>Legal business name<input value={legalName} onChange={(event) => setLegalName(event.target.value)} /></label><label>Public business name<input value={businessName} onChange={(event) => setBusinessName(event.target.value)} /></label></div><label>Business address<input defaultValue="225 King Street W, Hamilton, ON" /></label><div className="two-fields"><label>Business phone<input value={businessPhone} onChange={(event) => setBusinessPhone(event.target.value)} /></label><label>Years in business<select defaultValue="8"><option>0–2</option><option>3–5</option><option value="8">6–10</option><option>10+</option></select></label></div><label>About your company<textarea rows={4} value={businessAbout} onChange={(event) => setBusinessAbout(event.target.value)} /></label></>}
-            {onboardingStep === 1 && <><p className="step-kicker">Step 2 of 4</p><h1>Choose your work and territory.</h1><p>There is no extra charge for verified services. Matching only uses work you select.</p><label>Primary service<select value={primaryService} onChange={(event) => changePrimaryService(event.target.value)}>{Object.keys(contractorServiceCatalog).map((service) => <option key={service}>{service}</option>)}</select></label><div className="service-selection-heading"><p className="field-label">Services offered</p><span>{selectedServices.filter((service) => service !== primaryService).length} selected</span></div><div className="onboarding-options">{contractorServiceCatalog[primaryService].map((item) => <label key={item}><input type="checkbox" checked={selectedServices.includes(item)} onChange={() => setSelectedServices((current) => current.includes(item) ? current.filter((service) => service !== item) : [...current, item])} /><span>✓</span>{item}</label>)}</div><div className="two-fields"><label>Home base<input value={homeBase} onChange={(event) => setHomeBase(event.target.value)} /></label><label>Service radius<select value={serviceRadius} onChange={(event) => setServiceRadius(Number(event.target.value))}><option value="15">15 km</option><option value="30">30 km</option><option value="50">50 km</option><option value="75">75 km</option><option value="100">100 km</option></select></label></div><label className="availability-check"><input type="checkbox" checked={emergencyAvailable} onChange={(event) => setEmergencyAvailable(event.target.checked)} /><span />Available for emergency requests</label></>}
-            {onboardingStep === 2 && <><p className="step-kicker">Step 3 of 4</p><h1>Build a verified profile.</h1><p>Documents stay private. Customers only see the verified status and expiry monitoring.</p><div className="verification-uploads"><button><span>✓</span><div><b>Government ID</b><small>Alex Morgan · Verified</small></div><em>Complete</em></button><button><span>✓</span><div><b>Business registration</b><small>Ontario Corporation · Verified</small></div><em>Complete</em></button><button><span>+</span><div><b>Liability insurance</b><small>Upload certificate · PDF or photo</small></div><em>Required</em></button><button><span>+</span><div><b>Trade licence</b><small>Only required for regulated services</small></div><em>Optional</em></button></div><div className="verification-note"><span>▣</span><div><b>Your information is encrypted.</b><p>JobLink uses verification data only for trust, fraud prevention and payment compliance.</p></div></div></>}
+            {onboardingStep === 1 && <><p className="step-kicker">Step 2 of 4</p><h1>Choose your work and territory.</h1><p>There is no extra charge for verified services. Matching only uses work you select.</p><label>Primary service<select value={primaryService} onChange={(event) => changePrimaryService(event.target.value)}>{Object.keys(contractorServiceCatalog).map((service) => <option key={service}>{service}</option>)}</select></label><div className="contractor-service-summary"><b>{primaryService}</b><p>{(serviceIntakeCatalog[primaryService] ?? serviceIntakeCatalog.Drywall).intro}</p><small>Select every type of work your business is qualified and insured to complete.</small></div><div className="service-selection-heading"><p className="field-label">Services offered</p><span>{selectedServices.length} selected</span></div><div className="onboarding-options">{contractorServiceCatalog[primaryService].map((item) => <label key={item}><input type="checkbox" checked={selectedServices.includes(item)} onChange={() => setSelectedServices((current) => current.includes(item) ? current.filter((service) => service !== item) : [...current, item])} /><span>✓</span>{item}</label>)}</div><div className="two-fields"><label>Home base<input value={homeBase} onChange={(event) => setHomeBase(event.target.value)} /></label><label>Service radius<select value={serviceRadius} onChange={(event) => setServiceRadius(Number(event.target.value))}><option value="15">15 km</option><option value="30">30 km</option><option value="50">50 km</option><option value="75">75 km</option><option value="100">100 km</option></select></label></div><label className="availability-check"><input type="checkbox" checked={emergencyAvailable} onChange={(event) => setEmergencyAvailable(event.target.checked)} /><span />Available for emergency requests</label></>}
+            {onboardingStep === 2 && <><p className="step-kicker">Step 3 of 4</p><h1>Build a verified profile.</h1><p>Documents stay private. Customers only see the verified status and expiry monitoring.</p><div className="verification-uploads"><button type="button" onClick={() => showNotice("Government ID verification is complete.")}><span>✓</span><div><b>Government ID</b><small>Alex Morgan · Verified</small></div><em>Complete</em></button><button type="button" onClick={() => showNotice("Business registration verification is complete.")}><span>✓</span><div><b>Business registration</b><small>Ontario Corporation · Verified</small></div><em>Complete</em></button><button type="button" onClick={() => { setVerificationTarget("Liability insurance"); window.setTimeout(() => document.getElementById("verification-file-input")?.click(), 0); }}><span>+</span><div><b>Liability insurance</b><small>{verificationFiles.find((item) => item.startsWith("Liability insurance:"))?.split(":").slice(1).join(":") || "Upload certificate · PDF or photo"}</small></div><em>Required</em></button><button type="button" onClick={() => { setVerificationTarget("Trade licence"); window.setTimeout(() => document.getElementById("verification-file-input")?.click(), 0); }}><span>+</span><div><b>Trade licence</b><small>{verificationFiles.find((item) => item.startsWith("Trade licence:"))?.split(":").slice(1).join(":") || "Only required for regulated services"}</small></div><em>Optional</em></button></div><div className="verification-note"><span>▣</span><div><b>Your information is encrypted.</b><p>JobLink uses verification data only for trust, fraud prevention and payment compliance.</p></div></div></>}
             {onboardingStep === 3 && <><p className="step-kicker">Step 4 of 4</p><h1>Choose how you grow.</h1><p>No lead fees. No charge for each service. Cancel or change plans anytime.</p><div className="onboarding-plans"><label><input type="radio" name="plan" checked={selectedPlan === "starter"} onChange={() => setSelectedPlan("starter")} /><div><span>Starter</span><b>$49<small>/month</small></b><p>1 user · 25 km territory · Quoting and invoicing</p></div></label><label className="recommended"><input type="radio" name="plan" checked={selectedPlan === "growth"} onChange={() => setSelectedPlan("growth")} /><div><span>Growth · Recommended</span><b>$129<small>/month</small></b><p>5 users · 50 km territory · Scheduling and insights</p></div></label><label><input type="radio" name="plan" checked={selectedPlan === "pro"} onChange={() => setSelectedPlan("pro")} /><div><span>Pro</span><b>$299<small>/month</small></b><p>Unlimited team · Multiple territories · Advanced operations</p></div></label></div><div className="trial-note"><span>30</span><div><b>Your first month is free.</b><p>You won’t be charged until August 22. Cancel before then and pay nothing.</p></div></div></>}
             {profileStatus === "error" && <p className="profile-save-error">Your business profile could not be saved. Please try again.</p>}<div className="onboarding-footer"><span>{profileStatus === "saving" ? "Saving securely…" : profileStatus === "saved" ? "Profile saved ✓" : "Your progress is ready"}</span><button disabled={profileStatus === "saving"} onClick={() => onboardingStep === 3 ? saveContractorProfile() : setOnboardingStep(onboardingStep + 1)}>{onboardingStep === 3 ? "Submit application" : "Continue"} →</button></div>
           </div><aside className="onboarding-aside"><div className="onboarding-quote"><span>“</span><p>JobLink gives us fewer opportunities than lead sites—but they’re the right jobs. We spend time quoting work we can actually win.</p><div><b>Marcus T.</b><small>General contractor · Hamilton</small></div></div><div className="onboarding-promise"><p className="aside-label">The JobLink promise</p><ul><li>✓ Never pay per lead</li><li>✓ Keep your quoted labour price</li><li>✓ Control services and territory</li><li>✓ Pause matching anytime</li></ul></div></aside></div> : <div className="onboarding-complete"><span>✓</span><p className="step-kicker">Application submitted</p><h1>Welcome to JobLink.</h1><p>Your identity and business are approved. Insurance review normally takes one business day; the contractor workspace is ready to explore now.</p><div><span><b>3</b> matching jobs ready</span><span><b>30</b> days free</span><span><b>0</b> lead fees</span></div><button onClick={() => { setProTab("overview"); go("contractor"); }}>Open contractor workspace →</button></div>}
@@ -1136,7 +1232,7 @@ export default function Home() {
 
       <input id="verification-file-input" className="hidden-file-input" type="file" aria-label={`Verification upload · ${verificationFiles.length} selected`} accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (!file || !verificationTarget) return; setVerificationFiles((current) => [...current.filter((item) => !item.startsWith(`${verificationTarget}:`)), `${verificationTarget}:${file.name}`]); showNotice(`${verificationTarget} selected: ${file.name}`); event.target.value = ""; }} />
 
-      {selectedProfile && <div className="profile-overlay" role="dialog" aria-modal="true" aria-labelledby="profile-title"><button className="profile-overlay-close" onClick={() => setSelectedProfile(null)} aria-label="Close contractor profile">×</button><article className="contractor-profile-card"><div className="profile-card-head"><span style={{ background:selectedProfile.color }}>{selectedProfile.initials}</span><div><p className="aside-label">Verified professional</p><h2 id="profile-title">{selectedProfile.name}</h2><small>★ {selectedProfile.rating} · {selectedProfile.reviews} verified reviews</small></div></div><div className="profile-score-row"><div><b>{selectedProfile.score}</b><span>Trust score</span></div><div><b>{selectedProfile.jobs}</b><span>completed</span></div><div><b>100%</b><span>insured</span></div></div><p>{selectedProfile.name} specializes in residential drywall repair and finishing across Hamilton. Identity, insurance and work history are verified by JobLink.</p><ul><li>✓ {selectedProfile.note}</li><li>✓ Available {selectedProfile.arrival}</li><li>✓ Background and insurance checked</li></ul><div><button onClick={() => setSelectedProfile(null)}>Back to matches</button><button onClick={() => { setAccepted(selectedProfile.name); setSelectedProfile(null); }}>Choose {selectedProfile.name} →</button></div></article></div>}
+      {selectedProfile && <div className="profile-overlay" role="dialog" aria-modal="true" aria-labelledby="profile-title"><button className="profile-overlay-close" onClick={() => setSelectedProfile(null)} aria-label="Close contractor profile">×</button><article className="contractor-profile-card"><div className="profile-card-head"><span style={{ background:selectedProfile.color }}>{selectedProfile.initials}</span><div><p className="aside-label">Verified professional</p><h2 id="profile-title">{selectedProfile.name}</h2><small>★ {selectedProfile.rating} · {selectedProfile.reviews} verified reviews</small></div></div><div className="profile-score-row"><div><b>{selectedProfile.score}</b><span>Trust score</span></div><div><b>{selectedProfile.jobs}</b><span>completed</span></div><div><b>100%</b><span>insured</span></div></div><p>{selectedProfile.name} specializes in residential {category.toLowerCase()} work across Hamilton, including {contractorServiceCatalog[category]?.slice(0, 3).join(", ").toLowerCase()}. Identity, insurance and work history are verified by JobLink.</p><ul><li>✓ {selectedProfile.note}</li><li>✓ Available {selectedProfile.arrival}</li><li>✓ Background and insurance checked</li></ul><div><button onClick={() => setSelectedProfile(null)}>Back to matches</button><button onClick={() => { setAccepted(selectedProfile.name); setSelectedProfile(null); }}>Choose {selectedProfile.name} →</button></div></article></div>}
 
       {uiNotice && <div className="ui-notice" role="status"><span>✓</span>{uiNotice}<button onClick={() => setUiNotice(null)} aria-label="Dismiss message">×</button></div>}
 
