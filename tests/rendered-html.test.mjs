@@ -80,12 +80,35 @@ test("wires existing controls and contractor service matching", async () => {
   for (const service of ["Drywall", "Roofing", "Painting", "Plumbing", "Electrical", "HVAC", "Junk removal", "Landscaping", "Moving", "Carpentry", "Flooring", "General contracting"]) {
     assert.match(page, new RegExp(`${service.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:?`));
   }
-  const incompleteButtons = [...page.matchAll(/<button\b([^>]*)>/g)].filter(([, attributes]) => !/onClick=|type="submit"|disabled=/.test(attributes));
-  assert.deepEqual(incompleteButtons.map((match) => match[0]), []);
   assert.doesNotMatch(page, /Ask AI to negotiate|negotiating &&/);
   assert.match(profileRoute, /serviceCategories/);
   assert.match(opportunitiesRoute, /contractorProfiles/);
   assert.match(opportunitiesRoute, /acceptingWork/);
   assert.match(jobsRoute, /quoteProviderNames/);
   assert.match(jobsRoute, /providerNames\[0\]/);
+});
+
+test("supports custom request terms and persistent employee operations", async () => {
+  const [page, operationsRoute, schema, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/operations/route.ts"),
+    source("../db/schema.ts"),
+    source("../drizzle/0010_magical_zarda.sql"),
+  ]);
+
+  assert.match(page, /customTimeline/);
+  assert.match(page, /customBudget/);
+  assert.match(page, /requestTimeline/);
+  assert.match(page, /requestBudget/);
+  assert.match(page, /filteredOperationsCases/);
+  assert.match(page, /updateOperationsCase/);
+  assert.match(page, /operations-drawer/);
+  const incompleteButtons = [...page.matchAll(/<button\b([^>]*)>/g)].filter(([, attributes]) => !/onClick=|type="submit"|disabled=/.test(attributes));
+  assert.deepEqual(incompleteButtons.map((match) => match[0]), []);
+  assert.match(operationsRoute, /Employee access required/);
+  assert.match(operationsRoute, /operationsCaseNotes/);
+  assert.match(operationsRoute, /export async function PATCH/);
+  assert.match(schema, /sqliteTable\("operations_cases"/);
+  assert.match(schema, /sqliteTable\("operations_case_notes"/);
+  assert.match(migration, /CREATE TABLE `operations_cases`/);
 });

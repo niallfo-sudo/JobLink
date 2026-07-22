@@ -18,6 +18,8 @@ type ChangeOrderRecord = { id: number; externalId: string; reason: string; descr
 type VerifiedReview = { id: number; workmanship: number; communication: number; punctuality: number; cleanliness: number; averageScore: number; comment: string };
 type AppNotification = { id: number; jobId: number | null; notificationType: string; title: string; body: string; readAt: string | number | null; createdAt: string | number };
 type JobAttachment = { id: number; filename: string; contentType: string; sizeBytes: number; kind: "image" | "video"; url: string; createdAt: string | number };
+type OperationsNote = { id: number; authorEmail: string; body: string; createdAt: string | number };
+type OperationsCase = { id: number; externalId: string; caseType: "verification" | "fraud" | "dispute"; title: string; subject: string; summary: string; risk: "low" | "medium" | "high" | "critical"; priority: string; status: "open" | "in_review" | "waiting" | "resolved" | "dismissed"; assignee: string; evidenceCount: number; dueLabel: string; details: { signals?: string[]; [key: string]: unknown }; resolution: string; notes: OperationsNote[]; updatedAt: string | number };
 
 const categories = [
   ["Drywall", "DW"],
@@ -155,6 +157,8 @@ export default function Home() {
   const [isEmergency, setIsEmergency] = useState(false);
   const [timeline, setTimeline] = useState("Before Friday");
   const [budget, setBudget] = useState("$2,000–$2,500");
+  const [customTimeline, setCustomTimeline] = useState("");
+  const [customBudget, setCustomBudget] = useState("");
   const [accepted, setAccepted] = useState<string | null>(null);
   const [proTab, setProTab] = useState<ProTab>("overview");
   const [quoteJob, setQuoteJob] = useState<Opportunity | null>(null);
@@ -231,18 +235,28 @@ export default function Home() {
   const [helpTopic, setHelpTopic] = useState("homeowners");
   const [verificationFiles, setVerificationFiles] = useState<string[]>([]);
   const [verificationTarget, setVerificationTarget] = useState("");
+  const [operationsCases, setOperationsCases] = useState<OperationsCase[]>([]);
+  const [operationsStats, setOperationsStats] = useState({ jobs: 0, activeJobs: 0, paymentVolumeCents: 0, openCases: 0 });
+  const [operationsViewer, setOperationsViewer] = useState<{ displayName: string; role: string } | null>(null);
+  const [operationsStatus, setOperationsStatus] = useState<"idle" | "loading" | "saving" | "error">("idle");
+  const [operationSearch, setOperationSearch] = useState("");
+  const [operationStatusFilter, setOperationStatusFilter] = useState("active");
+  const [selectedOperationCase, setSelectedOperationCase] = useState<OperationsCase | null>(null);
+  const [operationNote, setOperationNote] = useState("");
 
   const serviceIntake = serviceIntakeCatalog[category] ?? serviceIntakeCatalog.Drywall;
   const matchedContractors = useMemo(() => contractors.map((professional, index) => ({ ...professional, name: (serviceProviderNames[category] ?? serviceProviderNames.Drywall)[index] })), [category]);
+  const requestTimeline = timeline === "Custom" ? customTimeline.trim() || "Custom timing to be confirmed" : timeline;
+  const requestBudget = budget === "Custom" ? customBudget.trim() || "Custom budget to be confirmed" : budget;
 
   const jobBrief = useMemo(
     () => {
       const detailText = selectedJobDetails.length ? ` Important details: ${selectedJobDetails.join(", ").toLowerCase()}.` : "";
       const includeText = quoteIncludes.length ? ` Quote should include ${quoteIncludes.join(", ").toLowerCase()}.` : "";
       const notesText = additionalDetails.trim() ? ` Additional notes: ${additionalDetails.trim()}` : "";
-      return `Looking for an experienced ${category.toLowerCase()} professional for ${selectedJobType.toLowerCase()}: ${scope.trim()}. The job covers ${size.trim()}.${detailText}${includeText} Preferred timing is ${timeline.toLowerCase()}, with a target budget of ${budget}.${notesText}`;
+      return `Looking for an experienced ${category.toLowerCase()} professional for ${selectedJobType.toLowerCase()}: ${scope.trim()}. The job covers ${size.trim()}.${detailText}${includeText} Preferred timing is ${requestTimeline.toLowerCase()}, with a target budget of ${requestBudget}.${notesText}`;
     },
-    [category, selectedJobType, scope, size, selectedJobDetails, quoteIncludes, timeline, budget, additionalDetails],
+    [category, selectedJobType, scope, size, selectedJobDetails, quoteIncludes, requestTimeline, requestBudget, additionalDetails],
   );
 
   function changeRequestCategory(nextCategory: string, keepDescription = false) {
@@ -364,6 +378,54 @@ export default function Home() {
       .catch(() => undefined);
   }, [view]);
 
+  async function loadOperations() {
+    setOperationsStatus("loading");
+    try {
+      const response = await fetch("/api/operations");
+      if (!response.ok) throw new Error("Operations workspace unavailable");
+      const data = (await response.json()) as { cases?: OperationsCase[]; stats?: typeof operationsStats; viewer?: { displayName: string; role: string } };
+      setOperationsCases(data.cases ?? []);
+      if (data.stats) setOperationsStats(data.stats);
+      setOperationsViewer(data.viewer ?? null);
+      setOperationsStatus("idle");
+    } catch {
+      setOperationsStatus("error");
+    }
+  }
+
+  useEffect(() => {
+    if (view === "admin") void loadOperations();
+  }, [view]);
+
+  const filteredOperationsCases = useMemo(() => operationsCases.filter((item) => {
+    const selectedCaseType = adminTab === "disputes" ? "dispute" : adminTab;
+    if (adminTab !== "overview" && item.caseType !== selectedCaseType) return false;
+    if (operationStatusFilter === "active" && ["resolved", "dismissed"].includes(item.status)) return false;
+    if (operationStatusFilter !== "active" && operationStatusFilter !== "all" && item.status !== operationStatusFilter) return false;
+    const query = operationSearch.trim().toLowerCase();
+    return !query || [item.externalId, item.title, item.subject, item.summary, item.assignee].some((value) => value.toLowerCase().includes(query));
+  }), [operationsCases, adminTab, operationStatusFilter, operationSearch]);
+
+  async function updateOperationsCase(updates: Partial<Pick<OperationsCase, "status" | "risk" | "assignee" | "resolution">>, includeNote = false) {
+    if (!selectedOperationCase) return;
+    setOperationsStatus("saving");
+    try {
+      const response = await fetch("/api/operations", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: selectedOperationCase.id, ...updates, note: includeNote ? operationNote : undefined }) });
+      if (!response.ok) throw new Error("Case update failed");
+      const data = (await response.json()) as { case: OperationsCase };
+      const wasOpen = !["resolved", "dismissed"].includes(selectedOperationCase.status);
+      const isOpen = !["resolved", "dismissed"].includes(data.case.status);
+      setOperationsCases((current) => current.map((item) => item.id === data.case.id ? data.case : item));
+      if (wasOpen !== isOpen) setOperationsStats((current) => ({ ...current, openCases: Math.max(0, current.openCases + (isOpen ? 1 : -1)) }));
+      setSelectedOperationCase(data.case);
+      setOperationNote("");
+      setOperationsStatus("idle");
+      showNotice(`${data.case.externalId} saved.`);
+    } catch {
+      setOperationsStatus("error");
+    }
+  }
+
   const availableOpportunities = useMemo(() => {
     const liveIds = new Set(liveOpportunities.map((job) => job.id));
     const enabledServices = [primaryService, ...selectedServices].map((service) => service.toLowerCase());
@@ -384,8 +446,7 @@ export default function Home() {
     if (value?.trim()) {
       setScope(value.trim());
       const lower = value.toLowerCase();
-      if (lower.includes("drywall") || lower.includes("plaster")) detectedCategory = "Drywall";
-      else if (lower.includes("roof") || lower.includes("shingle")) detectedCategory = "Roofing";
+      if (lower.includes("roof") || lower.includes("shingle")) detectedCategory = "Roofing";
       else if (lower.includes("paint")) detectedCategory = "Painting";
       else if (lower.includes("plumb") || lower.includes("pipe") || lower.includes("drain") || lower.includes("leak")) detectedCategory = "Plumbing";
       else if (lower.includes("electric") || lower.includes("light") || lower.includes("panel")) detectedCategory = "Electrical";
@@ -429,7 +490,7 @@ export default function Home() {
       const response = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category, title: scope, description: jobBrief, size, timeline, budget, postalCode, emergency: isEmergency }),
+        body: JSON.stringify({ category, title: scope, description: jobBrief, size, timeline: requestTimeline, budget: requestBudget, postalCode, emergency: isEmergency }),
       });
       if (!response.ok) throw new Error("Unable to save request");
       const data = (await response.json()) as { job: { id: number; externalId: string } };
@@ -842,9 +903,11 @@ export default function Home() {
                 <h1>When and where?</h1>
                 <p className="form-intro">Your exact address stays private until you accept a quote.</p>
                 <label className="field-label" htmlFor="timeline">Preferred timing</label>
-                <select id="timeline" value={timeline} onChange={e => setTimeline(e.target.value)}><option>Before Friday</option><option>Within a week</option><option>Within a month</option><option>I’m flexible</option></select>
+                <select id="timeline" value={timeline} onChange={e => setTimeline(e.target.value)}><option>Before Friday</option><option>Within a week</option><option>Within a month</option><option>I’m flexible</option><option>Custom</option></select>
+                {timeline === "Custom" && <label className="custom-request-field" htmlFor="custom-timeline">Describe your preferred timing<input id="custom-timeline" value={customTimeline} onChange={(event) => setCustomTimeline(event.target.value)} placeholder="Example: Any weekday after 4 PM, before August 15" autoFocus /></label>}
                 <label className="field-label" htmlFor="budget">Target budget</label>
-                <select id="budget" value={budget} onChange={e => setBudget(e.target.value)}><option>$1,000–$2,000</option><option>$2,000–$2,500</option><option>$2,500–$5,000</option><option>Need guidance</option></select>
+                <select id="budget" value={budget} onChange={e => setBudget(e.target.value)}><option>$1,000–$2,000</option><option>$2,000–$2,500</option><option>$2,500–$5,000</option><option>Need guidance</option><option>Custom</option></select>
+                {budget === "Custom" && <label className="custom-request-field" htmlFor="custom-budget">Enter an amount or range<input id="custom-budget" value={customBudget} onChange={(event) => setCustomBudget(event.target.value)} placeholder="Example: $750 maximum or $3,000–$4,500" /></label>}
                 <label className="field-label" htmlFor="postal">Postal code</label>
                 <input id="postal" value={postalCode} onChange={(event) => setPostalCode(event.target.value)} />
                 <label className="emergency-toggle"><input type="checkbox" checked={isEmergency} onChange={(event) => setIsEmergency(event.target.checked)} /><span /><div><b>This is an emergency</b><small>Alert available pros immediately</small></div></label>
@@ -857,7 +920,7 @@ export default function Home() {
                   <div className="brief-head"><span>{category}</span><button type="button" onClick={() => setStep(0)}>Edit</button></div>
                   <h3>{scope}</h3>
                   <p>{jobBrief}</p>
-                  <div className="brief-tags"><span>{selectedJobType}</span><span>◷ {timeline}</span><span>⌂ {postalCode}</span><span>◎ {budget}</span>{isEmergency && <span>! Emergency</span>}{requestFiles.length > 0 && <span>▣ {requestFiles.length} visual{requestFiles.length === 1 ? "" : "s"}</span>}</div>
+                  <div className="brief-tags"><span>{selectedJobType}</span><span>◷ {requestTimeline}</span><span>⌂ {postalCode}</span><span>◎ {requestBudget}</span>{isEmergency && <span>! Emergency</span>}{requestFiles.length > 0 && <span>▣ {requestFiles.length} visual{requestFiles.length === 1 ? "" : "s"}</span>}</div>
                 </div>
                 <div className="privacy-note"><span>✓</span><p><b>Your contact details stay private.</b> Pros can only message through JobLink until you choose one.</p></div>
               </>}
@@ -886,7 +949,7 @@ export default function Home() {
             <div><p className="step-kicker">Request {savedRequestId ?? "JL-2048"}</p><h1>Your best matches.</h1><p>We ranked available {category.toLowerCase()} professionals. Here are the top 3 for your {selectedJobType.toLowerCase()} request.</p>{savedRequestId && <span className="persisted-note">✓ Saved to your JobLink account</span>}{uploadError && <span className="persisted-note upload-warning">! {uploadError}</span>}</div>
             <div className="matching-status"><span><i /></span><div><b>Quotes are live</b><small>Last updated just now</small></div></div>
           </div>
-          <div className="job-summary-strip"><span><b>{category} · {selectedJobType}</b>{size} · {postalCode}</span><span><b>Target</b>{timeline}</span><span><b>Budget</b>{budget}</span><button onClick={() => { setStep(3); go("request"); }}>View request</button></div>
+          <div className="job-summary-strip"><span><b>{category} · {selectedJobType}</b>{size} · {postalCode}</span><span><b>Target</b>{requestTimeline}</span><span><b>Budget</b>{requestBudget}</span><button onClick={() => { setStep(3); go("request"); }}>View request</button></div>
           <div className="match-layout">
             <div className="contractor-list">
               {matchedContractors.map((pro, index) => (
@@ -975,8 +1038,16 @@ export default function Home() {
 
       {view === "admin" && (
         <section className="admin-shell">
-          <header className="admin-head"><div><span className="admin-logo">JL</span><div><b>JobLink Operations</b><small>Hamilton marketplace · Live</small></div></div><button onClick={() => go("discover")}>Exit operations</button></header>
-          <div className="admin-layout"><aside className="admin-nav"><p>Workspace</p><button className={adminTab === "overview" ? "selected" : ""} onClick={() => setAdminTab("overview")}><span>OV</span>Overview</button><button className={adminTab === "verification" ? "selected" : ""} onClick={() => setAdminTab("verification")}><span>VR</span>Verification <b>12</b></button><button className={adminTab === "fraud" ? "selected" : ""} onClick={() => setAdminTab("fraud")}><span>FR</span>Fraud review <b>4</b></button><button className={adminTab === "disputes" ? "selected" : ""} onClick={() => setAdminTab("disputes")}><span>DS</span>Disputes <b>3</b></button><div className="admin-system"><span><i /></span><div><b>All systems normal</b><small>Last checked just now</small></div></div></aside><div className="admin-content">
+          <header className="admin-head"><div><span className="admin-logo">JL</span><div><b>JobLink Operations</b><small>{operationsViewer ? `${operationsViewer.displayName} · ${operationsViewer.role}` : "Authenticated employee workspace"}</small></div></div><div className="admin-head-actions"><button onClick={() => void loadOperations()}>Refresh data</button><button onClick={() => go("discover")}>Exit operations</button></div></header>
+          <div className="admin-layout"><aside className="admin-nav"><p>Workspace</p><button className={adminTab === "overview" ? "selected" : ""} onClick={() => setAdminTab("overview")}><span>OV</span>Overview <b>{operationsStats.openCases}</b></button><button className={adminTab === "verification" ? "selected" : ""} onClick={() => setAdminTab("verification")}><span>VR</span>Verification <b>{operationsCases.filter((item) => item.caseType === "verification" && !["resolved","dismissed"].includes(item.status)).length}</b></button><button className={adminTab === "fraud" ? "selected" : ""} onClick={() => setAdminTab("fraud")}><span>FR</span>Fraud review <b>{operationsCases.filter((item) => item.caseType === "fraud" && !["resolved","dismissed"].includes(item.status)).length}</b></button><button className={adminTab === "disputes" ? "selected" : ""} onClick={() => setAdminTab("disputes")}><span>DS</span>Disputes <b>{operationsCases.filter((item) => item.caseType === "dispute" && !["resolved","dismissed"].includes(item.status)).length}</b></button><div className="admin-system"><span><i /></span><div><b>Protected employee access</b><small>Changes are saved and attributed</small></div></div></aside><div className="admin-content">
+            {operationsStatus === "loading" && !operationsCases.length && <div className="operations-empty"><span>JL</span><h2>Loading employee workspace…</h2><p>Retrieving current verification, fraud and dispute queues.</p></div>}
+            {operationsStatus === "error" && !operationsCases.length && <div className="operations-empty error"><span>!</span><h2>Operations could not be loaded.</h2><p>Confirm you are signed in with an employee or administrator account.</p><button onClick={() => void loadOperations()}>Try again</button></div>}
+            {operationsCases.length > 0 && <>
+              <div className="admin-title"><div><p className="step-kicker">Employee operations · {new Date().toLocaleDateString("en-CA", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{adminTab === "overview" ? "Marketplace operations." : adminTab === "verification" ? "Verification queue." : adminTab === "fraud" ? "Fraud review." : "Dispute resolution."}</h1><p>{adminTab === "overview" ? "Live workload, marketplace records and cases needing action." : `Review, document and resolve every ${adminTab === "disputes" ? "dispute" : adminTab} case.`}</p></div><span className="operations-live"><i /> Database live</span></div>
+              {adminTab === "overview" && <div className="admin-kpis"><article><span>Total job requests</span><b>{operationsStats.jobs}</b><small>{operationsStats.activeJobs} currently active</small></article><article><span>Open employee cases</span><b>{operationsStats.openCases}</b><small>{operationsCases.filter((item) => item.priority === "urgent" && !["resolved","dismissed"].includes(item.status)).length} urgent</small></article><article><span>Recorded payment volume</span><b>${(operationsStats.paymentVolumeCents / 100).toLocaleString()}</b><small>Accepted JobLink payments</small></article><article><span>Resolved cases</span><b>{operationsCases.filter((item) => item.status === "resolved").length}</b><small>Stored with employee notes</small></article></div>}
+              <div className="operations-toolbar"><label><span>Search cases</span><input value={operationSearch} onChange={(event) => setOperationSearch(event.target.value)} placeholder="Case ID, business, job or assignee" /></label><label><span>Status</span><select value={operationStatusFilter} onChange={(event) => setOperationStatusFilter(event.target.value)}><option value="active">Active cases</option><option value="all">All cases</option><option value="open">Open</option><option value="in_review">In review</option><option value="waiting">Waiting</option><option value="resolved">Resolved</option><option value="dismissed">Dismissed</option></select></label><button onClick={() => { setOperationSearch(""); setOperationStatusFilter("active"); }}>Clear filters</button></div>
+              <div className="operations-queue"><div className="operations-queue-head"><span>Case</span><span>Subject</span><span>Risk</span><span>Status</span><span>Owner</span><span>Due</span></div>{filteredOperationsCases.length === 0 ? <div className="operations-no-results"><b>No cases match these filters.</b><p>Try a different search or status.</p></div> : filteredOperationsCases.map((item) => <button key={item.id} className={`operations-row risk-${item.risk}`} onClick={() => { setSelectedOperationCase(item); setOperationNote(""); }}><span><b>{item.externalId}</b><small>{item.caseType}</small></span><span><b>{item.title}</b><small>{item.subject}</small></span><em>{item.risk}</em><span className={`case-status status-${item.status}`}>{item.status.replaceAll("_", " ")}</span><span>{item.assignee}</span><span>{item.dueLabel}<small>{item.evidenceCount} evidence items</small></span></button>)}</div>
+            </>}
             {adminTab === "overview" && <><div className="admin-title"><div><p className="step-kicker">Wednesday, July 22</p><h1>Marketplace health.</h1></div><div><span><i /></span>Live monitoring</div></div><div className="admin-kpis"><article><span>Jobs posted today</span><b>184</b><small>↑ 14% vs. last Wednesday</small></article><article><span>Match success</span><b>92.4%</b><small>Target: above 90%</small></article><article><span>Active job value</span><b>$428K</b><small>Across 237 jobs</small></article><article><span>Median first quote</span><b>11 min</b><small>↓ 3 min this month</small></article></div><div className="admin-overview-grid"><div className="admin-panel"><div className="admin-panel-title"><h2>Live marketplace</h2><span>Last 60 minutes</span></div><div className="market-bars">{[["Drywall",72],["Plumbing",91],["Painting",60],["Electrical",48],["HVAC",82],["Moving",36]].map(([name,value])=><div key={name}><span>{name}</span><i><b style={{width:`${value}%`}}/></i><strong>{value}</strong></div>)}</div></div><div className="admin-panel alert-panel"><div className="admin-panel-title"><h2>Needs attention</h2><span>19 items</span></div><article><span className="risk red">High</span><div><b>Possible duplicate contractor</b><p>2 businesses · matching bank account</p></div><button onClick={() => setAdminTab("fraud")}>Review</button></article><article><span className="risk amber">Due</span><div><b>Insurance expires tomorrow</b><p>Northcrest Electric · 3 open jobs</p></div><button onClick={() => setAdminTab("verification")}>Review</button></article><article><span className="risk blue">New</span><div><b>Change-order dispute</b><p>JL-2164 · $1,280 contested</p></div><button onClick={() => setAdminTab("disputes")}>Review</button></article></div></div><div className="admin-panel emergency-monitor"><div className="admin-panel-title"><h2>Emergency dispatch</h2><span>3 active</span></div><div><article><span className="pulse-emergency"><i /></span><div><b>Active water leak</b><p>West Hamilton · ER-8421</p></div><strong>Responder arriving in 18 min</strong></article><article><span className="pulse-emergency amber"><i /></span><div><b>No heat · senior resident</b><p>Stoney Creek · ER-8419</p></div><strong>Matching 4 HVAC pros</strong></article></div></div></>}
             {adminTab === "verification" && <><div className="admin-title"><div><p className="step-kicker">Trust operations</p><h1>Verification queue.</h1></div><button onClick={() => showNotice("Verification queue filters opened.")}>Filter queue</button></div><div className="review-table"><div className="review-head"><span>Business</span><span>Check</span><span>Risk</span><span>Submitted</span><span>Action</span></div>{[["Lakeshore Electric","Master electrician licence","Low","8 min ago"],["Peakline Roofing","Liability insurance","Medium","24 min ago"],["Bluebird Plumbing","Business identity","Low","41 min ago"],["Citywide Renovations","Ownership and banking","High","1h ago"]].map((row,index)=><div key={row[0]}><span><b>{row[0]}</b><small>Hamilton, ON · New applicant</small></span><span>{row[1]}</span><em className={`risk ${index===3?"red":index===1?"amber":"blue"}`}>{row[2]}</em><span>{row[3]}</span><button onClick={() => showNotice(`${row[0]} verification review opened.`)}>Open review →</button></div>)}</div></>}
             {adminTab === "fraud" && <><div className="admin-title"><div><p className="step-kicker">Risk operations</p><h1>Fraud review.</h1></div><span className="fraud-score">4 open alerts</span></div><div className="case-grid"><article className="case-card high"><div><span>High risk · FR-1098</span><small>Detected 6 min ago</small></div><h2>Possible duplicate contractor network</h2><p>Two contractor accounts share a payout account, device fingerprint and six portfolio photos.</p><dl><div><dt>Accounts</dt><dd>Premier Reno / GTA Project Co.</dd></div><div><dt>Shared signals</dt><dd>8 of 10</dd></div><div><dt>Jobs at risk</dt><dd>3 · $18,420</dd></div></dl><button onClick={() => showNotice("FR-1098 investigation opened and payouts remain protected.")}>Freeze payouts and investigate →</button></article><article className="case-card"><div><span>Medium risk · FR-1095</span><small>Detected 38 min ago</small></div><h2>Stolen project photos suspected</h2><p>Reverse-image matching found portfolio images on an unrelated US contractor website.</p><dl><div><dt>Account</dt><dd>Ontario Elite Exteriors</dd></div><div><dt>Matched photos</dt><dd>11 of 18</dd></div><div><dt>Current status</dt><dd>Matching paused</dd></div></dl><button onClick={() => showNotice("FR-1095 evidence workspace opened.")}>Open evidence →</button></article></div></>}
@@ -1234,6 +1305,7 @@ export default function Home() {
 
       {selectedProfile && <div className="profile-overlay" role="dialog" aria-modal="true" aria-labelledby="profile-title"><button className="profile-overlay-close" onClick={() => setSelectedProfile(null)} aria-label="Close contractor profile">×</button><article className="contractor-profile-card"><div className="profile-card-head"><span style={{ background:selectedProfile.color }}>{selectedProfile.initials}</span><div><p className="aside-label">Verified professional</p><h2 id="profile-title">{selectedProfile.name}</h2><small>★ {selectedProfile.rating} · {selectedProfile.reviews} verified reviews</small></div></div><div className="profile-score-row"><div><b>{selectedProfile.score}</b><span>Trust score</span></div><div><b>{selectedProfile.jobs}</b><span>completed</span></div><div><b>100%</b><span>insured</span></div></div><p>{selectedProfile.name} specializes in residential {category.toLowerCase()} work across Hamilton, including {contractorServiceCatalog[category]?.slice(0, 3).join(", ").toLowerCase()}. Identity, insurance and work history are verified by JobLink.</p><ul><li>✓ {selectedProfile.note}</li><li>✓ Available {selectedProfile.arrival}</li><li>✓ Background and insurance checked</li></ul><div><button onClick={() => setSelectedProfile(null)}>Back to matches</button><button onClick={() => { setAccepted(selectedProfile.name); setSelectedProfile(null); }}>Choose {selectedProfile.name} →</button></div></article></div>}
 
+      {selectedOperationCase && <div className="operations-overlay" role="dialog" aria-modal="true" aria-labelledby="operations-case-title"><button className="operations-overlay-close" onClick={() => setSelectedOperationCase(null)} aria-label="Close operations case">×</button><aside className="operations-drawer"><header><div><p className="step-kicker">{selectedOperationCase.externalId} · {selectedOperationCase.caseType}</p><h2 id="operations-case-title">{selectedOperationCase.title}</h2><p>{selectedOperationCase.subject}</p></div><span className={`case-status status-${selectedOperationCase.status}`}>{selectedOperationCase.status.replaceAll("_", " ")}</span></header><div className="operations-case-summary"><b>Case summary</b><p>{selectedOperationCase.summary}</p><div><span>{selectedOperationCase.risk} risk</span><span>{selectedOperationCase.evidenceCount} evidence items</span><span>{selectedOperationCase.dueLabel}</span></div></div>{selectedOperationCase.details.signals && <div className="operations-signals"><p className="aside-label">Evidence signals</p>{selectedOperationCase.details.signals.map((signal) => <div key={signal}><span>✓</span>{signal}</div>)}</div>}<div className="operations-case-fields"><label>Status<select value={selectedOperationCase.status} onChange={(event) => setSelectedOperationCase({ ...selectedOperationCase, status: event.target.value as OperationsCase["status"] })}><option value="open">Open</option><option value="in_review">In review</option><option value="waiting">Waiting</option><option value="resolved">Resolved</option><option value="dismissed">Dismissed</option></select></label><label>Risk<select value={selectedOperationCase.risk} onChange={(event) => setSelectedOperationCase({ ...selectedOperationCase, risk: event.target.value as OperationsCase["risk"] })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></label><label className="full">Assigned employee<input value={selectedOperationCase.assignee} onChange={(event) => setSelectedOperationCase({ ...selectedOperationCase, assignee: event.target.value })} placeholder="Employee name" /></label><label className="full">Resolution or decision<textarea rows={3} value={selectedOperationCase.resolution} onChange={(event) => setSelectedOperationCase({ ...selectedOperationCase, resolution: event.target.value })} placeholder="Record the reason for the final decision." /></label><label className="full">Add internal note<textarea rows={3} value={operationNote} onChange={(event) => setOperationNote(event.target.value)} placeholder="Document calls, evidence reviewed or next steps." /></label></div>{selectedOperationCase.notes.length > 0 && <div className="operations-notes"><p className="aside-label">Case history</p>{selectedOperationCase.notes.map((note) => <article key={note.id}><b>{note.authorEmail}</b><small>{new Date(note.createdAt).toLocaleString()}</small><p>{note.body}</p></article>)}</div>}<div className="operations-drawer-actions"><button onClick={() => void updateOperationsCase({ status: "waiting" })}>Set waiting</button><button onClick={() => void updateOperationsCase({ status: "in_review" })}>Start review</button><button className="primary-action" disabled={operationsStatus === "saving"} onClick={() => void updateOperationsCase({ status: selectedOperationCase.status, risk: selectedOperationCase.risk, assignee: selectedOperationCase.assignee, resolution: selectedOperationCase.resolution }, Boolean(operationNote.trim()))}>{operationsStatus === "saving" ? "Saving…" : selectedOperationCase.status === "resolved" ? "Save resolution" : "Save case"}</button></div></aside></div>}
       {uiNotice && <div className="ui-notice" role="status"><span>✓</span>{uiNotice}<button onClick={() => setUiNotice(null)} aria-label="Dismiss message">×</button></div>}
 
       <footer>

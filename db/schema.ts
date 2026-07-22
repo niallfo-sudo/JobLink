@@ -208,3 +208,34 @@ export const jobAttachments = sqliteTable("job_attachments", {
   index("job_attachments_job_created_idx").on(table.jobId, table.createdAt),
   index("job_attachments_owner_idx").on(table.ownerEmail),
 ]);
+
+export const operationsCases = sqliteTable("operations_cases", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  externalId: text("external_id").notNull(),
+  caseType: text("case_type").notNull(),
+  title: text("title").notNull(),
+  subject: text("subject").notNull(),
+  summary: text("summary").notNull(),
+  risk: text("risk").notNull().default("medium"),
+  priority: text("priority").notNull().default("normal"),
+  status: text("status").notNull().default("open"),
+  assignee: text("assignee").notNull().default("Unassigned"),
+  evidenceCount: integer("evidence_count").notNull().default(0),
+  dueLabel: text("due_label").notNull().default("No deadline"),
+  details: text("details").notNull().default("{}"),
+  resolution: text("resolution").notNull().default(""),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("operations_cases_external_unique").on(table.externalId),
+  index("operations_cases_type_status_idx").on(table.caseType, table.status),
+  index("operations_cases_priority_idx").on(table.priority),
+]);
+
+export const operationsCaseNotes = sqliteTable("operations_case_notes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  caseId: integer("case_id").notNull().references(() => operationsCases.id, { onDelete: "cascade" }),
+  authorEmail: text("author_email").notNull(),
+  body: text("body").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [index("operations_case_notes_case_created_idx").on(table.caseId, table.createdAt)]);
