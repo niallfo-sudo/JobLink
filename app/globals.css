@@ -158,4 +158,35 @@ footer { border-top: 1px solid var(--line); padding: 34px 4vw; display: grid; gr
 .emergency-form-error { color:#a9321a; background:#f8ddd4; padding:9px 11px; margin:12px 0 0; font-size:9px; }.emergency-form button:disabled,.dispatch-live button:disabled { opacity:.55; cursor:not-allowed; }.help-no-results,.conversation-empty,.contractor-jobs-empty { border:1px dashed var(--line); padding:24px; text-align:center; color:var(--muted); }.help-no-results p,.conversation-empty p,.contractor-jobs-empty p { font-size:9px; line-height:1.5; }.help-no-results button,.conversation-empty button,.contractor-jobs-empty button { border:0; background:var(--orange); color:white; padding:9px 12px; font-size:8px; font-weight:800; }.inbox-page .inbox-layout { grid-template-columns:1fr; }.inbox-page .conversation-list { border-right:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }.inbox-page .conversation-list > label,.inbox-page .conversation-empty { grid-column:1/-1; }.inbox-page .chat-panel { display:none; }.contractor-job-records { display:grid; gap:8px; margin:16px 0 20px; }.contractor-job-records > article { display:grid; grid-template-columns:42px 1fr auto; gap:12px; align-items:center; border:1px solid var(--line); background:var(--cream); padding:14px; }.contractor-job-records > article > span { width:42px; height:42px; border-radius:50%; background:var(--green); color:white; display:grid; place-items:center; font-size:9px; font-weight:850; }.contractor-job-records small { color:var(--muted); font-size:8px; text-transform:uppercase; }.contractor-job-records h3 { margin:4px 0; font:550 18px var(--font-display); }.contractor-job-records p { margin:0; color:var(--muted); font-size:9px; }.contractor-job-records article button { border:0; background:var(--orange); color:white; padding:10px 12px; font-size:8px; font-weight:800; }
 @media (max-width:700px) { .inbox-page .conversation-list { grid-template-columns:1fr; }.inbox-page .conversation-list > label,.inbox-page .conversation-empty { grid-column:auto; }.contractor-job-records > article { grid-template-columns:36px 1fr; }.contractor-job-records > article > span { width:36px; height:36px; }.contractor-job-records article button { grid-column:1/-1; } }
 
+.account-entry-button { border:1px solid var(--orange); background:var(--orange); color:white; padding:10px 14px; font-size:10px; font-weight:800; }
+.account-gateway-overlay { position:fixed; inset:0; z-index:150; background:rgba(18,17,15,.76); display:grid; place-items:center; padding:24px; overflow:auto; }
+.account-gateway-close { position:fixed; top:20px; right:22px; z-index:152; width:40px; height:40px; border:1px solid rgba(255,255,255,.35); background:var(--ink); color:white; font-size:25px; }
+.account-gateway { width:min(1080px,100%); background:var(--paper); box-shadow:0 30px 90px rgba(0,0,0,.38); padding:32px; }
+.account-gateway > header { display:flex; align-items:center; gap:15px; padding-bottom:24px; border-bottom:1px solid var(--line); }
+.account-gateway > header .brand-mark { flex:none; }
+.account-gateway > header h2 { margin:5px 0; font:550 clamp(30px,4vw,47px)/1 var(--font-display); letter-spacing:-.04em; }
+.account-gateway > header p:last-child { margin:0; color:var(--muted); font-size:11px; }
+.account-choice-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding:24px 0; }
+.account-choice-grid article { display:flex; flex-direction:column; min-height:390px; padding:23px; border:1px solid var(--line); background:var(--cream); }
+.account-choice-grid article > span { width:45px; height:45px; border-radius:50%; display:grid; place-items:center; margin-bottom:18px; background:var(--green); color:white; font-size:9px; font-weight:850; }
+.account-choice-grid article.contractor-account-choice { border-top:4px solid var(--orange); padding-top:20px; }
+.account-choice-grid article.contractor-account-choice > span { background:var(--orange); }
+.account-choice-grid article.admin-account-choice { background:var(--green); color:white; }
+.account-choice-grid article.admin-account-choice > span { background:white; color:var(--green); }
+.account-choice-grid article.admin-account-choice .aside-label { color:#ef8b69; }
+.account-choice-grid h3 { margin:5px 0 10px; font:550 25px/1.08 var(--font-display); }
+.account-choice-grid article > p:not(.aside-label) { color:var(--muted); font-size:10px; line-height:1.55; }
+.account-choice-grid .admin-account-choice > p:not(.aside-label) { color:#bfd0c9; }
+.account-choice-grid ul { list-style:none; padding:10px 0 18px; margin:0; display:grid; gap:9px; font-size:9px; }
+.account-choice-grid li::before { content:"✓"; color:var(--orange); margin-right:8px; font-weight:900; }
+.account-choice-grid article > button { width:100%; border:0; background:var(--orange); color:white; padding:13px 12px; margin-top:auto; font-size:9px; font-weight:850; text-align:left; }
+.account-choice-grid article > button:disabled { opacity:.55; }
+.account-choice-grid .admin-account-choice > button { background:white; color:var(--green); }
+.account-gateway-error { margin:0 0 14px; padding:11px 13px; background:#f8ddd4; color:#9c341c; font-size:10px; font-weight:750; }
+.account-gateway > footer { border-top:1px solid var(--line); padding:17px 0 0; display:flex; grid-template-columns:none; align-items:center; justify-content:space-between; gap:20px; color:var(--muted); font-size:9px; }
+.account-gateway > footer span { grid-column:auto; padding:0; border:0; color:inherit; }
+.account-gateway > footer a { color:var(--ink); font-weight:800; }
+@media (max-width:900px) { .account-choice-grid { grid-template-columns:1fr; }.account-choice-grid article { min-height:0; }.account-gateway-overlay { display:block; padding:15px; }.account-gateway { margin:45px auto 15px; padding:22px; }.account-gateway > footer { align-items:flex-start; flex-direction:column; } }
+@media (max-width:680px) { .header-actions { gap:8px; }.account-entry-button { padding:9px 10px; }.account-gateway > header { align-items:flex-start; }.account-gateway > header h2 { font-size:32px; } }
+
 .matches-loading,.account-history-empty,.pipeline-empty { border:1px dashed var(--line); background:var(--cream); padding:28px; text-align:center; color:var(--muted); }.matches-loading > span { width:44px; height:44px; border-radius:50%; background:var(--green); color:white; display:grid; place-items:center; margin:0 auto 12px; font-size:9px; font-weight:850; }.matches-loading h3,.account-history-empty b,.pipeline-empty b { color:var(--ink); }.matches-loading p,.account-history-empty p,.pipeline-empty p { font-size:9px; line-height:1.5; }.account-history-empty { width:100%; }.pipeline-empty { grid-column:1/-1; }

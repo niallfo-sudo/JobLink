@@ -20,6 +20,7 @@ type AppNotification = { id: number; jobId: number | null; notificationType: str
 type JobAttachment = { id: number; filename: string; contentType: string; sizeBytes: number; kind: "image" | "video"; url: string; createdAt: string | number };
 type OperationsNote = { id: number; authorEmail: string; body: string; createdAt: string | number };
 type OperationsCase = { id: number; externalId: string; caseType: "verification" | "fraud" | "dispute"; title: string; subject: string; summary: string; risk: "low" | "medium" | "high" | "critical"; priority: string; status: "open" | "in_review" | "waiting" | "resolved" | "dismissed"; assignee: string; evidenceCount: number; dueLabel: string; details: { signals?: string[]; [key: string]: unknown }; resolution: string; notes: OperationsNote[]; updatedAt: string | number };
+type AccountIdentity = { email: string; displayName: string; role: "homeowner" | "contractor" | "employee" | "admin" | null };
 
 const categories = [
   ["Drywall", "DW"],
@@ -261,11 +262,94 @@ export default function Home() {
   const [operationStatusFilter, setOperationStatusFilter] = useState("active");
   const [selectedOperationCase, setSelectedOperationCase] = useState<OperationsCase | null>(null);
   const [operationNote, setOperationNote] = useState("");
+  const [accountIdentity, setAccountIdentity] = useState<AccountIdentity | null>(null);
+  const [accountLoaded, setAccountLoaded] = useState(false);
+  const [accountGatewayOpen, setAccountGatewayOpen] = useState(false);
+  const [accountActionStatus, setAccountActionStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [accountActionError, setAccountActionError] = useState("");
 
   const serviceIntake = serviceIntakeCatalog[category] ?? serviceIntakeCatalog.Drywall;
   const matchedContractors = useMemo(() => contractors.map((professional, index) => ({ ...professional, name: (serviceProviderNames[category] ?? serviceProviderNames.Drywall)[index] })), [category]);
   const requestTimeline = timeline === "Custom" ? customTimeline.trim() || "Custom timing to be confirmed" : timeline;
   const requestBudget = budget === "Custom" ? customBudget.trim() || "Custom budget to be confirmed" : budget;
+  const accountInitials = (accountIdentity?.displayName || "Guest").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "GU";
+
+  function signInFor(portal: "homeowner" | "contractor" | "admin") {
+    window.location.assign(`/signin-with-chatgpt?return_to=${encodeURIComponent(`/?portal=${portal}`)}`);
+  }
+
+  function openContractorArea() {
+    if (view === "contractor") { go("discover"); return; }
+    if (!accountIdentity || accountIdentity.role !== "contractor") {
+      setAccountActionError("");
+      setAccountGatewayOpen(true);
+      return;
+    }
+    go(contractorProfile ? "contractor" : "onboarding");
+  }
+
+  async function selectAccountRole(role: "homeowner" | "contractor") {
+    if (!accountIdentity) {
+      signInFor(role);
+      return;
+    }
+    setAccountActionStatus("saving");
+    setAccountActionError("");
+    try {
+      const response = await fetch("/api/account", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }) });
+      const data = (await response.json()) as { user?: AccountIdentity; error?: string };
+      if (!response.ok || !data.user) throw new Error(data.error || "Account could not be created");
+      setAccountIdentity(data.user);
+      setAccountGatewayOpen(false);
+      setAccountActionStatus("idle");
+      if (role === "contractor") { setOnboardingStep(0); go("onboarding"); }
+      else go("account");
+    } catch (error) {
+      setAccountActionError(error instanceof Error ? error.message : "Account could not be created");
+      setAccountActionStatus("error");
+    }
+  }
+
+  async function openOperationsLogin(alreadyAuthenticated = false) {
+    if (!accountIdentity && !alreadyAuthenticated) {
+      signInFor("admin");
+      return;
+    }
+    setAccountActionStatus("saving");
+    setAccountActionError("");
+    try {
+      const response = await fetch("/api/operations");
+      const data = (await response.json()) as { viewer?: { displayName: string; role: string }; error?: string };
+      if (!response.ok) throw new Error(response.status === 403 ? "This account is not authorized for JobLink Operations." : data.error || "Operations login failed");
+      if (data.viewer) setOperationsViewer(data.viewer);
+      setAccountGatewayOpen(false);
+      setAccountActionStatus("idle");
+      go("admin");
+    } catch (error) {
+      setAccountActionError(error instanceof Error ? error.message : "Operations login failed");
+      setAccountActionStatus("error");
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/account")
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data: { user?: AccountIdentity | null }) => {
+        if (!active) return;
+        const user = data.user ?? null;
+        setAccountIdentity(user);
+        setAccountLoaded(true);
+        const portal = new URLSearchParams(window.location.search).get("portal");
+        if (portal && ["homeowner", "contractor", "admin"].includes(portal)) {
+          window.history.replaceState({}, "", window.location.pathname);
+          if (portal === "admin" && user) window.setTimeout(() => void openOperationsLogin(true), 0);
+          else setAccountGatewayOpen(true);
+        }
+      })
+      .catch(() => active && setAccountLoaded(true));
+    return () => { active = false; };
+  }, []);
 
   const jobBrief = useMemo(
     () => {
@@ -864,11 +948,41 @@ export default function Home() {
           </nav>
         )}
         <div className="header-actions">
-          <button className="text-button" onClick={() => go(view === "contractor" ? "discover" : "contractor")}>{view === "contractor" ? "Homeowner view" : "For contractors"}</button>
-          <button className="notification-button" aria-label="Open notifications" onClick={() => setNotificationsOpen(!notificationsOpen)}>AL{notifications.filter((item) => !item.readAt).length > 0 && <b>{notifications.filter((item) => !item.readAt).length}</b>}</button>
-          <button className="avatar-button" aria-label="Open profile" onClick={() => view === "contractor" ? setProTab("business") : go("account")}>{view === "contractor" ? "NB" : "NL"}</button>
+          <button className="text-button" onClick={openContractorArea}>{view === "contractor" ? "Homeowner view" : "For contractors"}</button>
+          {accountLoaded && !accountIdentity && <button className="account-entry-button" onClick={() => setAccountGatewayOpen(true)}>Sign up / Log in</button>}
+          {accountIdentity && <button className="notification-button" aria-label="Open notifications" onClick={() => setNotificationsOpen(!notificationsOpen)}>{accountInitials}{notifications.filter((item) => !item.readAt).length > 0 && <b>{notifications.filter((item) => !item.readAt).length}</b>}</button>}
+          {accountIdentity && <button className="avatar-button" aria-label="Open account menu" onClick={() => setAccountGatewayOpen(true)}>{accountInitials}</button>}
         </div>
       </header>
+
+      {accountGatewayOpen && <div className="account-gateway-overlay" role="dialog" aria-modal="true" aria-labelledby="account-gateway-title">
+        <button className="account-gateway-close" onClick={() => setAccountGatewayOpen(false)} aria-label="Close account options">×</button>
+        <section className="account-gateway">
+          <header>
+            <span className="brand-mark"><i /></span>
+            <div><p className="step-kicker">JobLink accounts</p><h2 id="account-gateway-title">Choose your workspace.</h2><p>{accountIdentity ? `Signed in as ${accountIdentity.displayName}` : "Create an account or securely log in with ChatGPT."}</p></div>
+          </header>
+          <div className="account-choice-grid">
+            <article>
+              <span>HM</span><p className="aside-label">For homeowners</p><h3>Post and manage jobs</h3><p>Create free requests, compare matched quotes, track work and keep your paperwork together.</p>
+              <ul><li>Free to post</li><li>Shortlisted local pros</li><li>Job tracking and documents</li></ul>
+              <button disabled={accountActionStatus === "saving"} onClick={() => void selectAccountRole("homeowner")}>{accountIdentity?.role === "homeowner" ? "Open homeowner account →" : accountIdentity ? "Continue as homeowner →" : "Sign up as a homeowner →"}</button>
+            </article>
+            <article className="contractor-account-choice">
+              <span>PRO</span><p className="aside-label">For contractors</p><h3>Build your business profile</h3><p>Select services and territory, receive matched opportunities, quote jobs and run active work.</p>
+              <ul><li>No pay-per-lead fees</li><li>Service-based matching</li><li>Quotes, jobs and payments</li></ul>
+              <button disabled={accountActionStatus === "saving"} onClick={() => void selectAccountRole("contractor")}>{accountIdentity?.role === "contractor" ? "Open contractor workspace →" : accountIdentity ? "Continue as contractor →" : "Sign up as a contractor →"}</button>
+            </article>
+            <article className="admin-account-choice">
+              <span>OPS</span><p className="aside-label">JobLink employees</p><h3>Operations login</h3><p>Protected access for authorized administrators and employees handling verification, fraud and disputes.</p>
+              <ul><li>Role-protected access</li><li>Audited case notes</li><li>Live marketplace operations</li></ul>
+              <button disabled={accountActionStatus === "saving"} onClick={() => void openOperationsLogin()}>{accountActionStatus === "saving" ? "Checking access…" : "Log in to Operations →"}</button>
+            </article>
+          </div>
+          {accountActionError && <p className="account-gateway-error">{accountActionError}</p>}
+          <footer>{accountIdentity ? <><span>{accountIdentity.email} · {accountIdentity.role ? accountIdentity.role.replace("employee", "operations employee") : "choose an account type"}</span><a href="/signout-with-chatgpt?return_to=%2F">Sign out</a></> : <span>Secure authentication is handled by ChatGPT. JobLink does not store a password.</span>}</footer>
+        </section>
+      </div>}
 
       {notificationsOpen && <aside className="notification-centre"><div className="notification-centre-head"><div><p className="aside-label">JobLink alerts</p><h2>Notifications</h2></div><button onClick={markAllNotificationsRead}>Mark all read</button></div>{notifications.length === 0 ? <div className="notification-empty">You’re all caught up.</div> : <div className="notification-list">{notifications.map((notification) => <button key={notification.id} className={!notification.readAt ? "unread" : ""} onClick={() => openNotification(notification)}><span>{notification.notificationType.slice(0,2).toUpperCase()}</span><div><b>{notification.title}</b><p>{notification.body}</p><small>{new Date(notification.createdAt).toLocaleString()}</small></div></button>)}</div>}</aside>}
 
@@ -1164,7 +1278,7 @@ export default function Home() {
           <div className="account-heading"><div><p className="step-kicker">Homeowner account</p><h1>Your home, handled.</h1><p>Jobs, payments and paperwork in one place.</p></div><button className="primary-action" onClick={() => beginRequest()}>+ Post another job</button></div>
           <div className="account-layout">
             <aside className="account-sidebar">
-              <div className="account-person"><span>NL</span><div><b>Niall L.</b><small>Hamilton, Ontario</small></div></div>
+              <div className="account-person"><span>{accountInitials}</span><div><b>{accountIdentity?.displayName || "Homeowner"}</b><small>Hamilton, Ontario</small></div></div>
               <nav aria-label="Account sections">
                 <button className={accountTab === "jobs" ? "selected" : ""} onClick={() => setAccountTab("jobs")}><span>01</span>My jobs <b>{persistedJobs.length}</b></button>
                 <button className={accountTab === "payments" ? "selected" : ""} onClick={() => setAccountTab("payments")}><span>02</span>Payments</button>
@@ -1405,7 +1519,7 @@ export default function Home() {
       <footer>
         <div className="brand footer-brand"><span className="brand-mark"><i /></span><span>JobLink</span></div>
         <p>Local work, matched better.</p>
-        <div><button onClick={() => go("discover")}>How it works</button><button onClick={() => go("trust")}>Trust & safety</button><button onClick={() => go("onboarding")}>Join as a contractor</button><button onClick={() => go("help")}>Help</button><button onClick={() => go("admin")}>Operations</button></div>
+        <div><button onClick={() => go("discover")}>How it works</button><button onClick={() => go("trust")}>Trust & safety</button><button onClick={() => setAccountGatewayOpen(true)}>Create an account</button><button onClick={() => go("help")}>Help</button><button onClick={() => { setAccountGatewayOpen(true); setAccountActionError(""); }}>Operations login</button></div>
         <span>© 2026 JobLink · Hamilton, Ontario</span>
       </footer>
     </main>

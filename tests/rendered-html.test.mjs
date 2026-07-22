@@ -127,3 +127,24 @@ test("supports custom request terms and persistent employee operations", async (
   assert.match(schema, /sqliteTable\("operations_case_notes"/);
   assert.match(migration, /CREATE TABLE `operations_cases`/);
 });
+
+test("provides secure homeowner, contractor and operations account entry", async () => {
+  const [page, accountRoute, operationsRoute, auth] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/account/route.ts"),
+    source("../app/api/operations/route.ts"),
+    source("../app/chatgpt-auth.ts"),
+  ]);
+
+  assert.match(page, /Sign up as a homeowner/);
+  assert.match(page, /Sign up as a contractor/);
+  assert.match(page, /Log in to Operations/);
+  assert.match(page, /signin-with-chatgpt/);
+  assert.match(page, /signout-with-chatgpt/);
+  assert.doesNotMatch(page, /type="password"/);
+  assert.match(accountRoute, /selfServiceRoles/);
+  assert.match(accountRoute, /Employee roles are managed in Operations/);
+  assert.doesNotMatch(accountRoute, /selfServiceRoles.*admin/);
+  assert.match(operationsRoute, /Employee access required/);
+  assert.match(auth, /oai-authenticated-user-email/);
+});
