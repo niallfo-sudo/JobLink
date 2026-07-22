@@ -32,13 +32,17 @@ export const jobRequests = sqliteTable("job_requests", {
 export const quotes = sqliteTable("quotes", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   jobId: integer("job_id").notNull().references(() => jobRequests.id, { onDelete: "cascade" }),
+  contractorEmail: text("contractor_email"),
   contractorName: text("contractor_name").notNull(),
   amountCents: integer("amount_cents").notNull(),
   message: text("message").notNull().default(""),
   availableAt: text("available_at").notNull().default(""),
   status: text("status").notNull().default("submitted"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
-}, (table) => [index("quotes_job_idx").on(table.jobId)]);
+}, (table) => [
+  index("quotes_job_idx").on(table.jobId),
+  uniqueIndex("quotes_job_contractor_unique").on(table.jobId, table.contractorEmail),
+]);
 
 export const messages = sqliteTable("messages", {
   id: integer("id").primaryKey({ autoIncrement: true }),
