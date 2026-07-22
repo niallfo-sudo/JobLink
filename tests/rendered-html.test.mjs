@@ -109,6 +109,12 @@ test("supports custom request terms and persistent employee operations", async (
   assert.match(page, /filteredHelpFaqs/);
   assert.match(page, /filteredConversations/);
   assert.match(page, /visibleContractorJobs/);
+  assert.match(page, /openLatestRequest/);
+  assert.match(page, /trackingJob/);
+  assert.match(page, /acceptedSavedQuote/);
+  assert.match(page, /await loadSavedQuotes\(createdJob\)/);
+  assert.match(page, /await openJobRoom\(bookedJob\)/);
+  assert.match(page, /persistedJobs\.filter\(\(job\) => job\.status === "completed"\)/);
   assert.doesNotMatch(page, /Off-platform job import is ready/);
   const incompleteButtons = [...page.matchAll(/<button\b([^>]*)>/g)].filter(([, attributes]) => !/onClick=|type="submit"|disabled=/.test(attributes));
   assert.deepEqual(incompleteButtons.map((match) => match[0]), []);

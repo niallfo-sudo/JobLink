@@ -6,7 +6,7 @@ type View = "discover" | "request" | "matches" | "tracking" | "contractor" | "ac
 type ProTab = "overview" | "opportunities" | "jobs" | "inbox" | "business";
 type AccountTab = "jobs" | "payments" | "documents" | "saved";
 type AdminTab = "overview" | "verification" | "fraud" | "disputes";
-type PersistedJob = { id: number; externalId: string; category: string; title: string; status: string; budget: string; createdAt: string | number };
+type PersistedJob = { id: number; externalId: string; category: string; title: string; description?: string; size?: string; timeline?: string; postalCode?: string; emergency?: boolean; status: string; budget: string; createdAt: string | number };
 type PersistedQuote = { id: number; contractorName: string; amountCents: number; message: string; availableAt: string; status: string };
 type Opportunity = { numericId?: number; id: string; service: string; title: string; distance: string; budget: string; timing: string; match: number; posted: string; details: string };
 type RoomMessage = { id: number; body: string; mine: boolean; createdAt: string | number };
@@ -316,7 +316,12 @@ export default function Home() {
     if (view !== "account") return;
     fetch("/api/jobs")
       .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((data: { jobs?: PersistedJob[] }) => setPersistedJobs(data.jobs ?? []))
+      .then((data: { jobs?: PersistedJob[] }) => {
+        const jobs = data.jobs ?? [];
+        setPersistedJobs(jobs);
+        const currentJob = jobs.find((job) => ["booked", "in_progress"].includes(job.status));
+        if (currentJob) void loadSavedQuotes(currentJob);
+      })
       .catch(() => undefined);
   }, [view]);
 
@@ -436,6 +441,8 @@ export default function Home() {
   }, [conversations, messageSearch]);
 
   const visibleContractorJobs = useMemo(() => conversations.filter((job) => jobView === "active" ? job.status === "in_progress" : jobView === "upcoming" ? job.status === "booked" : jobView === "completed" ? job.status === "completed" : false), [conversations, jobView]);
+  const trackingJob = roomJob ?? selectedSavedJob ?? persistedJobs.find((job) => ["booked", "in_progress"].includes(job.status)) ?? null;
+  const acceptedSavedQuote = savedQuotes.find((quote) => quote.status === "accepted") ?? null;
 
   async function updateOperationsCase(updates: Partial<Pick<OperationsCase, "status" | "risk" | "assignee" | "resolution">>, includeNote = false) {
     if (!selectedOperationCase) return;
@@ -505,6 +512,30 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  async function openLatestRequest(target: "matches" | "tracking" = "matches") {
+    try {
+      const response = await fetch("/api/jobs");
+      if (!response.ok) throw new Error("Unable to load jobs");
+      const data = (await response.json()) as { jobs?: PersistedJob[] };
+      const jobs = data.jobs ?? [];
+      setPersistedJobs(jobs);
+      const job = target === "tracking" ? jobs.find((item) => ["booked", "in_progress"].includes(item.status)) : jobs[0];
+      if (!job) { go(target === "tracking" ? "account" : "request"); return; }
+      setSavedRequestId(job.externalId);
+      setCategory(job.category);
+      setScope(job.title);
+      if (job.size) setSize(job.size);
+      if (job.timeline) { if (["Before Friday", "Within a week", "Within a month", "I’m flexible"].includes(job.timeline)) setTimeline(job.timeline); else { setTimeline("Custom"); setCustomTimeline(job.timeline); } }
+      if (job.budget) { if (["$1,000–$2,000", "$2,000–$2,500", "$2,500–$5,000", "Need guidance"].includes(job.budget)) setBudget(job.budget); else { setBudget("Custom"); setCustomBudget(job.budget); } }
+      setSelectedSavedJob(job);
+      await loadSavedQuotes(job);
+      if (target === "tracking") await openJobRoom(job);
+      go(target);
+    } catch {
+      showNotice("Your saved jobs could not be loaded. Please try again.");
+    }
+  }
+
   function chooseRequestFiles(files: FileList | null) {
     const selected = Array.from(files ?? []);
     const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "video/mp4", "video/quicktime", "video/webm"]);
@@ -524,15 +555,18 @@ export default function Home() {
         body: JSON.stringify({ category, title: scope, description: jobBrief, size, timeline: requestTimeline, budget: requestBudget, postalCode, emergency: isEmergency }),
       });
       if (!response.ok) throw new Error("Unable to save request");
-      const data = (await response.json()) as { job: { id: number; externalId: string } };
-      setSavedRequestId(data.job.externalId);
+      const data = (await response.json()) as { job: PersistedJob };
+      const createdJob = data.job;
+      setSavedRequestId(createdJob.externalId);
+      setPersistedJobs((current) => [createdJob, ...current.filter((job) => job.id !== createdJob.id)]);
       if (requestFiles.length) {
         const form = new FormData();
         requestFiles.forEach((file) => form.append("files", file));
-        const uploadResponse = await fetch(`/api/jobs/${data.job.id}/attachments`, { method: "POST", body: form });
+        const uploadResponse = await fetch(`/api/jobs/${createdJob.id}/attachments`, { method: "POST", body: form });
         if (!uploadResponse.ok) setUploadError("Your request was posted, but the files did not finish uploading.");
         else { setRequestFiles([]); setUploadError(null); }
       }
+      await loadSavedQuotes(createdJob);
       setSaveStatus("saved");
       go("matches");
     } catch {
@@ -628,9 +662,13 @@ export default function Home() {
         body: JSON.stringify({ quoteId: quote.id }),
       });
       if (!response.ok) throw new Error("Unable to accept quote");
+      const bookedJob = { ...selectedSavedJob, status: "booked" };
       setAcceptedQuoteId(quote.id);
+      setAccepted(quote.contractorName);
       setSavedQuotes((current) => current.map((item) => ({ ...item, status: item.id === quote.id ? "accepted" : "declined" })));
-      setPersistedJobs((current) => current.map((job) => job.id === selectedSavedJob.id ? { ...job, status: "booked" } : job));
+      setSelectedSavedJob(bookedJob);
+      setPersistedJobs((current) => current.map((job) => job.id === selectedSavedJob.id ? bookedJob : job));
+      await openJobRoom(bookedJob);
       setSavedQuotesStatus("idle");
     } catch {
       setSavedQuotesStatus("error");
@@ -821,8 +859,8 @@ export default function Home() {
         ) : (
           <nav aria-label="Main navigation">
             <button className={view === "discover" ? "active" : ""} onClick={() => go("discover")}>Find a pro</button>
-            <button className={view === "matches" ? "active" : ""} onClick={() => go("matches")}>My request</button>
-            <button className={view === "tracking" ? "active" : ""} onClick={() => go("tracking")}>Track job</button>
+            <button className={view === "matches" ? "active" : ""} onClick={() => void openLatestRequest("matches")}>My request</button>
+            <button className={view === "tracking" ? "active" : ""} onClick={() => void openLatestRequest("tracking")}>Track job</button>
           </nav>
         )}
         <div className="header-actions">
@@ -1017,7 +1055,13 @@ export default function Home() {
           <div className="job-summary-strip"><span><b>{category} · {selectedJobType}</b>{size} · {postalCode}</span><span><b>Target</b>{requestTimeline}</span><span><b>Budget</b>{requestBudget}</span><button onClick={() => { setStep(3); go("request"); }}>View request</button></div>
           <div className="match-layout">
             <div className="contractor-list">
-              {matchedContractors.map((pro, index) => (
+              {savedRequestId && savedQuotesStatus === "loading" && <div className="matches-loading"><span>JL</span><h3>Loading verified quotes…</h3><p>Your saved request is ready. We’re retrieving its current quote status.</p></div>}
+              {savedRequestId && savedQuotes.length > 0 && savedQuotes.map((quote, index) => (
+                <article className={`contractor-card ${index === 0 ? "featured" : ""}`} key={quote.id}>
+                  <div className="rank">0{index + 1}</div><div className="pro-logo" style={{ background: contractors[index % contractors.length].color }}>{quote.contractorName.split(" ").slice(0,2).map((word) => word[0]).join("")}</div><div className="pro-main"><div className="pro-title"><div><span className="match-badge">{index === 0 ? "Best value" : "Verified pro"}</span><h2>{quote.contractorName} <small>✓</small></h2></div><div className="trust-score"><b>{Math.max(88, 96 - index * 3)}</b><span>Trust score</span></div></div><div className="pro-facts"><span><b>★ {index === 0 ? "4.9" : "4.8"}</b> verified</span><span>Insured</span><span>Identity checked</span><span>Work history verified</span></div><div className="quote-row"><div><small>Available</small><b>{quote.availableAt}</b></div><div><small>Submitted quote</small><b className="quote-price">${(quote.amountCents / 100).toLocaleString()}</b></div></div><p className="quote-note">✓ {quote.message}</p><div className="card-actions"><button className="secondary-action" onClick={() => { setStep(3); go("request"); }}>Review scope</button><button className="primary-action" disabled={savedQuotesStatus === "loading" || (acceptedQuoteId !== null && acceptedQuoteId !== quote.id)} onClick={() => void acceptSavedQuote(quote)}>{quote.status === "accepted" ? "Selected ✓" : quote.status === "declined" ? "Another pro selected" : "Choose this pro"}</button></div></div>
+                </article>
+              ))}
+              {(!savedRequestId || (savedQuotesStatus !== "loading" && savedQuotes.length === 0)) && matchedContractors.map((pro, index) => (
                 <article className={`contractor-card ${index === 0 ? "featured" : ""}`} key={pro.name}>
                   <div className="rank">0{index + 1}</div>
                   <div className="pro-logo" style={{ background: pro.color }}>{pro.initials}</div>
@@ -1034,10 +1078,10 @@ export default function Home() {
             <aside className="insight-card">
               <span className="insight-icon">✦</span>
               <p className="aside-label">JobLink insight</p>
-              <h3>{matchedContractors[0].name} is your strongest fit.</h3>
-              <p>They’re 8 km away, have completed 42 similar {category.toLowerCase()} jobs and respond 37% faster than average.</p>
+              <h3>{savedQuotes[0]?.contractorName ?? matchedContractors[0].name} is your strongest fit.</h3>
+              <p>{savedQuotes.length ? `Their $${(savedQuotes[0].amountCents / 100).toLocaleString()} quote includes a verified scope and the earliest strong schedule match.` : `They’re 8 km away, have completed 42 similar ${category.toLowerCase()} jobs and respond 37% faster than average.`}</p>
               <div><span>Job similarity</span><b>98%</b></div><div><span>Schedule fit</span><b>95%</b></div><div><span>Price confidence</span><b>High</b></div>
-              <button onClick={() => setAccepted(matchedContractors[0].name)}>Choose best match →</button>
+              <button disabled={savedQuotesStatus === "loading" || Boolean(acceptedQuoteId)} onClick={() => savedQuotes[0] ? void acceptSavedQuote(savedQuotes[0]) : setAccepted(matchedContractors[0].name)}>{acceptedQuoteId ? "Best match selected ✓" : "Choose best match →"}</button>
             </aside>
           </div>
           {accepted && <div className="accepted-banner"><span>✓</span><div><b>{accepted} has been selected.</b><p>Your booking is ready. Follow the live job timeline from arrival to completion.</p></div><button onClick={() => go("tracking")}>Track this job →</button></div>}
@@ -1047,7 +1091,7 @@ export default function Home() {
       {view === "tracking" && (
         <section className="app-shell tracking-shell">
           <div className="tracking-top">
-            <div><p className="step-kicker">Active job · {savedRequestId ?? "JL-2048"}</p><h1>Your job is underway.</h1><p>{category} · {selectedJobType} with {accepted ?? matchedContractors[0].name}</p></div>
+            <div><p className="step-kicker">{trackingJob?.status === "booked" ? "Booked job" : "Active job"} · {trackingJob?.externalId ?? savedRequestId ?? "JobLink"}</p><h1>{trackingJob?.status === "booked" ? "Your professional is confirmed." : "Your job is underway."}</h1><p>{trackingJob?.category ?? category} · {trackingJob?.title ?? selectedJobType} with {acceptedSavedQuote?.contractorName ?? accepted ?? matchedContractors[0].name}</p></div>
             <button className="support-button" onClick={() => go("help")}>Need help?</button>
           </div>
           <div className="tracking-layout">
@@ -1057,17 +1101,11 @@ export default function Home() {
                 <div className="map-label label-one">Dundurn St.</div><div className="map-label label-two">Main St. W.</div>
                 <span className="home-pin">⌂</span><span className="crew-pin">NB</span>
               </div>
-              <div className="arrival-panel"><span className="pulse-icon"><i /></span><div><small>Crew is on the way</small><h2>Arriving in 14 minutes</h2><p>Alex and Jordan · white Ford Transit</p></div><button onClick={openActiveJobRoom}>Message crew</button></div>
+              <div className="arrival-panel"><span className="pulse-icon"><i /></span><div><small>{trackingJob?.status === "booked" ? "Booking confirmed" : "Crew is on the way"}</small><h2>{trackingJob?.status === "booked" ? (acceptedSavedQuote?.availableAt || "Schedule confirmed") : "Arriving in 14 minutes"}</h2><p>{acceptedSavedQuote?.contractorName ?? accepted ?? matchedContractors[0].name} · updates saved in Job Room</p></div><button onClick={() => trackingJob ? void openJobRoom(trackingJob) : openActiveJobRoom()}>Message professional</button></div>
             </div>
             <aside className="job-detail-card">
               <p className="aside-label">Today’s progress</p>
-              <ol className="timeline">
-                <li className="complete"><span>✓</span><div><b>Materials picked up</b><small>7:42 AM</small></div></li>
-                <li className="current"><span><i /></span><div><b>Crew is on the way</b><small>8:06 AM</small></div></li>
-                <li><span>3</span><div><b>Work started</b><small>Next</small></div></li>
-                <li><span>4</span><div><b>Finishing & cleanup</b></div></li>
-                <li><span>5</span><div><b>Final walkthrough</b></div></li>
-              </ol>
+              <ol className="timeline">{roomEvents.length ? roomEvents.map((event, index) => <li key={event.id} className={index < roomEvents.length - 1 ? "complete" : "current"}><span>{index < roomEvents.length - 1 ? "✓" : <i />}</span><div><b>{event.label}</b><small>{new Date(event.createdAt).toLocaleString()}</small></div></li>) : <><li className="complete"><span>✓</span><div><b>Quote accepted</b><small>Saved to JobLink</small></div></li><li className="current"><span><i /></span><div><b>Booking confirmed</b><small>{acceptedSavedQuote?.availableAt || "Schedule pending"}</small></div></li><li><span>3</span><div><b>Crew dispatch</b><small>Next update</small></div></li><li><span>4</span><div><b>Work and cleanup</b></div></li><li><span>5</span><div><b>Final walkthrough</b></div></li></>}</ol>
             </aside>
           </div>
           <div className="tracking-bottom">
@@ -1128,9 +1166,9 @@ export default function Home() {
             <aside className="account-sidebar">
               <div className="account-person"><span>NL</span><div><b>Niall L.</b><small>Hamilton, Ontario</small></div></div>
               <nav aria-label="Account sections">
-                <button className={accountTab === "jobs" ? "selected" : ""} onClick={() => setAccountTab("jobs")}><span>01</span>My jobs <b>3</b></button>
+                <button className={accountTab === "jobs" ? "selected" : ""} onClick={() => setAccountTab("jobs")}><span>01</span>My jobs <b>{persistedJobs.length}</b></button>
                 <button className={accountTab === "payments" ? "selected" : ""} onClick={() => setAccountTab("payments")}><span>02</span>Payments</button>
-                <button className={accountTab === "documents" ? "selected" : ""} onClick={() => setAccountTab("documents")}><span>03</span>Documents <b>6</b></button>
+                <button className={accountTab === "documents" ? "selected" : ""} onClick={() => setAccountTab("documents")}><span>03</span>Documents <b>{generatedDocuments.length}</b></button>
                 <button className={accountTab === "saved" ? "selected" : ""} onClick={() => setAccountTab("saved")}><span>04</span>Saved pros</button>
               </nav>
               <div className="account-safety"><span>✓</span><div><b>JobLink protected</b><p>Your active job and payment are covered.</p></div></div>
@@ -1138,13 +1176,9 @@ export default function Home() {
             <div className="account-content">
               {accountTab === "jobs" && <>
                 {persistedJobs.length > 0 && <div className="saved-request-list"><div className="account-section-head"><div><p className="aside-label">Saved to JobLink</p><h2>Your submitted requests</h2></div><span>{persistedJobs.length} stored</span></div>{persistedJobs.map((job) => <article key={job.id} className={selectedSavedJob?.id === job.id ? "selected-request" : ""}><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status}</small><h3>{job.title}</h3><p>{job.budget}</p></div><button onClick={() => loadSavedQuotes(job)}>Compare quotes →</button></article>)}{selectedSavedJob && <div className="saved-quote-panel"><div className="saved-quote-heading"><div><p className="aside-label">Live quote comparison</p><h3>{selectedSavedJob.externalId}</h3></div><div className="saved-quote-heading-actions"><button onClick={() => openJobRoom(selectedSavedJob)}>Open Job Room</button><button aria-label="Close quote comparison" onClick={() => setSelectedSavedJob(null)}>×</button></div></div>{savedQuotesStatus === "loading" && !savedQuotes.length ? <p className="quote-panel-state">Loading quotes…</p> : savedQuotesStatus === "error" ? <p className="quote-panel-state error">Quotes could not be loaded. Please try again.</p> : <div className="saved-quote-grid">{savedQuotes.map((quote, index) => <article key={quote.id} className={quote.status === "accepted" ? "accepted" : ""}><div><span>{index === 0 ? "Best value" : "Verified pro"}</span><b>{quote.contractorName}</b></div><strong>${(quote.amountCents / 100).toLocaleString()}</strong><p>{quote.message}</p><small>Available {quote.availableAt}</small><button disabled={savedQuotesStatus === "loading" || (acceptedQuoteId !== null && acceptedQuoteId !== quote.id)} onClick={() => acceptSavedQuote(quote)}>{quote.status === "accepted" ? "Selected ✓" : quote.status === "declined" ? "Another pro selected" : "Choose this pro →"}</button></article>)}</div>}</div>}</div>}
-                <div className="account-section-head"><div><p className="aside-label">Current</p><h2>Active job</h2></div><button onClick={() => go("tracking")}>Open live tracking →</button></div>
-                <article className="account-active-job"><div className="account-job-status"><span><i /></span><div><small>In progress · Arriving in 14 min</small><h3>Basement drywall repair</h3><p>North & Beam Drywall · JL-2048</p></div><b>$2,280</b></div><div className="account-progress"><i /></div><div className="account-job-actions"><span>Started today at 8:31 AM</span><button onClick={() => go("tracking")}>Track job</button><button onClick={openActiveJobRoom}>Message pro</button></div></article>
+                {trackingJob && <><div className="account-section-head"><div><p className="aside-label">Current</p><h2>{trackingJob.status === "booked" ? "Confirmed booking" : "Active job"}</h2></div><button onClick={() => go("tracking")}>Open live tracking →</button></div><article className="account-active-job"><div className="account-job-status"><span><i /></span><div><small>{trackingJob.status.replaceAll("_", " ")} · {acceptedSavedQuote?.availableAt || "Schedule in Job Room"}</small><h3>{trackingJob.title}</h3><p>{acceptedSavedQuote?.contractorName ?? accepted ?? "Matched professional"} · {trackingJob.externalId}</p></div><b>{acceptedSavedQuote ? `$${(acceptedSavedQuote.amountCents / 100).toLocaleString()}` : trackingJob.budget}</b></div><div className="account-progress"><i /></div><div className="account-job-actions"><span>All updates are stored with this job</span><button onClick={() => go("tracking")}>Track job</button><button onClick={() => void openJobRoom(trackingJob)}>Message pro</button></div></article></>}
                 <div className="account-section-head history-head"><div><p className="aside-label">History</p><h2>Past requests</h2></div></div>
-                <div className="job-history-list">
-                  <article><span className="history-icon">PT</span><div><small>Completed · June 18</small><h3>Main-floor painting</h3><p>Brightline Painting · 5.0 ★</p></div><b>$3,460</b><button onClick={() => showNotice("Past job JL-1984: completed June 18 for $3,460.")}>View details →</button></article>
-                  <article><span className="history-icon green">PL</span><div><small>Completed · April 3</small><h3>Kitchen faucet replacement</h3><p>Harbour Plumbing · 4.9 ★</p></div><b>$385</b><button onClick={() => showNotice("Past job JL-1762: completed April 3 for $385.")}>View details →</button></article>
-                </div>
+                <div className="job-history-list">{persistedJobs.filter((job) => job.status === "completed").length ? persistedJobs.filter((job) => job.status === "completed").map((job) => <article key={job.id}><span className="history-icon">{job.category.slice(0,2).toUpperCase()}</span><div><small>Completed · {new Date(job.createdAt).toLocaleDateString()}</small><h3>{job.title}</h3><p>{job.externalId} · Verified JobLink record</p></div><b>{job.budget}</b><button onClick={() => void openJobRoom(job)}>View details →</button></article>) : <div className="account-history-empty"><b>No completed jobs yet.</b><p>Finished jobs will appear here with their documents, review and warranty history.</p></div>}</div>
               </>}
               {accountTab === "payments" && <>
                 <div className="account-section-head"><div><p className="aside-label">Money</p><h2>Payments</h2></div><span className="protected-badge">Protected by JobLink</span></div>
@@ -1160,7 +1194,7 @@ export default function Home() {
               </>}
               {accountTab === "saved" && <>
                 <div className="account-section-head"><div><p className="aside-label">Your network</p><h2>Saved professionals</h2></div></div>
-                <div className="saved-pro-grid"><article><span className="saved-logo orange">BP</span><h3>Brightline Painting</h3><p>Painting · 4.9 ★ · 312 jobs</p><div><span>Last hired June 2026</span><b>98 Trust Score</b></div><button onClick={() => beginRequest(undefined, "Painting")}>Request another quote →</button></article><article><span className="saved-logo green">HP</span><h3>Harbour Plumbing</h3><p>Plumbing · 4.9 ★ · 481 jobs</p><div><span>Last hired April 2026</span><b>97 Trust Score</b></div><button onClick={() => beginRequest(undefined, "Plumbing")}>Request another quote →</button></article><article className="saved-empty"><span>+</span><h3>Build your trusted team</h3><p>Save a professional after comparing quotes or completing a job.</p></article></div>
+                <div className="saved-pro-grid">{acceptedSavedQuote && selectedSavedJob ? <article><span className="saved-logo orange">{acceptedSavedQuote.contractorName.split(" ").slice(0,2).map((word) => word[0]).join("")}</span><h3>{acceptedSavedQuote.contractorName}</h3><p>{selectedSavedJob.category} · Verified JobLink professional</p><div><span>Selected for {selectedSavedJob.externalId}</span><b>Protected booking</b></div><button onClick={() => beginRequest(undefined, selectedSavedJob.category)}>Request another quote →</button></article> : <article className="saved-empty"><span>+</span><h3>Build your trusted team</h3><p>Your selected professionals appear here after you accept a verified quote.</p></article>}</div>
               </>}
             </div>
           </div>
@@ -1212,14 +1246,14 @@ export default function Home() {
             <div className="pro-page">
               <div className="pro-page-heading"><div><p className="step-kicker">Wednesday, July 22</p><h1>Good morning, Alex.</h1><p>Three strong opportunities arrived near Hamilton this morning.</p></div><button className="primary-action" onClick={() => setProTab("opportunities")}>View opportunities →</button></div>
               <div className="pro-metrics">
-                <article><span>Open opportunities</span><b>8</b><small><i className="up">↑ 3</i> since yesterday</small></article>
-                <article><span>Quotes awaiting reply</span><b>4</b><small>$9,840 potential value</small></article>
-                <article><span>Booked this month</span><b>$18,420</b><small><i className="up">↑ 12%</i> from June</small></article>
+                <article><span>Open opportunities</span><b>{availableOpportunities.length}</b><small>Matched to your services and radius</small></article>
+                <article><span>Quotes awaiting reply</span><b>{quoteSent ? 1 : 0}</b><small>Submitted through JobLink</small></article>
+                <article><span>Recorded payouts</span><b>${(paymentRecords.reduce((total, payment) => total + payment.contractorPayoutCents, 0) / 100).toLocaleString()}</b><small>{paymentRecords.length} accepted {paymentRecords.length === 1 ? "job" : "jobs"}</small></article>
                 <article><span>Verified review score</span><b>{reputation.verifiedReviewScore ?? "New"}</b><small>{reputation.verifiedReviewCount} completed-job {reputation.verifiedReviewCount === 1 ? "review" : "reviews"}</small></article>
               </div>
               <div className="pro-overview-grid">
                 <div className="pro-panel">
-                  <div className="pro-panel-head"><div><p className="aside-label">Recommended work</p><h2>Best opportunities for you</h2></div><button onClick={() => setProTab("opportunities")}>View all 8</button></div>
+                  <div className="pro-panel-head"><div><p className="aside-label">Recommended work</p><h2>Best opportunities for you</h2></div><button onClick={() => setProTab("opportunities")}>View all {availableOpportunities.length}</button></div>
                   {availableOpportunities.slice(0, 2).map((job) => (
                     <article className="opportunity-row" key={job.id}>
                       <div className="match-ring"><b>{job.match}</b><small>match</small></div>
@@ -1237,11 +1271,7 @@ export default function Home() {
               </div>
               <div className="pro-panel pipeline-panel">
                 <div className="pro-panel-head"><div><p className="aside-label">This week</p><h2>Job pipeline</h2></div><button onClick={() => setProTab("jobs")}>Manage jobs</button></div>
-                <div className="pipeline-grid">
-                  <article><span className="pipeline-day">Wed 22</span><div><small>8:30 AM</small><b>Basement drywall repair</b><p>West Hamilton · $2,280</p></div><em className="status-live">In progress</em></article>
-                  <article><span className="pipeline-day">Thu 23</span><div><small>9:00 AM</small><b>Kitchen ceiling patch</b><p>Dundas · $860</p></div><em>Confirmed</em></article>
-                  <article><span className="pipeline-day">Fri 24</span><div><small>7:30 AM</small><b>Garage boarding</b><p>Ancaster · $4,640</p></div><em>Confirmed</em></article>
-                </div>
+                <div className="pipeline-grid">{conversations.length ? conversations.slice(0, 4).map((job) => <article key={job.id}><span className="pipeline-day">{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId}</small><b>{job.title}</b><p>{job.category} · {job.budget}</p></div><em className={job.status === "in_progress" ? "status-live" : ""}>{job.status.replaceAll("_", " ")}</em></article>) : <div className="pipeline-empty"><b>No booked jobs yet.</b><p>Accepted quotes will build your weekly pipeline automatically.</p></div>}</div>
               </div>
             </div>
           )}
