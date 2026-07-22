@@ -67,7 +67,9 @@ test("wires existing controls and contractor service matching", async () => {
 
   assert.match(page, /contractorServiceCatalog/);
   assert.match(page, /"General contracting"/);
-  assert.match(page, /"Dog walking"/);
+  for (const removedService of ["Snow removal", "Cleaning", "Appliance repair", "Locksmith", "Pest control", "Auto detailing", "Dog walking"]) {
+    assert.doesNotMatch(page, new RegExp(`"${removedService}"`));
+  }
   assert.match(page, /setOpportunitySort\("nearest"\)/);
   assert.match(page, /setDismissedOpportunities/);
   assert.match(page, /setSelectedProfile\(pro\)/);

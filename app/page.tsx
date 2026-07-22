@@ -39,17 +39,10 @@ const contractorServiceCatalog: Record<string, string[]> = {
   HVAC: ["Furnace repair", "Air conditioning", "Heat pumps", "Ductwork", "Maintenance", "Emergency HVAC"],
   "Junk removal": ["Household junk", "Construction debris", "Appliance removal", "Estate cleanout", "Yard waste", "Commercial cleanup"],
   Landscaping: ["Lawn care", "Garden maintenance", "Interlock", "Fencing", "Tree and shrub care", "Seasonal cleanup"],
-  "Snow removal": ["Driveway clearing", "Walkway clearing", "Salting", "Commercial lots", "Seasonal contracts", "Emergency clearing"],
   Moving: ["Local moving", "Long-distance moving", "Packing", "Furniture delivery", "Office moving", "Heavy-item moving"],
-  Cleaning: ["Home cleaning", "Deep cleaning", "Move-in cleaning", "Post-construction cleaning", "Office cleaning", "Carpet cleaning"],
   Carpentry: ["Finish carpentry", "Framing", "Decks", "Cabinetry", "Doors and trim", "Custom woodwork"],
   Flooring: ["Hardwood", "Laminate", "Vinyl plank", "Tile", "Carpet", "Floor repair"],
   "General contracting": ["Renovations", "Basements", "Kitchens", "Bathrooms", "Additions", "Project management"],
-  "Appliance repair": ["Refrigerators", "Washers and dryers", "Dishwashers", "Ovens", "Microwaves", "Installation"],
-  Locksmith: ["Lockouts", "Lock replacement", "Rekeying", "Smart locks", "Commercial locks", "Emergency locksmith"],
-  "Pest control": ["Rodents", "Insects", "Wildlife", "Bed bugs", "Preventive treatment", "Commercial pest control"],
-  "Auto detailing": ["Interior detailing", "Exterior detailing", "Paint correction", "Ceramic coating", "Fleet detailing", "Mobile detailing"],
-  "Dog walking": ["Scheduled walks", "Drop-in visits", "Pet sitting", "Puppy visits", "Senior pet care", "Group walks"],
 };
 
 const contractors = [

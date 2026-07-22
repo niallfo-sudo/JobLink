@@ -4,7 +4,7 @@ import { contractorProfiles, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 
 const plans = new Set(["starter", "growth", "pro"]);
-const serviceCategories = new Set(["Drywall", "Roofing", "Painting", "Plumbing", "Electrical", "HVAC", "Junk removal", "Landscaping", "Snow removal", "Moving", "Cleaning", "Carpentry", "Flooring", "General contracting", "Appliance repair", "Locksmith", "Pest control", "Auto detailing", "Dog walking"]);
+const serviceCategories = new Set(["Drywall", "Roofing", "Painting", "Plumbing", "Electrical", "HVAC", "Junk removal", "Landscaping", "Moving", "Carpentry", "Flooring", "General contracting"]);
 
 export async function GET() {
   const user = await getChatGPTUser();
