@@ -134,6 +134,13 @@
       "when": 1786171000000,
       "tag": "0018_payment_operations_review",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1786233249193,
+      "tag": "0019_glamorous_vargas",
+      "breakpoints": true
     }
   ]
 }

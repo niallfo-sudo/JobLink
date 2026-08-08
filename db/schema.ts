@@ -20,6 +20,7 @@ export const contractorProfiles = sqliteTable("contractor_profiles", {
   about: text("about").notNull().default(""),
   primaryService: text("primary_service").notNull(),
   services: text("services").notNull().default("[]"),
+  approvedServices: text("approved_services").notNull().default("[]"),
   homeBase: text("home_base").notNull().default("Hamilton, Ontario"),
   serviceRadiusKm: integer("service_radius_km").notNull().default(30),
   teamSize: integer("team_size").notNull().default(1),

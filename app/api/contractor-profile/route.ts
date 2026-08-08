@@ -11,7 +11,7 @@ export async function GET() {
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
     const [profile] = await getDb().select().from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, user.email)).limit(1);
-    return Response.json({ profile: profile ? { ...profile, services: JSON.parse(profile.services) } : null });
+    return Response.json({ profile: profile ? { ...profile, services: JSON.parse(profile.services), approvedServices: JSON.parse(profile.approvedServices || "[]") } : null });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     const values = {
       ownerEmail: user.email, businessName, legalName: payload.legalName?.trim() || businessName,
       phone: payload.phone?.trim() || "", businessAddress: payload.businessAddress?.trim() || "", yearsInBusiness: Math.min(200, Math.max(0, Number(payload.yearsInBusiness) || 0)), about: payload.about?.trim() || "", primaryService,
-      services: JSON.stringify(Array.from(new Set([primaryService, ...(payload.services ?? [])].map((service) => service.trim()).filter(Boolean))).slice(0, 20)), homeBase: payload.homeBase?.trim() || "Hamilton, Ontario",
+      services: JSON.stringify(Array.from(new Set([primaryService, ...(payload.services ?? [])].map((service) => service.trim()).filter(Boolean))).slice(0, 20)), approvedServices: "[]", homeBase: payload.homeBase?.trim() || "Hamilton, Ontario",
       serviceRadiusKm: radius, teamSize, emergencyAvailable: Boolean(payload.emergencyAvailable),
       acceptingWork: false, plan, verificationStatus: "pending_review", updatedAt: new Date(),
     };
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
         assignee: "Unassigned",
         evidenceCount: 0,
         dueLabel: "Due within 1 business day",
-        details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile submitted", "Identity and insurance review required"] }),
+        details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, requestedServices: JSON.parse(profile.services || "[]"), signals: ["Business profile submitted", "Identity and insurance review required"] }),
       }).onConflictDoUpdate({ target: operationsCases.externalId, set: {
         title: "Contractor application review",
         subject: profile.businessName,
@@ -71,14 +71,14 @@ export async function POST(request: Request) {
         assignee: "Unassigned",
         evidenceCount: 0,
         dueLabel: "Due within 1 business day",
-        details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile re-submitted", "Identity and insurance review required"] }),
+        details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, requestedServices: JSON.parse(profile.services || "[]"), signals: ["Business profile re-submitted", "Identity and insurance review required"] }),
         resolution: "",
         updatedAt: new Date(),
       } });
     } catch (error) {
       console.error("Verification case could not be queued", error);
     }
-    return Response.json({ profile: { ...profile, services: JSON.parse(profile.services) } }, { status: 201 });
+    return Response.json({ profile: { ...profile, services: JSON.parse(profile.services), approvedServices: JSON.parse(profile.approvedServices || "[]") } }, { status: 201 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }
@@ -102,7 +102,7 @@ export async function PATCH(request: Request) {
     if (payload.serviceRadiusKm !== undefined) updates.serviceRadiusKm = Math.min(100, Math.max(5, Number(payload.serviceRadiusKm) || 30));
     const [profile] = await getDb().update(contractorProfiles).set(updates).where(eq(contractorProfiles.ownerEmail, user.email)).returning();
     if (!profile) return Response.json({ error: "Complete contractor onboarding first" }, { status: 404 });
-    return Response.json({ profile: { ...profile, services: JSON.parse(profile.services) } });
+    return Response.json({ profile: { ...profile, services: JSON.parse(profile.services), approvedServices: JSON.parse(profile.approvedServices || "[]") } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }

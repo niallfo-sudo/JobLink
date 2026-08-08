@@ -9,6 +9,14 @@ const allowedStatuses = new Set(["open", "in_review", "waiting", "resolved", "di
 const allowedRisks = new Set(["low", "medium", "high", "critical"]);
 const allowedVerificationDecisions = new Set(["approved", "changes_requested", "rejected"]);
 
+function profileServices(profile: typeof contractorProfiles.$inferSelect) {
+  return Array.from(new Set([profile.primaryService, ...(JSON.parse(profile.services || "[]") as string[])]));
+}
+
+function approvedProfileServices(profile: typeof contractorProfiles.$inferSelect) {
+  return JSON.parse(profile.approvedServices || "[]") as string[];
+}
+
 type UploadBucket = { delete(keys: string | string[]): Promise<void> };
 
 function uploadsBucket() {
@@ -21,7 +29,7 @@ function contractorMatchesJob(profile: typeof contractorProfiles.$inferSelect, j
   if (profile.verificationStatus !== "verified" || !["active", "trialing", "demo_active"].includes(profile.subscriptionStatus) || !profile.acceptingWork) return false;
   if (job.emergency && !profile.emergencyAvailable) return false;
   const category = job.category.toLowerCase();
-  const services = [profile.primaryService, ...(JSON.parse(profile.services || "[]") as string[])].map((service) => service.toLowerCase());
+  const services = approvedProfileServices(profile).map((service) => service.toLowerCase());
   return services.some((service) => service.includes(category) || category.includes(service));
 }
 
@@ -61,7 +69,7 @@ async function syncPendingVerificationCases(db: ReturnType<typeof getDb>) {
       assignee: shouldReopen ? "Unassigned" : existingCase?.assignee || "Unassigned",
       evidenceCount: documents.length,
       dueLabel: "Due within 1 business day",
-      details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile submitted", `${documents.length} verification document${documents.length === 1 ? "" : "s"} uploaded`], documents }),
+      details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, requestedServices: profileServices(profile), signals: ["Business profile submitted", `${documents.length} verification document${documents.length === 1 ? "" : "s"} uploaded`], documents }),
     }).onConflictDoUpdate({ target: operationsCases.externalId, set: {
       title: "Contractor application review",
       subject: profile.businessName,
@@ -70,7 +78,7 @@ async function syncPendingVerificationCases(db: ReturnType<typeof getDb>) {
       assignee: shouldReopen ? "Unassigned" : existingCase?.assignee || "Unassigned",
       evidenceCount: documents.length,
       dueLabel: "Due within 1 business day",
-      details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile submitted", `${documents.length} verification document${documents.length === 1 ? "" : "s"} uploaded`], documents }),
+      details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, requestedServices: profileServices(profile), signals: ["Business profile submitted", `${documents.length} verification document${documents.length === 1 ? "" : "s"} uploaded`], documents }),
       resolution: shouldReopen ? "" : existingCase?.resolution || "",
       updatedAt: new Date(),
     } });
@@ -105,7 +113,8 @@ export async function GET() {
         ownerEmail: profile.ownerEmail,
         businessName: profile.businessName,
         primaryService: profile.primaryService,
-        services: JSON.parse(profile.services || "[]"),
+        requestedServices: profileServices(profile),
+        approvedServices: approvedProfileServices(profile),
         homeBase: profile.homeBase,
         serviceRadiusKm: profile.serviceRadiusKm,
         teamSize: profile.teamSize,
@@ -149,7 +158,7 @@ export async function POST(request: Request) {
   try {
     const access = await requireOperationsUser();
     if ("error" in access) return access.error;
-    const payload = (await request.json()) as { action?: string; confirmation?: string; email?: string; displayName?: string; role?: string; caseType?: string; title?: string; subject?: string; summary?: string; risk?: string; priority?: string; dueLabel?: string; milestoneId?: number; decision?: "hold" | "clear"; reason?: string };
+    const payload = (await request.json()) as { action?: string; confirmation?: string; ownerEmail?: string; approvedServices?: string[]; email?: string; displayName?: string; role?: string; caseType?: string; title?: string; subject?: string; summary?: string; risk?: string; priority?: string; dueLabel?: string; milestoneId?: number; decision?: "hold" | "clear"; reason?: string };
     if (payload.action === "clear_job_postings") {
       if (access.role !== "admin") return Response.json({ error: "Administrator access is required to clear marketplace jobs" }, { status: 403 });
       if (payload.confirmation !== "CLEAR JOBS") return Response.json({ error: "Type CLEAR JOBS to confirm the marketplace reset" }, { status: 400 });
@@ -157,6 +166,17 @@ export async function POST(request: Request) {
       if (attachments.length) await uploadsBucket().delete(attachments.map((attachment) => attachment.storageKey));
       const deletedJobs = await access.db.delete(jobRequests).returning({ id: jobRequests.id });
       return Response.json({ deletedJobs: deletedJobs.length });
+    }
+    if (payload.action === "update_approved_services") {
+      const ownerEmail = payload.ownerEmail?.trim().toLowerCase() || "";
+      if (!ownerEmail || !Array.isArray(payload.approvedServices)) return Response.json({ error: "Choose a contractor and at least one approved service" }, { status: 400 });
+      const [profile] = await access.db.select().from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, ownerEmail)).limit(1);
+      if (!profile) return Response.json({ error: "Contractor profile not found" }, { status: 404 });
+      const requested = new Set(profileServices(profile));
+      const approved = Array.from(new Set(payload.approvedServices.map((service) => service.trim()).filter((service) => requested.has(service))));
+      if (!approved.length) return Response.json({ error: "Select at least one service the contractor requested" }, { status: 400 });
+      const [updated] = await access.db.update(contractorProfiles).set({ approvedServices: JSON.stringify(approved), updatedAt: new Date() }).where(eq(contractorProfiles.id, profile.id)).returning();
+      return Response.json({ profile: { id: updated.id, ownerEmail: updated.ownerEmail, approvedServices: approved } });
     }
     if (payload.action === "case") {
       const caseType = payload.caseType && ["verification", "fraud", "dispute"].includes(payload.caseType) ? payload.caseType : "";
@@ -246,7 +266,7 @@ export async function PATCH(request: Request) {
   try {
     const access = await requireOperationsUser();
     if ("error" in access) return access.error;
-    const payload = (await request.json()) as { id?: number; status?: string; risk?: string; assignee?: string; resolution?: string; note?: string; decision?: string };
+    const payload = (await request.json()) as { id?: number; status?: string; risk?: string; assignee?: string; resolution?: string; note?: string; decision?: string; approvedServices?: string[] };
     if (!Number.isInteger(payload.id)) return Response.json({ error: "Case id is required" }, { status: 400 });
     const [existing] = await access.db.select().from(operationsCases).where(eq(operationsCases.id, Number(payload.id))).limit(1);
     if (!existing) return Response.json({ error: "Case not found" }, { status: 404 });
@@ -274,8 +294,15 @@ export async function PATCH(request: Request) {
     }
     await access.db.update(operationsCases).set(updates).where(eq(operationsCases.id, existing.id));
     if (payload.decision && caseDetails.ownerEmail) {
+      const [profile] = await access.db.select().from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, caseDetails.ownerEmail)).limit(1);
+      if (!profile) return Response.json({ error: "Contractor profile not found" }, { status: 404 });
+      const requested = new Set(profileServices(profile));
+      const proposedServices = Array.isArray(payload.approvedServices) ? payload.approvedServices : profileServices(profile);
+      const approved = Array.from(new Set(proposedServices.map((service) => service.trim()).filter((service) => requested.has(service))));
+      if (payload.decision === "approved" && !approved.length) return Response.json({ error: "Approve at least one requested service before enabling matching" }, { status: 400 });
       await access.db.update(contractorProfiles).set({
         verificationStatus: payload.decision === "approved" ? "verified" : payload.decision === "rejected" ? "rejected" : "pending_review",
+        approvedServices: payload.decision === "approved" ? JSON.stringify(approved) : undefined,
         acceptingWork: payload.decision === "approved" ? undefined : false,
         updatedAt: new Date(),
       }).where(eq(contractorProfiles.ownerEmail, caseDetails.ownerEmail));

@@ -386,3 +386,25 @@ test("uses the contractor company name and gives Operations a live job board", a
   assert.match(operationsRoute, /Administrator access is required to clear marketplace jobs/);
   assert.match(styles, /\.operations-job-board\{display:grid/);
 });
+
+test("matches contractors only to Operations-approved services", async () => {
+  const [schema, migration, profileRoute, opportunitiesRoute, quoteRoute, operationsRoute, page] = await Promise.all([
+    source("../db/schema.ts"),
+    source("../drizzle/0019_glamorous_vargas.sql"),
+    source("../app/api/contractor-profile/route.ts"),
+    source("../app/api/opportunities/route.ts"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+    source("../app/api/operations/route.ts"),
+    source("../app/page.tsx"),
+  ]);
+
+  assert.match(schema, /approved_services/);
+  assert.match(migration, /ALTER TABLE `contractor_profiles` ADD `approved_services`/);
+  assert.match(migration, /SET `approved_services` = `services` WHERE `verification_status` = 'verified'/);
+  assert.match(profileRoute, /approvedServices: "\[\]"/);
+  assert.match(opportunitiesRoute, /profile\.approvedServices/);
+  assert.match(quoteRoute, /profile\.approvedServices/);
+  assert.match(operationsRoute, /update_approved_services/);
+  assert.match(page, /Edit approved services/);
+  assert.match(page, /Operations-approved services/);
+});

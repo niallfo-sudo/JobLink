@@ -65,7 +65,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!job || job.status !== "matching") return Response.json({ error: "This opportunity is no longer accepting initial quotes" }, { status: 409 });
     const profile = await eligibleProfile(user.email);
     if (!profile || !profile.acceptingWork) return Response.json({ error: "A verified, active contractor profile that is accepting work is required" }, { status: 403 });
-    const services = [profile.primaryService, ...JSON.parse(profile.services || "[]")].map((service: string) => service.toLowerCase());
+    const services = (JSON.parse(profile.approvedServices || "[]") as string[]).map((service) => service.toLowerCase());
     if (!services.some((service: string) => service.includes(job.category.toLowerCase()) || job.category.toLowerCase().includes(service))) return Response.json({ error: "This job is outside your verified services" }, { status: 403 });
     const [quote] = await db.insert(quotes).values({ jobId, contractorEmail: user.email, contractorName: profile.businessName, amountCents, message: payload.message?.trim() || "Preliminary estimate only. This is not a booking or accepted price; a finalized quote follows the on-site visit.", availableAt: payload.availableAt?.trim() || "On-site availability to be confirmed" }).onConflictDoUpdate({
       target: [quotes.jobId, quotes.contractorEmail],
