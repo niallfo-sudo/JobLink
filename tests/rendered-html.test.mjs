@@ -369,3 +369,20 @@ test("keeps Insight availability labels separate from long values", async () => 
   assert.match(styles, /\.insight-card>div\{display:grid;grid-template-columns:/);
   assert.match(styles, /\.insight-card>div>b\{min-width:0;text-align:right;/);
 });
+
+test("uses the contractor company name and gives Operations a live job board", async () => {
+  const [page, operationsRoute, styles] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/operations/route.ts"),
+    source("../app/globals.css"),
+  ]);
+
+  assert.match(page, /contractorProfile\?\.businessName \|\| businessName/);
+  assert.match(page, /Job board and matching/);
+  assert.match(page, /Eligible matches/);
+  assert.match(page, /Clear all job postings/);
+  assert.match(operationsRoute, /matchingContractors/);
+  assert.match(operationsRoute, /clear_job_postings/);
+  assert.match(operationsRoute, /Administrator access is required to clear marketplace jobs/);
+  assert.match(styles, /\.operations-job-board\{display:grid/);
+});

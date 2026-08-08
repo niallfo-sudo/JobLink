@@ -1,6 +1,6 @@
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { contractorProfiles, contractorVerificationDocuments, jobEvents, jobRequests, operationsCaseNotes, operationsCases, paymentMilestones, paymentRecords, users } from "../../../db/schema";
+import { contractorProfiles, contractorVerificationDocuments, jobAttachments, jobEvents, jobRequests, operationsCaseNotes, operationsCases, paymentMilestones, paymentRecords, quotes, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { env } from "cloudflare:workers";
 import { notify } from "../../../lib/notifications";
@@ -8,6 +8,22 @@ import { notify } from "../../../lib/notifications";
 const allowedStatuses = new Set(["open", "in_review", "waiting", "resolved", "dismissed"]);
 const allowedRisks = new Set(["low", "medium", "high", "critical"]);
 const allowedVerificationDecisions = new Set(["approved", "changes_requested", "rejected"]);
+
+type UploadBucket = { delete(keys: string | string[]): Promise<void> };
+
+function uploadsBucket() {
+  const binding = (env as unknown as { UPLOADS?: UploadBucket }).UPLOADS;
+  if (!binding) throw new Error("Upload storage is unavailable");
+  return binding;
+}
+
+function contractorMatchesJob(profile: typeof contractorProfiles.$inferSelect, job: typeof jobRequests.$inferSelect) {
+  if (profile.verificationStatus !== "verified" || !["active", "trialing", "demo_active"].includes(profile.subscriptionStatus) || !profile.acceptingWork) return false;
+  if (job.emergency && !profile.emergencyAvailable) return false;
+  const category = job.category.toLowerCase();
+  const services = [profile.primaryService, ...(JSON.parse(profile.services || "[]") as string[])].map((service) => service.toLowerCase());
+  return services.some((service) => service.includes(category) || category.includes(service));
+}
 
 async function requireOperationsUser() {
   const user = await getChatGPTUser();
@@ -78,6 +94,8 @@ export async function GET() {
     const paymentReviewRows = await access.db.select({ milestone: paymentMilestones, payment: paymentRecords, job: { externalId: jobRequests.externalId, title: jobRequests.title } }).from(paymentMilestones).innerJoin(paymentRecords, eq(paymentMilestones.paymentId, paymentRecords.id)).innerJoin(jobRequests, eq(paymentMilestones.jobId, jobRequests.id)).where(inArray(paymentMilestones.status, ["proof_submitted", "operations_hold"])).orderBy(desc(paymentMilestones.updatedAt));
     const staff = await access.db.select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, createdAt: users.createdAt }).from(users).where(inArray(users.role, ["employee", "admin"]));
     const verifiedContractors = await access.db.select().from(contractorProfiles).where(eq(contractorProfiles.verificationStatus, "verified")).orderBy(desc(contractorProfiles.updatedAt));
+    const operationsJobs = await access.db.select().from(jobRequests).orderBy(desc(jobRequests.updatedAt)).limit(100);
+    const operationQuotes = operationsJobs.length ? await access.db.select({ id: quotes.id, jobId: quotes.jobId, contractorEmail: quotes.contractorEmail, contractorName: quotes.contractorName, amountCents: quotes.amountCents, status: quotes.status, createdAt: quotes.createdAt }).from(quotes).where(inArray(quotes.jobId, operationsJobs.map((job) => job.id))).orderBy(desc(quotes.createdAt)) : [];
     return Response.json({
       viewer: { email: access.user.email, displayName: access.user.displayName, role: access.role },
       staff,
@@ -98,6 +116,26 @@ export async function GET() {
         payoutsEnabled: profile.payoutsEnabled,
         updatedAt: profile.updatedAt,
       })),
+      jobs: operationsJobs.map((job) => {
+        const matchingContractors = verifiedContractors.filter((profile) => contractorMatchesJob(profile, job)).map((profile) => ({ businessName: profile.businessName, ownerEmail: profile.ownerEmail, primaryService: profile.primaryService }));
+        const jobQuotes = operationQuotes.filter((quote) => quote.jobId === job.id);
+        return {
+          id: job.id,
+          externalId: job.externalId,
+          ownerEmail: job.ownerEmail,
+          category: job.category,
+          title: job.title,
+          budget: job.budget,
+          timeline: job.timeline,
+          emergency: job.emergency,
+          status: job.status,
+          scheduledStartAt: job.scheduledStartAt,
+          createdAt: job.createdAt,
+          updatedAt: job.updatedAt,
+          matchingContractors,
+          quotes: jobQuotes,
+        };
+      }),
       paymentReviews: paymentReviewRows.map((row) => ({ ...row.milestone, externalId: row.job.externalId, jobTitle: row.job.title, contractorName: row.payment.contractorName })),
       stats: { jobs: jobCount?.value ?? 0, activeJobs: activeJobCount?.value ?? 0, paymentVolumeCents: paymentTotal?.value ?? 0, openCases: cases.filter((item) => !["resolved", "dismissed"].includes(item.status)).length },
     });
@@ -111,7 +149,15 @@ export async function POST(request: Request) {
   try {
     const access = await requireOperationsUser();
     if ("error" in access) return access.error;
-    const payload = (await request.json()) as { action?: string; email?: string; displayName?: string; role?: string; caseType?: string; title?: string; subject?: string; summary?: string; risk?: string; priority?: string; dueLabel?: string; milestoneId?: number; decision?: "hold" | "clear"; reason?: string };
+    const payload = (await request.json()) as { action?: string; confirmation?: string; email?: string; displayName?: string; role?: string; caseType?: string; title?: string; subject?: string; summary?: string; risk?: string; priority?: string; dueLabel?: string; milestoneId?: number; decision?: "hold" | "clear"; reason?: string };
+    if (payload.action === "clear_job_postings") {
+      if (access.role !== "admin") return Response.json({ error: "Administrator access is required to clear marketplace jobs" }, { status: 403 });
+      if (payload.confirmation !== "CLEAR JOBS") return Response.json({ error: "Type CLEAR JOBS to confirm the marketplace reset" }, { status: 400 });
+      const attachments = await access.db.select({ storageKey: jobAttachments.storageKey }).from(jobAttachments);
+      if (attachments.length) await uploadsBucket().delete(attachments.map((attachment) => attachment.storageKey));
+      const deletedJobs = await access.db.delete(jobRequests).returning({ id: jobRequests.id });
+      return Response.json({ deletedJobs: deletedJobs.length });
+    }
     if (payload.action === "case") {
       const caseType = payload.caseType && ["verification", "fraud", "dispute"].includes(payload.caseType) ? payload.caseType : "";
       const title = payload.title?.trim().slice(0, 160) ?? "";
