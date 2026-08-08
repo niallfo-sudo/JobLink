@@ -14,6 +14,8 @@ export const contractorProfiles = sqliteTable("contractor_profiles", {
   businessName: text("business_name").notNull(),
   legalName: text("legal_name").notNull().default(""),
   phone: text("phone").notNull().default(""),
+  businessAddress: text("business_address").notNull().default(""),
+  yearsInBusiness: integer("years_in_business").notNull().default(0),
   about: text("about").notNull().default(""),
   primaryService: text("primary_service").notNull(),
   services: text("services").notNull().default("[]"),
@@ -23,10 +25,30 @@ export const contractorProfiles = sqliteTable("contractor_profiles", {
   emergencyAvailable: integer("emergency_available", { mode: "boolean" }).notNull().default(false),
   acceptingWork: integer("accepting_work", { mode: "boolean" }).notNull().default(true),
   plan: text("plan").notNull().default("growth"),
+  subscriptionStatus: text("subscription_status").notNull().default("inactive"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  stripeConnectAccountId: text("stripe_connect_account_id"),
+  payoutsEnabled: integer("payouts_enabled", { mode: "boolean" }).notNull().default(false),
   verificationStatus: text("verification_status").notNull().default("pending"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [uniqueIndex("contractor_profiles_owner_unique").on(table.ownerEmail)]);
+
+export const contractorVerificationDocuments = sqliteTable("contractor_verification_documents", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ownerEmail: text("owner_email").notNull(),
+  documentType: text("document_type").notNull(),
+  storageKey: text("storage_key").notNull(),
+  filename: text("filename").notNull(),
+  contentType: text("content_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  reviewStatus: text("review_status").notNull().default("pending"),
+  uploadedAt: integer("uploaded_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("contractor_verification_owner_type_unique").on(table.ownerEmail, table.documentType),
+  index("contractor_verification_owner_idx").on(table.ownerEmail),
+]);
 
 export const jobRequests = sqliteTable("job_requests", {
   id: integer("id").primaryKey({ autoIncrement: true }),

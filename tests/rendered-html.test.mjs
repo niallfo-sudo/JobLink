@@ -15,7 +15,7 @@ test("ships the JobLink identity across the product", async () => {
   ]);
 
   assert.match(page, />JobLink</);
-  assert.match(page, /JobLink Trust Score/);
+  assert.match(page, /Verified reputation/);
   assert.match(layout, /title: "JobLink/);
   assert.match(documents, /JOBLINK/);
   assert.match(packageJson, /"name": "joblink-mvp"/);
@@ -76,10 +76,9 @@ test("wires existing controls and contractor service matching", async () => {
   }
   assert.match(page, /setOpportunitySort\("nearest"\)/);
   assert.match(page, /setDismissedOpportunities/);
-  assert.match(page, /setSelectedProfile\(pro\)/);
   assert.match(page, /serviceIntakeCatalog/);
   assert.match(page, /selectedJobDetails/);
-  assert.match(page, /matchedContractors/);
+  assert.doesNotMatch(page, /matchedContractors|North & Beam|Hamilton Plaster Co\./);
   for (const service of ["Drywall", "Roofing", "Painting", "Plumbing", "Electrical", "HVAC", "Junk removal", "Landscaping", "Moving", "Carpentry", "Flooring", "General contracting"]) {
     assert.match(page, new RegExp(`${service.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:?`));
   }
@@ -92,8 +91,7 @@ test("wires existing controls and contractor service matching", async () => {
   assert.match(opportunitiesRoute, /contractorProfiles/);
   assert.match(opportunitiesRoute, /acceptingWork/);
   assert.match(opportunitiesRoute, /verificationStatus !== "verified"/);
-  assert.match(jobsRoute, /quoteProviderNames/);
-  assert.match(jobsRoute, /providerNames\[0\]/);
+  assert.doesNotMatch(jobsRoute, /quoteProviderNames|providerNames\[0\]|insert\(quotes\)/);
 });
 
 test("supports custom request terms and persistent employee operations", async () => {
@@ -131,7 +129,7 @@ test("supports custom request terms and persistent employee operations", async (
   assert.match(operationsRoute, /Operations workspace unavailable/);
   assert.match(operationsRoute, /syncPendingVerificationCases/);
   assert.match(operationsRoute, /contractorProfiles\.verificationStatus/);
-  assert.match(operationsRoute, /onConflictDoNothing/);
+  assert.match(operationsRoute, /onConflictDoUpdate/);
   assert.match(operationsRoute, /allowedVerificationDecisions/);
   assert.match(operationsRoute, /verificationStatus: payload\.decision/);
   assert.match(page, /operationsStatus !== "loading" && operationsStatus !== "error"/);
@@ -151,11 +149,51 @@ test("supports custom request terms and persistent employee operations", async (
   assert.match(page, /Create a new case/);
   assert.match(operationsRoute, /operationsCaseNotes/);
   assert.match(operationsRoute, /export async function PATCH/);
-  assert.match(jobRoute, /emergency_responder_confirmed/);
   assert.match(jobRoute, /request_cancelled/);
   assert.match(schema, /sqliteTable\("operations_cases"/);
   assert.match(schema, /sqliteTable\("operations_case_notes"/);
   assert.match(migration, /CREATE TABLE `operations_cases`/);
+});
+
+test("uses production-backed AI and verification with explicit demo money workflows", async () => {
+  const [page, schema, quoteRoute, verificationRoute, aiRoute, paymentCheckout, subscriptionCheckout, payoutConnect, webhook, operationsRoute] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../db/schema.ts"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+    source("../app/api/contractor-verification/route.ts"),
+    source("../app/api/ai/request-brief/route.ts"),
+    source("../app/api/payments/checkout/route.ts"),
+    source("../app/api/contractor-subscription/checkout/route.ts"),
+    source("../app/api/contractor-payments/connect/route.ts"),
+    source("../app/api/payments/webhook/route.ts"),
+    source("../app/api/operations/route.ts"),
+  ]);
+
+  assert.match(page, /startVoiceCapture/);
+  assert.match(page, /generateAiBrief/);
+  assert.match(page, /uploadVerificationDocument/);
+  assert.match(page, /startPaymentCheckout/);
+  assert.match(page, /startSubscriptionCheckout/);
+  assert.match(page, /openPayoutSetup/);
+  assert.doesNotMatch(page, /Start voice demo|Harbour Home Response|Arriving in 14 minutes|Niall L\.|North & Beam/);
+  assert.match(schema, /contractor_verification_documents/);
+  assert.match(schema, /stripe_connect_account_id/);
+  assert.match(verificationRoute, /UPLOADS/);
+  assert.match(operationsRoute, /contractorVerificationDocuments/);
+  assert.match(operationsRoute, /verifiedContractors/);
+  assert.match(quoteRoute, /verificationStatus !== "verified"/);
+  assert.match(quoteRoute, /subscriptionStatus/);
+  assert.match(aiRoute, /api\.openai\.com\/v1\/responses/);
+  assert.match(aiRoute, /json_schema/);
+  assert.match(paymentCheckout, /demo_paid/);
+  assert.doesNotMatch(paymentCheckout, /api\.stripe\.com/);
+  assert.match(subscriptionCheckout, /demo_active/);
+  assert.doesNotMatch(subscriptionCheckout, /api\.stripe\.com/);
+  assert.match(payoutConnect, /demo payout destination enabled/i);
+  assert.doesNotMatch(payoutConnect, /api\.stripe\.com/);
+  assert.match(webhook, /disabled.*demo mode/i);
+  assert.match(page, /Payment demo for accepted quotes/);
+  assert.match(page, /Verified contractors/);
 });
 
 test("provides secure homeowner, contractor and operations account entry", async () => {

@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const db = getDb();
     const [profile] = await db.select().from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, user.email)).limit(1);
-    if (!profile || profile.verificationStatus !== "verified" || profile.acceptingWork === false) return Response.json({ jobs: [] });
+    if (!profile || profile.verificationStatus !== "verified" || !["active", "trialing", "demo_active"].includes(profile.subscriptionStatus) || profile.acceptingWork === false) return Response.json({ jobs: [] });
     const jobs = await db.select({
       id: jobRequests.id,
       externalId: jobRequests.externalId,

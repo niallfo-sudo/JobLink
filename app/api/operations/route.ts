@@ -1,7 +1,8 @@
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { contractorProfiles, jobRequests, operationsCaseNotes, operationsCases, paymentRecords, users } from "../../../db/schema";
+import { contractorProfiles, contractorVerificationDocuments, jobRequests, operationsCaseNotes, operationsCases, paymentRecords, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { env } from "cloudflare:workers";
 
 const allowedStatuses = new Set(["open", "in_review", "waiting", "resolved", "dismissed"]);
 const allowedRisks = new Set(["low", "medium", "high", "critical"]);
@@ -14,8 +15,11 @@ async function requireOperationsUser() {
   let [record] = await db.select({ role: users.role }).from(users).where(eq(users.email, user.email)).limit(1);
   const [staffCount] = await db.select({ value: sql<number>`count(*)` }).from(users).where(inArray(users.role, ["employee", "admin"]));
   if (!staffCount?.value) {
-    await db.insert(users).values({ email: user.email, displayName: user.displayName, role: "admin" }).onConflictDoUpdate({ target: users.email, set: { displayName: user.displayName, role: "admin" } });
-    record = { role: "admin" };
+    const bootstrapAdmins = ((env as unknown as { JOBLINK_ADMIN_EMAILS?: string }).JOBLINK_ADMIN_EMAILS || "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
+    if (bootstrapAdmins.includes(user.email.toLowerCase())) {
+      await db.insert(users).values({ email: user.email, displayName: user.displayName, role: "admin" }).onConflictDoUpdate({ target: users.email, set: { displayName: user.displayName, role: "admin" } });
+      record = { role: "admin" };
+    }
   }
   if (!record || !["employee", "admin"].includes(record.role)) return { error: Response.json({ error: "Employee access required" }, { status: 403 }) };
   return { user, db, role: record.role };
@@ -24,6 +28,7 @@ async function requireOperationsUser() {
 async function syncPendingVerificationCases(db: ReturnType<typeof getDb>) {
   const pendingProfiles = await db.select().from(contractorProfiles).where(inArray(contractorProfiles.verificationStatus, ["pending", "pending_review"]));
   for (const profile of pendingProfiles) {
+    const documents = await db.select({ id: contractorVerificationDocuments.id, documentType: contractorVerificationDocuments.documentType, filename: contractorVerificationDocuments.filename, reviewStatus: contractorVerificationDocuments.reviewStatus }).from(contractorVerificationDocuments).where(eq(contractorVerificationDocuments.ownerEmail, profile.ownerEmail));
     await db.insert(operationsCases).values({
       externalId: `VR-P${profile.id}`,
       caseType: "verification",
@@ -34,10 +39,10 @@ async function syncPendingVerificationCases(db: ReturnType<typeof getDb>) {
       priority: "normal",
       status: "open",
       assignee: "Unassigned",
-      evidenceCount: 2,
+      evidenceCount: documents.length,
       dueLabel: "Due within 1 business day",
-      details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile submitted", "Identity and insurance review required"] }),
-    }).onConflictDoNothing({ target: operationsCases.externalId });
+      details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile submitted", `${documents.length} verification document${documents.length === 1 ? "" : "s"} uploaded`], documents }),
+    }).onConflictDoUpdate({ target: operationsCases.externalId, set: { subject: profile.businessName, evidenceCount: documents.length, details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile submitted", `${documents.length} verification document${documents.length === 1 ? "" : "s"} uploaded`], documents }), updatedAt: new Date() } });
   }
 }
 
@@ -56,10 +61,27 @@ export async function GET() {
     const [activeJobCount] = await access.db.select({ value: sql<number>`count(*)` }).from(jobRequests).where(inArray(jobRequests.status, ["matching", "quoted", "booked", "in_progress"]));
     const [paymentTotal] = await access.db.select({ value: sql<number>`coalesce(sum(${paymentRecords.totalCents}), 0)` }).from(paymentRecords);
     const staff = await access.db.select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, createdAt: users.createdAt }).from(users).where(inArray(users.role, ["employee", "admin"]));
+    const verifiedContractors = await access.db.select().from(contractorProfiles).where(eq(contractorProfiles.verificationStatus, "verified")).orderBy(desc(contractorProfiles.updatedAt));
     return Response.json({
       viewer: { email: access.user.email, displayName: access.user.displayName, role: access.role },
       staff,
       cases: cases.map((item) => ({ ...item, details: JSON.parse(item.details || "{}"), notes: notes.filter((note) => note.caseId === item.id) })),
+      verifiedContractors: verifiedContractors.map((profile) => ({
+        id: profile.id,
+        ownerEmail: profile.ownerEmail,
+        businessName: profile.businessName,
+        primaryService: profile.primaryService,
+        services: JSON.parse(profile.services || "[]"),
+        homeBase: profile.homeBase,
+        serviceRadiusKm: profile.serviceRadiusKm,
+        teamSize: profile.teamSize,
+        emergencyAvailable: profile.emergencyAvailable,
+        acceptingWork: profile.acceptingWork,
+        plan: profile.plan,
+        subscriptionStatus: profile.subscriptionStatus,
+        payoutsEnabled: profile.payoutsEnabled,
+        updatedAt: profile.updatedAt,
+      })),
       stats: { jobs: jobCount?.value ?? 0, activeJobs: activeJobCount?.value ?? 0, paymentVolumeCents: paymentTotal?.value ?? 0, openCases: cases.filter((item) => !["resolved", "dismissed"].includes(item.status)).length },
     });
   } catch (error) {
@@ -170,9 +192,10 @@ export async function PATCH(request: Request) {
     if (payload.decision && caseDetails.ownerEmail) {
       await access.db.update(contractorProfiles).set({
         verificationStatus: payload.decision === "approved" ? "verified" : payload.decision === "rejected" ? "rejected" : "pending_review",
-        acceptingWork: payload.decision === "approved",
+        acceptingWork: payload.decision === "approved" ? undefined : false,
         updatedAt: new Date(),
       }).where(eq(contractorProfiles.ownerEmail, caseDetails.ownerEmail));
+      await access.db.update(contractorVerificationDocuments).set({ reviewStatus: payload.decision === "approved" ? "approved" : payload.decision === "rejected" ? "rejected" : "changes_requested" }).where(eq(contractorVerificationDocuments.ownerEmail, caseDetails.ownerEmail));
     }
     if (payload.note?.trim()) await access.db.insert(operationsCaseNotes).values({ caseId: existing.id, authorEmail: access.user.email, body: payload.note.trim().slice(0, 2000) });
     const [updated] = await access.db.select().from(operationsCases).where(eq(operationsCases.id, existing.id)).limit(1);

@@ -78,6 +78,20 @@
       "when": 1784711627773,
       "tag": "0010_magical_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1786163611404,
+      "tag": "0011_crazy_hitman",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1786164772705,
+      "tag": "0012_true_sauron",
+      "breakpoints": true
     }
   ]
 }

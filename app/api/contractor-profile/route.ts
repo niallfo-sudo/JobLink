@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
     const payload = (await request.json()) as {
-      businessName?: string; legalName?: string; phone?: string; about?: string; primaryService?: string;
+      businessName?: string; legalName?: string; phone?: string; businessAddress?: string; yearsInBusiness?: number; about?: string; primaryService?: string;
       services?: string[]; homeBase?: string; serviceRadiusKm?: number; teamSize?: number;
       emergencyAvailable?: boolean; acceptingWork?: boolean; plan?: string;
     };
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     await db.insert(users).values({ email: user.email, displayName: user.displayName, role: "contractor" }).onConflictDoUpdate({ target: users.email, set: { displayName: user.displayName, role: "contractor" } });
     const values = {
       ownerEmail: user.email, businessName, legalName: payload.legalName?.trim() || businessName,
-      phone: payload.phone?.trim() || "", about: payload.about?.trim() || "", primaryService,
+      phone: payload.phone?.trim() || "", businessAddress: payload.businessAddress?.trim() || "", yearsInBusiness: Math.min(200, Math.max(0, Number(payload.yearsInBusiness) || 0)), about: payload.about?.trim() || "", primaryService,
       services: JSON.stringify(Array.from(new Set([primaryService, ...(payload.services ?? [])].map((service) => service.trim()).filter(Boolean))).slice(0, 20)), homeBase: payload.homeBase?.trim() || "Hamilton, Ontario",
       serviceRadiusKm: radius, teamSize, emergencyAvailable: Boolean(payload.emergencyAvailable),
       acceptingWork: false, plan, verificationStatus: "pending_review", updatedAt: new Date(),
@@ -70,17 +70,13 @@ export async function PATCH(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
-    const payload = (await request.json()) as { plan?: string; acceptingWork?: boolean; emergencyAvailable?: boolean; serviceRadiusKm?: number };
-    const updates: { plan?: string; acceptingWork?: boolean; emergencyAvailable?: boolean; serviceRadiusKm?: number; updatedAt: Date } = { updatedAt: new Date() };
-    if (payload.plan !== undefined) {
-      const plan = payload.plan.toLowerCase();
-      if (!plans.has(plan)) return Response.json({ error: "Invalid plan" }, { status: 400 });
-      updates.plan = plan;
-    }
+    const payload = (await request.json()) as { acceptingWork?: boolean; emergencyAvailable?: boolean; serviceRadiusKm?: number };
+    const updates: { acceptingWork?: boolean; emergencyAvailable?: boolean; serviceRadiusKm?: number; updatedAt: Date } = { updatedAt: new Date() };
     if (payload.acceptingWork !== undefined) {
       if (payload.acceptingWork) {
-        const [currentProfile] = await getDb().select({ verificationStatus: contractorProfiles.verificationStatus }).from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, user.email)).limit(1);
+        const [currentProfile] = await getDb().select({ verificationStatus: contractorProfiles.verificationStatus, subscriptionStatus: contractorProfiles.subscriptionStatus }).from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, user.email)).limit(1);
         if (currentProfile?.verificationStatus !== "verified") return Response.json({ error: "Verification approval is required before accepting work" }, { status: 403 });
+        if (!["active", "trialing"].includes(currentProfile.subscriptionStatus)) return Response.json({ error: "An active subscription is required before accepting work" }, { status: 403 });
       }
       updates.acceptingWork = Boolean(payload.acceptingWork);
     }
