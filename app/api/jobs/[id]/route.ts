@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { getDb } from "../../../../db";
-import { changeOrders, jobAttachments, jobEvents, jobRequests, messages, quotes, verifiedReviews } from "../../../../db/schema";
+import { changeOrders, documentRecords, jobAttachments, jobEvents, jobRequests, messages, paymentRecords, quotes, verifiedReviews } from "../../../../db/schema";
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { notify } from "../../../../lib/notifications";
 
@@ -76,6 +76,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       const [acceptedQuote] = await db.select().from(quotes).where(and(eq(quotes.jobId, jobId), eq(quotes.status, "accepted"), eq(quotes.contractorEmail, user.email))).limit(1);
       if (!acceptedQuote) return Response.json({ error: "Only the selected contractor can schedule this job" }, { status: 403 });
       if (!["booked", "in_progress"].includes(job.status)) return Response.json({ error: "Only booked jobs can be scheduled" }, { status: 409 });
+      const [agreement] = await db.select().from(documentRecords).where(and(eq(documentRecords.jobId, jobId), eq(documentRecords.documentType, "service_agreement"))).limit(1);
+      if (!agreement || agreement.status !== "fully_signed") return Response.json({ error: "Both parties must sign the service agreement before the job can start" }, { status: 409 });
+      const [payment] = await db.select().from(paymentRecords).where(eq(paymentRecords.jobId, jobId)).limit(1);
+      if (!payment || !["demo_held", "demo_partially_released", "demo_released"].includes(payment.status)) return Response.json({ error: "The homeowner must fund the full job before the job can start" }, { status: 409 });
       const [updated] = await db.update(jobRequests).set({ scheduledStartAt, updatedAt: new Date() }).where(eq(jobRequests.id, jobId)).returning();
       const label = `Start scheduled for ${scheduledStartAt.toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}`;
       await db.insert(jobEvents).values({ jobId, eventType: "start_scheduled", label, metadata: JSON.stringify({ scheduledStartAt: scheduledStartAt.toISOString(), updatedBy: "contractor" }) });

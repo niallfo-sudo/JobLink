@@ -14,7 +14,8 @@ type RoomEvent = { id: number; label: string; eventType: string; createdAt: stri
 type ContractorProfile = { businessName: string; legalName: string; phone: string; businessAddress: string; yearsInBusiness: number; about: string; primaryService: string; services: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: "starter" | "growth" | "pro"; subscriptionStatus: string; payoutsEnabled: boolean; verificationStatus: string };
 type PaymentMilestone = { id: number; paymentId: number; label: string; milestoneType: string; amountCents: number; status: string; proofNote: string; proofSubmittedAt?: string | number | null; homeownerApprovedAt?: string | number | null; releasedAt?: string | number | null };
 type PaymentRecord = { id: number; externalId: string; title: string; contractorName: string; subtotalCents: number; customerFeeCents: number; totalCents: number; contractorPayoutCents: number; releasedCents: number; status: string; processor: string; viewerRole: "homeowner" | "contractor"; milestones?: PaymentMilestone[]; createdAt: string | number };
-type GeneratedDocument = { id: number; externalId: string; jobTitle: string; jobNumber: string; documentType: string; title: string; status: string; createdAt: string | number };
+type DocumentSignature = { id: number; signerRole: "homeowner" | "contractor"; signerName: string; signedAt: string | number; signingMethod: string };
+type GeneratedDocument = { id: number; externalId: string; jobTitle: string; jobNumber: string; documentType: string; title: string; status: string; viewerRole?: "homeowner" | "contractor"; signatures?: DocumentSignature[]; createdAt: string | number };
 type ChangeOrderRecord = { id: number; externalId: string; reason: string; description: string; amountCents: number; scheduleImpact: string; status: string; contractorName: string; decisionName?: string | null };
 type VerifiedReview = { id: number; workmanship: number; communication: number; punctuality: number; cleanliness: number; averageScore: number; comment: string };
 type AppNotification = { id: number; jobId: number | null; notificationType: string; title: string; body: string; readAt: string | number | null; createdAt: string | number };
@@ -35,6 +36,17 @@ function PaymentReleaseWorkflow({ payment, actionId, onFund, onSubmitProof, onAp
     {payment.viewerRole === "homeowner" && payment.status === "demo_pending" && <button className="primary-action" disabled={actionId === `fund-${payment.id}`} onClick={() => onFund(payment)}>{actionId === `fund-${payment.id}` ? "Funding…" : `Fund full job total $${(payment.totalCents / 100).toLocaleString()} (demo)`}</button>}
     {milestones.length ? <div className="payment-milestone-list">{milestones.map((milestone) => <article key={milestone.id}><div><b>{milestone.label}</b><span>${(milestone.amountCents / 100).toLocaleString()} · {milestone.status.replaceAll("_", " ")}</span>{milestone.proofNote && <p><strong>Contractor proof:</strong> {milestone.proofNote}</p>}</div>{payment.viewerRole === "contractor" && milestone.status === "demo_held" && <div className="payment-proof-entry"><textarea value={proofs[milestone.id] ?? ""} onChange={(event) => setProofs((current) => ({ ...current, [milestone.id]: event.target.value }))} placeholder="Describe completed work, materials or photos uploaded to the Job Room." /><button disabled={actionId === `proof-${milestone.id}`} onClick={() => onSubmitProof(payment, milestone, proofs[milestone.id] ?? "")}>{actionId === `proof-${milestone.id}` ? "Submitting…" : "Submit proof for approval"}</button></div>}{payment.viewerRole === "homeowner" && milestone.status === "proof_submitted" && <button className="primary-action" disabled={actionId === `approve-${milestone.id}`} onClick={() => onApprove(payment, milestone)}>{actionId === `approve-${milestone.id}` ? "Approving…" : "Approve and release (demo)"}</button>}</article>)}</div> : <p className="quote-panel-state">Payment checkpoints will appear after the final quote is accepted.</p>}
   </section>;
+}
+
+function AgreementSignatureWorkflow({ document, actionId, onSign }: { document: GeneratedDocument; actionId: number | null; onSign: (document: GeneratedDocument, signerName: string, consent: boolean) => void }) {
+  const [signerName, setSignerName] = useState("");
+  const [consent, setConsent] = useState(false);
+  const role = document.viewerRole;
+  const signatures = document.signatures ?? [];
+  const signedByViewer = role ? signatures.find((signature) => signature.signerRole === role) : null;
+  const homeowner = signatures.find((signature) => signature.signerRole === "homeowner");
+  const contractor = signatures.find((signature) => signature.signerRole === "contractor");
+  return <section className="agreement-signature-workflow"><div className="agreement-signature-header"><div><p className="aside-label">Service agreement</p><h3>{document.jobNumber} · signature status</h3><p>Review the final scope, materials, payment checkpoints and job terms before signing.</p></div><button onClick={() => window.open(`/api/documents/${document.id}`, "_blank", "noopener,noreferrer")}>Open agreement ↗</button></div><div className="signature-status-grid"><span className={homeowner ? "signed" : "pending"}>Homeowner: {homeowner ? `${homeowner.signerName} · signed` : "pending"}</span><span className={contractor ? "signed" : "pending"}>Contractor: {contractor ? `${contractor.signerName} · signed` : "pending"}</span></div>{document.status === "fully_signed" ? <p className="agreement-complete">Both parties have signed. The contractor can schedule work after full-job funding is confirmed.</p> : signedByViewer ? <p className="agreement-complete">You signed on {new Date(signedByViewer.signedAt).toLocaleString()}. Waiting for the other party.</p> : <div className="agreement-sign-form"><label>Legal name<input value={signerName} onChange={(event) => setSignerName(event.target.value)} placeholder="Enter your full legal name" /></label><label className="signature-consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /> <span>I reviewed this agreement and intend to sign it electronically. JobLink will retain this signature record.</span></label><button className="primary-action" disabled={actionId === document.id || !consent || signerName.trim().length < 2} onClick={() => onSign(document, signerName, consent)}>{actionId === document.id ? "Recording signature…" : "Sign service agreement"}</button><small>For court use or specific trade requirements, have Ontario counsel review your final agreement and signing process.</small></div>}</section>;
 }
 
 const categories = [
@@ -189,6 +201,7 @@ export default function Home() {
   const [paymentCheckoutId, setPaymentCheckoutId] = useState<number | null>(null);
   const [paymentWorkflowAction, setPaymentWorkflowAction] = useState<string | null>(null);
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
+  const [documentSigningId, setDocumentSigningId] = useState<number | null>(null);
   const [progressUpdatingId, setProgressUpdatingId] = useState<number | null>(null);
   const [progressError, setProgressError] = useState<string | null>(null);
   const [scheduledStartValues, setScheduledStartValues] = useState<Record<number, string>>({});
@@ -426,10 +439,7 @@ export default function Home() {
 
   useEffect(() => {
     if (view !== "account" && view !== "contractor") return;
-    fetch("/api/documents")
-      .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((data: { documents?: GeneratedDocument[] }) => setGeneratedDocuments(data.documents ?? []))
-      .catch(() => undefined);
+    void refreshGeneratedDocuments();
   }, [view, accountTab, acceptedQuoteId]);
 
   useEffect(() => {
@@ -1076,6 +1086,30 @@ export default function Home() {
     } catch { /* Preserve the latest visible payment state. */ }
   }
 
+  async function refreshGeneratedDocuments() {
+    try {
+      const response = await fetch("/api/documents");
+      if (!response.ok) return;
+      const data = (await response.json()) as { documents?: GeneratedDocument[] };
+      setGeneratedDocuments(data.documents ?? []);
+    } catch { /* Preserve the latest visible documents. */ }
+  }
+
+  async function signServiceAgreement(document: GeneratedDocument, signerName: string, consent: boolean) {
+    setDocumentSigningId(document.id);
+    try {
+      const response = await fetch(`/api/documents/${document.id}/sign`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ signerName, consent }) });
+      const data = (await response.json().catch(() => ({}))) as { fullySigned?: boolean; error?: string };
+      if (!response.ok) throw new Error(data.error || "Unable to record this signature");
+      await refreshGeneratedDocuments();
+      showNotice(data.fullySigned ? "Service agreement fully signed. Funding and a scheduled start are now the remaining steps." : "Signature recorded. JobLink notified the other party to review and sign.");
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "Unable to record this signature");
+    } finally {
+      setDocumentSigningId(null);
+    }
+  }
+
   async function startPaymentCheckout(payment: PaymentRecord) {
     setPaymentCheckoutId(payment.id);
     setPaymentWorkflowAction(`fund-${payment.id}`);
@@ -1632,6 +1666,7 @@ export default function Home() {
               {accountTab === "documents" && <>
                 <div className="account-section-head"><div><p className="aside-label">Paperwork</p><h2>Documents</h2></div><span>{generatedDocuments.length} generated</span></div>
                 <div className="document-readiness"><span>✦</span><div><b>Paperwork is generated from accepted quotes.</b><p>Each secure document captures the job scope, selected professional, accepted amount and current payment status.</p></div></div>
+                <div className="agreement-signature-workflows">{generatedDocuments.filter((document) => document.documentType === "service_agreement").map((document) => <AgreementSignatureWorkflow key={`agreement-${document.id}`} document={document} actionId={documentSigningId} onSign={(record, signerName, consent) => void signServiceAgreement(record, signerName, consent)} />)}</div>
                 {generatedDocuments.length === 0 ? <div className="documents-empty"><span>DOC</span><h3>No generated paperwork yet</h3><p>Accept a quote to create the service agreement, accepted quote and invoice.</p></div> : <div className="document-group"><h3>JobLink documents</h3>{generatedDocuments.map((document) => <article key={document.id}><span className="doc-icon">{document.documentType === "invoice" ? "INV" : document.documentType === "accepted_quote" ? "QTE" : "AGR"}</span><div><b>{document.title}</b><small>{document.jobNumber} · {document.jobTitle} · {document.status.replaceAll("_", " ")}</small></div><button onClick={() => window.open(`/api/documents/${document.id}`, "_blank", "noopener,noreferrer")}>Open printable ↗</button></article>)}</div>}
               </>}
               {accountTab === "saved" && <>

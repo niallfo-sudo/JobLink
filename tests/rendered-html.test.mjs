@@ -305,3 +305,28 @@ test("holds the full job in the demo ledger and releases milestones after proof 
   assert.match(migration, /payment_milestones/);
   assert.match(migration, /released_cents/);
 });
+
+test("requires a recorded two-party service agreement before work can start", async () => {
+  const [page, documentsRoute, signatureRoute, documentViewRoute, jobRoute, schema, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/documents/route.ts"),
+    source("../app/api/documents/[id]/sign/route.ts"),
+    source("../app/api/documents/[id]/route.ts"),
+    source("../app/api/jobs/[id]/route.ts"),
+    source("../db/schema.ts"),
+    source("../drizzle/0017_agreement_signatures.sql"),
+  ]);
+
+  assert.match(page, /Sign service agreement/);
+  assert.match(page, /intend to sign it electronically/);
+  assert.match(page, /Both parties have signed/);
+  assert.match(documentsRoute, /agreementSignatures/);
+  assert.match(signatureRoute, /account_attestation/);
+  assert.match(signatureRoute, /You are not a party to this agreement/);
+  assert.match(signatureRoute, /Service agreement fully signed/);
+  assert.match(documentViewRoute, /Homeowner signed/);
+  assert.match(jobRoute, /Both parties must sign the service agreement before the job can start/);
+  assert.match(jobRoute, /The homeowner must fund the full job before the job can start/);
+  assert.match(schema, /agreementSignatures/);
+  assert.match(migration, /agreement_signatures/);
+});

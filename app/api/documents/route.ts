@@ -1,6 +1,6 @@
-import { desc, eq, or } from "drizzle-orm";
+import { desc, eq, inArray, or } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { documentRecords, jobRequests } from "../../../db/schema";
+import { agreementSignatures, documentRecords, jobRequests } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 
 export async function GET() {
@@ -11,7 +11,9 @@ export async function GET() {
       .from(documentRecords).innerJoin(jobRequests, eq(documentRecords.jobId, jobRequests.id))
       .where(or(eq(documentRecords.ownerEmail, user.email), eq(documentRecords.contractorEmail, user.email)))
       .orderBy(desc(documentRecords.createdAt)).limit(100);
-    return Response.json({ documents: rows.map((row) => ({ ...row.document, jobTitle: row.jobTitle, jobNumber: row.jobNumber })) });
+    const documentIds = rows.map((row) => row.document.id);
+    const signatures = documentIds.length ? await getDb().select().from(agreementSignatures).where(inArray(agreementSignatures.documentId, documentIds)).orderBy(agreementSignatures.signedAt) : [];
+    return Response.json({ documents: rows.map((row) => ({ ...row.document, jobTitle: row.jobTitle, jobNumber: row.jobNumber, viewerRole: row.document.ownerEmail === user.email ? "homeowner" : "contractor", signatures: signatures.filter((signature) => signature.documentId === row.document.id) })) });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }

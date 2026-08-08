@@ -176,6 +176,23 @@ export const documentRecords = sqliteTable("document_records", {
   index("document_records_contractor_idx").on(table.contractorEmail),
 ]);
 
+export const agreementSignatures = sqliteTable("agreement_signatures", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  documentId: integer("document_id").notNull().references(() => documentRecords.id, { onDelete: "cascade" }),
+  jobId: integer("job_id").notNull().references(() => jobRequests.id, { onDelete: "cascade" }),
+  signerEmail: text("signer_email").notNull(),
+  signerRole: text("signer_role").notNull(),
+  signerName: text("signer_name").notNull(),
+  consentText: text("consent_text").notNull(),
+  signingMethod: text("signing_method").notNull().default("account_attestation"),
+  userAgent: text("user_agent").notNull().default(""),
+  signedAt: integer("signed_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("agreement_signatures_document_role_unique").on(table.documentId, table.signerRole),
+  index("agreement_signatures_job_idx").on(table.jobId),
+  index("agreement_signatures_signer_idx").on(table.signerEmail),
+]);
+
 export const changeOrders = sqliteTable("change_orders", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   externalId: text("external_id").notNull(),
