@@ -190,7 +190,7 @@ test("uses production-backed AI and verification with explicit demo money workfl
   assert.match(quoteRoute, /subscriptionStatus/);
   assert.match(aiRoute, /api\.openai\.com\/v1\/responses/);
   assert.match(aiRoute, /json_schema/);
-  assert.match(paymentCheckout, /demo_paid/);
+  assert.match(paymentCheckout, /demo_held/);
   assert.doesNotMatch(paymentCheckout, /api\.stripe\.com/);
   assert.match(subscriptionCheckout, /demo_active/);
   assert.doesNotMatch(subscriptionCheckout, /api\.stripe\.com/);
@@ -277,4 +277,31 @@ test("runs on-site verification and final quotes before booking", async () => {
   assert.match(schema, /work_description/);
   assert.match(schema, /deposit_cents/);
   assert.match(migration, /completion_cents/);
+});
+
+test("holds the full job in the demo ledger and releases milestones after proof approval", async () => {
+  const [page, paymentRoute, checkoutRoute, milestoneRoute, schema, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/payments/route.ts"),
+    source("../app/api/payments/checkout/route.ts"),
+    source("../app/api/payments/[id]/milestones/[milestoneId]/route.ts"),
+    source("../db/schema.ts"),
+    source("../drizzle/0016_payment_milestones.sql"),
+  ]);
+
+  assert.match(page, /Fund full job total/);
+  assert.match(page, /Submit proof for approval/);
+  assert.match(page, /Approve and release/);
+  assert.match(page, /Protected release plan/);
+  assert.match(paymentRoute, /paymentMilestones/);
+  assert.match(checkoutRoute, /demo_held/);
+  assert.match(checkoutRoute, /Full job amount is now held/);
+  assert.match(milestoneRoute, /submit_proof/);
+  assert.match(milestoneRoute, /approve_release/);
+  assert.match(milestoneRoute, /Only the homeowner can approve a payment release/);
+  assert.match(milestoneRoute, /Proof must be submitted before the homeowner can approve a release/);
+  assert.match(schema, /paymentMilestones/);
+  assert.match(schema, /released_cents/);
+  assert.match(migration, /payment_milestones/);
+  assert.match(migration, /released_cents/);
 });

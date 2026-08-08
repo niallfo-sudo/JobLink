@@ -12,7 +12,8 @@ type Opportunity = { numericId?: number; id: string; service: string; title: str
 type RoomMessage = { id: number; body: string; mine: boolean; createdAt: string | number };
 type RoomEvent = { id: number; label: string; eventType: string; createdAt: string | number };
 type ContractorProfile = { businessName: string; legalName: string; phone: string; businessAddress: string; yearsInBusiness: number; about: string; primaryService: string; services: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: "starter" | "growth" | "pro"; subscriptionStatus: string; payoutsEnabled: boolean; verificationStatus: string };
-type PaymentRecord = { id: number; externalId: string; title: string; contractorName: string; subtotalCents: number; customerFeeCents: number; totalCents: number; contractorPayoutCents: number; status: string; processor: string; viewerRole: "homeowner" | "contractor"; createdAt: string | number };
+type PaymentMilestone = { id: number; paymentId: number; label: string; milestoneType: string; amountCents: number; status: string; proofNote: string; proofSubmittedAt?: string | number | null; homeownerApprovedAt?: string | number | null; releasedAt?: string | number | null };
+type PaymentRecord = { id: number; externalId: string; title: string; contractorName: string; subtotalCents: number; customerFeeCents: number; totalCents: number; contractorPayoutCents: number; releasedCents: number; status: string; processor: string; viewerRole: "homeowner" | "contractor"; milestones?: PaymentMilestone[]; createdAt: string | number };
 type GeneratedDocument = { id: number; externalId: string; jobTitle: string; jobNumber: string; documentType: string; title: string; status: string; createdAt: string | number };
 type ChangeOrderRecord = { id: number; externalId: string; reason: string; description: string; amountCents: number; scheduleImpact: string; status: string; contractorName: string; decisionName?: string | null };
 type VerifiedReview = { id: number; workmanship: number; communication: number; punctuality: number; cleanliness: number; averageScore: number; comment: string };
@@ -25,6 +26,16 @@ type StaffMember = { id: number; email: string; displayName: string; role: "empl
 type VerificationDocument = { id: number; documentType: string; filename: string; reviewStatus: string; uploadedAt: string | number };
 type ContractorQuote = { id: number; jobId: number; externalId: string; title: string; category: string; amountCents: number; availableAt: string; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; createdAt: string | number };
 type VerifiedContractor = { id: number; ownerEmail: string; businessName: string; primaryService: string; services: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: string; subscriptionStatus: string; payoutsEnabled: boolean; updatedAt: string | number };
+
+function PaymentReleaseWorkflow({ payment, actionId, onFund, onSubmitProof, onApprove }: { payment: PaymentRecord; actionId: string | null; onFund: (payment: PaymentRecord) => void; onSubmitProof: (payment: PaymentRecord, milestone: PaymentMilestone, proof: string) => void; onApprove: (payment: PaymentRecord, milestone: PaymentMilestone) => void }) {
+  const [proofs, setProofs] = useState<Record<number, string>>({});
+  const milestones = payment.milestones ?? [];
+  return <section className="payment-release-workflow">
+    <div className="payment-release-header"><div><p className="aside-label">Protected release plan</p><h3>{payment.externalId} · ${((payment.releasedCents || 0) / 100).toLocaleString()} released</h3><p>Full job amount is held first; each contractor payment needs proof and homeowner approval.</p></div><span className={`payment-status payment-${payment.status}`}>{payment.status.replaceAll("_", " ")}</span></div>
+    {payment.viewerRole === "homeowner" && payment.status === "demo_pending" && <button className="primary-action" disabled={actionId === `fund-${payment.id}`} onClick={() => onFund(payment)}>{actionId === `fund-${payment.id}` ? "Funding…" : `Fund full job total $${(payment.totalCents / 100).toLocaleString()} (demo)`}</button>}
+    {milestones.length ? <div className="payment-milestone-list">{milestones.map((milestone) => <article key={milestone.id}><div><b>{milestone.label}</b><span>${(milestone.amountCents / 100).toLocaleString()} · {milestone.status.replaceAll("_", " ")}</span>{milestone.proofNote && <p><strong>Contractor proof:</strong> {milestone.proofNote}</p>}</div>{payment.viewerRole === "contractor" && milestone.status === "demo_held" && <div className="payment-proof-entry"><textarea value={proofs[milestone.id] ?? ""} onChange={(event) => setProofs((current) => ({ ...current, [milestone.id]: event.target.value }))} placeholder="Describe completed work, materials or photos uploaded to the Job Room." /><button disabled={actionId === `proof-${milestone.id}`} onClick={() => onSubmitProof(payment, milestone, proofs[milestone.id] ?? "")}>{actionId === `proof-${milestone.id}` ? "Submitting…" : "Submit proof for approval"}</button></div>}{payment.viewerRole === "homeowner" && milestone.status === "proof_submitted" && <button className="primary-action" disabled={actionId === `approve-${milestone.id}`} onClick={() => onApprove(payment, milestone)}>{actionId === `approve-${milestone.id}` ? "Approving…" : "Approve and release (demo)"}</button>}</article>)}</div> : <p className="quote-panel-state">Payment checkpoints will appear after the final quote is accepted.</p>}
+  </section>;
+}
 
 const categories = [
   ["Drywall", "DW"],
@@ -176,6 +187,7 @@ export default function Home() {
   const [verificationUploadStatus, setVerificationUploadStatus] = useState<"idle" | "saving" | "error">("idle");
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([]);
   const [paymentCheckoutId, setPaymentCheckoutId] = useState<number | null>(null);
+  const [paymentWorkflowAction, setPaymentWorkflowAction] = useState<string | null>(null);
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
   const [progressUpdatingId, setProgressUpdatingId] = useState<number | null>(null);
   const [progressError, setProgressError] = useState<string | null>(null);
@@ -409,10 +421,7 @@ export default function Home() {
 
   useEffect(() => {
     if (view !== "account" && view !== "contractor") return;
-    fetch("/api/payments")
-      .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((data: { payments?: PaymentRecord[] }) => setPaymentRecords(data.payments ?? []))
-      .catch(() => undefined);
+    void refreshPaymentRecords();
   }, [view, accountTab, proTab, acceptedQuoteId]);
 
   useEffect(() => {
@@ -1058,18 +1067,59 @@ export default function Home() {
     }
   }
 
+  async function refreshPaymentRecords() {
+    try {
+      const response = await fetch("/api/payments");
+      if (!response.ok) return;
+      const data = (await response.json()) as { payments?: PaymentRecord[] };
+      setPaymentRecords(data.payments ?? []);
+    } catch { /* Preserve the latest visible payment state. */ }
+  }
+
   async function startPaymentCheckout(payment: PaymentRecord) {
     setPaymentCheckoutId(payment.id);
+    setPaymentWorkflowAction(`fund-${payment.id}`);
     try {
       const response = await fetch("/api/payments/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paymentId: payment.id }) });
       const data = (await response.json()) as { payment?: PaymentRecord; message?: string; error?: string };
       if (!response.ok || !data.payment) throw new Error(data.error || "Payment simulation is unavailable");
-      setPaymentRecords((current) => current.map((item) => item.id === payment.id ? { ...item, ...data.payment, viewerRole: item.viewerRole } : item));
-      setPaymentCheckoutId(null);
-      showNotice(data.message || "Payment simulated. No funds moved.");
+      await refreshPaymentRecords();
+      showNotice(data.message || "Full job funding simulated. No funds moved.");
     } catch (error) {
       showNotice(error instanceof Error ? error.message : "Payment simulation is unavailable");
+    } finally {
       setPaymentCheckoutId(null);
+      setPaymentWorkflowAction(null);
+    }
+  }
+
+  async function submitPaymentProof(payment: PaymentRecord, milestone: PaymentMilestone, proofNote: string) {
+    setPaymentWorkflowAction(`proof-${milestone.id}`);
+    try {
+      const response = await fetch(`/api/payments/${payment.id}/milestones/${milestone.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "submit_proof", proofNote }) });
+      const data = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+      if (!response.ok) throw new Error(data.error || "Unable to submit payment proof");
+      await refreshPaymentRecords();
+      showNotice(data.message || "Proof submitted for homeowner approval.");
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "Unable to submit payment proof");
+    } finally {
+      setPaymentWorkflowAction(null);
+    }
+  }
+
+  async function approvePaymentMilestone(payment: PaymentRecord, milestone: PaymentMilestone) {
+    setPaymentWorkflowAction(`approve-${milestone.id}`);
+    try {
+      const response = await fetch(`/api/payments/${payment.id}/milestones/${milestone.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "approve_release" }) });
+      const data = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+      if (!response.ok) throw new Error(data.error || "Unable to approve this release");
+      await refreshPaymentRecords();
+      showNotice(data.message || "Milestone released in the demo ledger.");
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "Unable to approve this release");
+    } finally {
+      setPaymentWorkflowAction(null);
     }
   }
 
@@ -1574,6 +1624,7 @@ export default function Home() {
               {accountTab === "payments" && <>
                 <div className="account-section-head"><div><p className="aside-label">Money</p><h2>Payments</h2></div><span className="protected-badge">Secure checkout</span></div>
                 <div className="payment-readiness"><span>◎</span><div><b>Payment demo for accepted quotes.</b><p>Simulate the complete payment record and fee breakdown without charging a card or moving money.</p></div><em>Demo only</em></div>
+                <div className="payment-release-workflows">{paymentRecords.map((payment) => <PaymentReleaseWorkflow key={`workflow-${payment.id}`} payment={payment} actionId={paymentWorkflowAction} onFund={(record) => void startPaymentCheckout(record)} onSubmitProof={(record, milestone, proof) => void submitPaymentProof(record, milestone, proof)} onApprove={(record, milestone) => void approvePaymentMilestone(record, milestone)} />)}</div>
                 {paymentRecords.length > 0 && <div className="live-payment-list"><div className="transaction-head"><span>Job</span><span>Professional</span><span>Status</span><span>Total</span></div>{paymentRecords.map((payment) => <div key={payment.id}><span>{payment.externalId}</span><span><b>{payment.contractorName}</b>{payment.title}</span><em>{payment.status.replaceAll("_", " ")}</em><strong>${(payment.totalCents / 100).toLocaleString()}</strong><small>Demo: contractor ${(payment.subtotalCents / 100).toLocaleString()} + JobLink fee ${(payment.customerFeeCents / 100).toLocaleString()}</small>{payment.viewerRole === "homeowner" && payment.status !== "demo_paid" && <button disabled={paymentCheckoutId === payment.id} onClick={() => void startPaymentCheckout(payment)}>{paymentCheckoutId === payment.id ? "Simulating…" : "Simulate payment →"}</button>}</div>)}</div>}
                 <div className="payment-summary"><article><span>Accepted job value</span><b>${(paymentRecords.reduce((total, payment) => total + payment.subtotalCents, 0) / 100).toLocaleString()}</b><small>Contractor prices recorded</small></article><article><span>Demo JobLink fees</span><b>${(paymentRecords.reduce((total, payment) => total + payment.customerFeeCents, 0) / 100).toLocaleString()}</b><small>Simulated 3% customer fee</small></article><article><span>Simulated payments</span><b className="card-ending">{paymentRecords.filter((payment) => payment.status === "demo_paid").length}</b><small>No card charged · no funds moved</small></article></div>
                 <div className="payment-explainer"><span>◎</span><div><b>You stay in control of every payment.</b><p>Funds are only released when milestones are approved. Changes require a signed change order before any extra charge.</p></div></div>

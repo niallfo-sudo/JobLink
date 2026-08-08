@@ -1,6 +1,6 @@
-import { desc, eq, or } from "drizzle-orm";
+import { desc, eq, inArray, or } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { jobRequests, paymentRecords } from "../../../db/schema";
+import { jobRequests, paymentMilestones, paymentRecords } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 
 export async function GET() {
@@ -11,7 +11,9 @@ export async function GET() {
       .from(paymentRecords).innerJoin(jobRequests, eq(paymentRecords.jobId, jobRequests.id))
       .where(or(eq(paymentRecords.ownerEmail, user.email), eq(paymentRecords.contractorEmail, user.email)))
       .orderBy(desc(paymentRecords.createdAt)).limit(50);
-    return Response.json({ payments: rows.map((row) => ({ ...row.payment, ...row.job, viewerRole: row.payment.ownerEmail === user.email ? "homeowner" : "contractor" })) });
+    const ids = rows.map((row) => row.payment.id);
+    const milestones = ids.length ? await getDb().select().from(paymentMilestones).where(inArray(paymentMilestones.paymentId, ids)).orderBy(paymentMilestones.id) : [];
+    return Response.json({ payments: rows.map((row) => ({ ...row.payment, ...row.job, viewerRole: row.payment.ownerEmail === user.email ? "homeowner" : "contractor", milestones: milestones.filter((milestone) => milestone.paymentId === row.payment.id) })) });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }

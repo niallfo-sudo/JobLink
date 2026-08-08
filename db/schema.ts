@@ -124,6 +124,7 @@ export const paymentRecords = sqliteTable("payment_records", {
   customerFeeCents: integer("customer_fee_cents").notNull(),
   totalCents: integer("total_cents").notNull(),
   contractorPayoutCents: integer("contractor_payout_cents").notNull(),
+  releasedCents: integer("released_cents").notNull().default(0),
   currency: text("currency").notNull().default("cad"),
   status: text("status").notNull().default("processor_setup_required"),
   processor: text("processor").notNull().default("unconfigured"),
@@ -133,6 +134,26 @@ export const paymentRecords = sqliteTable("payment_records", {
   uniqueIndex("payment_records_job_unique").on(table.jobId),
   index("payment_records_owner_idx").on(table.ownerEmail),
   index("payment_records_contractor_idx").on(table.contractorEmail),
+]);
+
+export const paymentMilestones = sqliteTable("payment_milestones", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  paymentId: integer("payment_id").notNull().references(() => paymentRecords.id, { onDelete: "cascade" }),
+  jobId: integer("job_id").notNull().references(() => jobRequests.id, { onDelete: "cascade" }),
+  milestoneType: text("milestone_type").notNull(),
+  label: text("label").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  status: text("status").notNull().default("awaiting_funding"),
+  proofNote: text("proof_note").notNull().default(""),
+  proofSubmittedAt: integer("proof_submitted_at", { mode: "timestamp_ms" }),
+  homeownerApprovedAt: integer("homeowner_approved_at", { mode: "timestamp_ms" }),
+  releasedAt: integer("released_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex("payment_milestones_payment_type_unique").on(table.paymentId, table.milestoneType),
+  index("payment_milestones_payment_status_idx").on(table.paymentId, table.status),
+  index("payment_milestones_job_idx").on(table.jobId),
 ]);
 
 export const documentRecords = sqliteTable("document_records", {
