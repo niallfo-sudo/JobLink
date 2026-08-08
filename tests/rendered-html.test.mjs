@@ -119,6 +119,9 @@ test("supports custom request terms and persistent employee operations", async (
   const incompleteButtons = [...page.matchAll(/<button\b([^>]*)>/g)].filter(([, attributes]) => !/onClick=|type="submit"|disabled=/.test(attributes));
   assert.deepEqual(incompleteButtons.map((match) => match[0]), []);
   assert.match(operationsRoute, /Employee access required/);
+  assert.doesNotMatch(operationsRoute, /seedCases|ensureSeedCases/);
+  assert.match(operationsRoute, /Operations workspace unavailable/);
+  assert.match(page, /operationsStatus !== "loading" && operationsStatus !== "error"/);
   assert.match(operationsRoute, /Administrator access required/);
   assert.match(operationsRoute, /export async function POST/);
   assert.match(operationsRoute, /export async function DELETE/);

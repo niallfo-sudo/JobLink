@@ -6,16 +6,6 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 const allowedStatuses = new Set(["open", "in_review", "waiting", "resolved", "dismissed"]);
 const allowedRisks = new Set(["low", "medium", "high", "critical"]);
 
-const seedCases = [
-  { externalId: "VR-1208", caseType: "verification", title: "Master electrician licence", subject: "Lakeshore Electric", summary: "Validate the Ontario master electrician licence and expiry date before enabling electrical matching.", risk: "low", priority: "normal", status: "open", assignee: "Unassigned", evidenceCount: 3, dueLabel: "Due today", details: JSON.stringify({ submitted: "8 minutes ago", signals: ["Government ID matched", "Business registration matched", "Licence image uploaded"] }) },
-  { externalId: "VR-1207", caseType: "verification", title: "Liability insurance", subject: "Peakline Roofing", summary: "Confirm policy holder, coverage amount and roofing operations endorsement.", risk: "medium", priority: "high", status: "in_review", assignee: "Maya Chen", evidenceCount: 4, dueLabel: "Due in 3h", details: JSON.stringify({ submitted: "24 minutes ago", signals: ["Policy expires in 47 days", "$2M liability shown", "Broker confirmation pending"] }) },
-  { externalId: "VR-1206", caseType: "verification", title: "Business identity", subject: "Bluebird Plumbing", summary: "Review business ownership and banking-name alignment.", risk: "low", priority: "normal", status: "waiting", assignee: "Owen Price", evidenceCount: 2, dueLabel: "Due tomorrow", details: JSON.stringify({ submitted: "41 minutes ago", signals: ["Ontario corporation active", "Bank letter requested"] }) },
-  { externalId: "FR-1098", caseType: "fraud", title: "Possible duplicate contractor network", subject: "Premier Reno / GTA Project Co.", summary: "Two contractor accounts share a payout account, device fingerprint and six portfolio photos.", risk: "critical", priority: "urgent", status: "open", assignee: "Unassigned", evidenceCount: 18, dueLabel: "Respond in 45m", details: JSON.stringify({ sharedSignals: "8 of 10", jobsAtRisk: "3 · $18,420", signals: ["Shared payout account", "Matching device fingerprint", "Six duplicate project photos"] }) },
-  { externalId: "FR-1095", caseType: "fraud", title: "Stolen project photos suspected", subject: "Ontario Elite Exteriors", summary: "Reverse-image matching found portfolio images on an unrelated US contractor website.", risk: "high", priority: "high", status: "in_review", assignee: "Maya Chen", evidenceCount: 11, dueLabel: "Due today", details: JSON.stringify({ matchedPhotos: "11 of 18", currentState: "Matching paused", signals: ["Reverse-image confidence 96%", "Original upload predates contractor account"] }) },
-  { externalId: "DS-304", caseType: "dispute", title: "Unapproved electrical change order", subject: "JL-2164 · East Hamilton", summary: "Customer says the $1,280 addition was discussed but never approved in the app.", risk: "high", priority: "urgent", status: "open", assignee: "Noah Singh", evidenceCount: 14, dueLabel: "Response due in 2h", details: JSON.stringify({ contractValue: "$8,920", disputedAmount: "$1,280", signals: ["No signed in-app change order", "Message thread references extra work", "Contractor invoice includes addition"] }) },
-  { externalId: "DS-301", caseType: "dispute", title: "Workmanship warranty claim", subject: "JL-1988 · Dundas", summary: "Ceiling seam became visible six weeks after project completion.", risk: "medium", priority: "normal", status: "waiting", assignee: "Owen Price", evidenceCount: 9, dueLabel: "Response due tomorrow", details: JSON.stringify({ contractValue: "$3,400", warranty: "15 years", signals: ["Customer photos received", "Contractor reinspection scheduled"] }) },
-];
-
 async function requireOperationsUser() {
   const user = await getChatGPTUser();
   if (!user) return { error: Response.json({ error: "Sign in required" }, { status: 401 }) };
@@ -30,16 +20,10 @@ async function requireOperationsUser() {
   return { user, db, role: record.role };
 }
 
-async function ensureSeedCases(db: ReturnType<typeof getDb>) {
-  const [countRow] = await db.select({ value: sql<number>`count(*)` }).from(operationsCases);
-  if (!countRow?.value) await db.insert(operationsCases).values(seedCases);
-}
-
 export async function GET() {
   try {
     const access = await requireOperationsUser();
     if ("error" in access) return access.error;
-    await ensureSeedCases(access.db);
     const cases = await access.db.select().from(operationsCases).orderBy(desc(operationsCases.updatedAt));
     const notes = cases.length ? await access.db.select().from(operationsCaseNotes).where(inArray(operationsCaseNotes.caseId, cases.map((item) => item.id))).orderBy(desc(operationsCaseNotes.createdAt)) : [];
     const [jobCount] = await access.db.select({ value: sql<number>`count(*)` }).from(jobRequests);
@@ -53,8 +37,8 @@ export async function GET() {
       stats: { jobs: jobCount?.value ?? 0, activeJobs: activeJobCount?.value ?? 0, paymentVolumeCents: paymentTotal?.value ?? 0, openCases: cases.filter((item) => !["resolved", "dismissed"].includes(item.status)).length },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Operations workspace unavailable";
-    return Response.json({ error: message }, { status: 500 });
+    console.error("Operations workspace unavailable", error);
+    return Response.json({ error: "Operations workspace unavailable" }, { status: 500 });
   }
 }
 
@@ -75,8 +59,8 @@ export async function POST(request: Request) {
     const [staffMember] = await access.db.select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, createdAt: users.createdAt }).from(users).where(eq(users.email, email)).limit(1);
     return Response.json({ staffMember });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Employee access could not be saved";
-    return Response.json({ error: message }, { status: 500 });
+    console.error("Operations staff access could not be saved", error);
+    return Response.json({ error: "Employee access could not be saved" }, { status: 500 });
   }
 }
 
@@ -96,8 +80,8 @@ export async function DELETE(request: Request) {
     await access.db.update(users).set({ role: "homeowner" }).where(eq(users.email, email));
     return Response.json({ removed: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Employee access could not be removed";
-    return Response.json({ error: message }, { status: 500 });
+    console.error("Operations staff access could not be removed", error);
+    return Response.json({ error: "Employee access could not be removed" }, { status: 500 });
   }
 }
 
@@ -122,7 +106,7 @@ export async function PATCH(request: Request) {
     const notes = await access.db.select().from(operationsCaseNotes).where(eq(operationsCaseNotes.caseId, existing.id)).orderBy(desc(operationsCaseNotes.createdAt));
     return Response.json({ case: { ...updated, details: JSON.parse(updated.details || "{}"), notes } });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Case update failed";
-    return Response.json({ error: message }, { status: 500 });
+    console.error("Operations case update failed", error);
+    return Response.json({ error: "Case update failed" }, { status: 500 });
   }
 }
