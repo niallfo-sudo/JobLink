@@ -281,3 +281,8 @@ footer { border-top: 1px solid var(--line); padding: 34px 4vw; display: grid; gr
 
 .quote-stage-explainer{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:stretch;gap:12px;margin:18px 0 24px;padding:16px;border:1px solid var(--line);background:#fff8e9}.quote-stage-explainer article{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:start}.quote-stage-explainer article>span{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--green);color:white;font-size:10px;font-weight:900}.quote-stage-explainer b{display:block;font-size:11px}.quote-stage-explainer p{margin:5px 0 0;color:var(--muted);font-size:9px;line-height:1.5}.quote-stage-explainer>i{align-self:center;color:var(--orange);font-style:normal;font-weight:900}.contractor-card .match-badge{max-width:240px}
 @media(max-width:850px){.quote-stage-explainer{grid-template-columns:1fr}.quote-stage-explainer>i{display:none}}
+
+/* Keep Insight fact labels visually separate from longer values such as availability. */
+.insight-card>div{display:grid;grid-template-columns:minmax(0,.72fr) minmax(0,1.28fr);gap:16px;align-items:start}
+.insight-card>div>span{min-width:0}
+.insight-card>div>b{min-width:0;text-align:right;line-height:1.35;overflow-wrap:anywhere}

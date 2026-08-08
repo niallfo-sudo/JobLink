@@ -358,3 +358,14 @@ test("gives Operations a persistent payment-proof hold and clearance workflow", 
   assert.match(schema, /operationsReviewedBy/);
   assert.match(migration, /payment_milestones_operations_review_idx/);
 });
+
+test("keeps Insight availability labels separate from long values", async () => {
+  const [page, styles] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/globals.css"),
+  ]);
+
+  assert.match(page, /<span>Availability<\/span><b>/);
+  assert.match(styles, /\.insight-card>div\{display:grid;grid-template-columns:/);
+  assert.match(styles, /\.insight-card>div>b\{min-width:0;text-align:right;/);
+});
