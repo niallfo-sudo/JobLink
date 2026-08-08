@@ -119,6 +119,13 @@ test("supports custom request terms and persistent employee operations", async (
   const incompleteButtons = [...page.matchAll(/<button\b([^>]*)>/g)].filter(([, attributes]) => !/onClick=|type="submit"|disabled=/.test(attributes));
   assert.deepEqual(incompleteButtons.map((match) => match[0]), []);
   assert.match(operationsRoute, /Employee access required/);
+  assert.match(operationsRoute, /Administrator access required/);
+  assert.match(operationsRoute, /export async function POST/);
+  assert.match(operationsRoute, /export async function DELETE/);
+  assert.match(operationsRoute, /You cannot remove your own administrator access/);
+  assert.match(page, /Operations team/);
+  assert.match(page, /addOperationsStaff/);
+  assert.match(page, /removeOperationsStaff/);
   assert.match(operationsRoute, /operationsCaseNotes/);
   assert.match(operationsRoute, /export async function PATCH/);
   assert.match(jobRoute, /emergency_responder_confirmed/);

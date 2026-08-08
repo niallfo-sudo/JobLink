@@ -45,13 +45,58 @@ export async function GET() {
     const [jobCount] = await access.db.select({ value: sql<number>`count(*)` }).from(jobRequests);
     const [activeJobCount] = await access.db.select({ value: sql<number>`count(*)` }).from(jobRequests).where(inArray(jobRequests.status, ["matching", "quoted", "booked", "in_progress"]));
     const [paymentTotal] = await access.db.select({ value: sql<number>`coalesce(sum(${paymentRecords.totalCents}), 0)` }).from(paymentRecords);
+    const staff = await access.db.select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, createdAt: users.createdAt }).from(users).where(inArray(users.role, ["employee", "admin"]));
     return Response.json({
       viewer: { email: access.user.email, displayName: access.user.displayName, role: access.role },
+      staff,
       cases: cases.map((item) => ({ ...item, details: JSON.parse(item.details || "{}"), notes: notes.filter((note) => note.caseId === item.id) })),
       stats: { jobs: jobCount?.value ?? 0, activeJobs: activeJobCount?.value ?? 0, paymentVolumeCents: paymentTotal?.value ?? 0, openCases: cases.filter((item) => !["resolved", "dismissed"].includes(item.status)).length },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Operations workspace unavailable";
+    return Response.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const access = await requireOperationsUser();
+    if ("error" in access) return access.error;
+    if (access.role !== "admin") return Response.json({ error: "Administrator access required" }, { status: 403 });
+
+    const payload = (await request.json()) as { email?: string; displayName?: string; role?: string };
+    const email = payload.email?.trim().toLowerCase() ?? "";
+    const role = payload.role === "admin" ? "admin" : payload.role === "employee" ? "employee" : "";
+    if (!/^\S+@\S+\.\S+$/.test(email)) return Response.json({ error: "Enter a valid employee email" }, { status: 400 });
+    if (!role) return Response.json({ error: "Choose employee or administrator access" }, { status: 400 });
+    const displayName = payload.displayName?.trim().slice(0, 100) || email;
+
+    await access.db.insert(users).values({ email, displayName, role }).onConflictDoUpdate({ target: users.email, set: { displayName, role } });
+    const [staffMember] = await access.db.select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, createdAt: users.createdAt }).from(users).where(eq(users.email, email)).limit(1);
+    return Response.json({ staffMember });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Employee access could not be saved";
+    return Response.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const access = await requireOperationsUser();
+    if ("error" in access) return access.error;
+    if (access.role !== "admin") return Response.json({ error: "Administrator access required" }, { status: 403 });
+
+    const payload = (await request.json()) as { email?: string };
+    const email = payload.email?.trim().toLowerCase() ?? "";
+    if (!email) return Response.json({ error: "Employee email is required" }, { status: 400 });
+    if (email === access.user.email.toLowerCase()) return Response.json({ error: "You cannot remove your own administrator access" }, { status: 400 });
+
+    const [existing] = await access.db.select({ role: users.role }).from(users).where(eq(users.email, email)).limit(1);
+    if (!existing || !["employee", "admin"].includes(existing.role)) return Response.json({ error: "Operations user not found" }, { status: 404 });
+    await access.db.update(users).set({ role: "homeowner" }).where(eq(users.email, email));
+    return Response.json({ removed: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Employee access could not be removed";
     return Response.json({ error: message }, { status: 500 });
   }
 }
