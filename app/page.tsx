@@ -7,7 +7,7 @@ type ProTab = "overview" | "opportunities" | "jobs" | "inbox" | "business";
 type AccountTab = "jobs" | "payments" | "documents" | "saved";
 type AdminTab = "overview" | "verification" | "contractors" | "fraud" | "disputes" | "team";
 type PersistedJob = { id: number; externalId: string; category: string; title: string; description?: string; size?: string; timeline?: string; postalCode?: string; emergency?: boolean; status: string; budget: string; scheduledStartAt?: string | number | null; createdAt: string | number };
-type PersistedQuote = { id: number; contractorName: string; amountCents: number; message: string; availableAt: string; status: string };
+type PersistedQuote = { id: number; contractorName: string; amountCents: number; message: string; availableAt: string; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number };
 type Opportunity = { numericId?: number; id: string; service: string; title: string; distance: string; budget: string; timing: string; match: number; posted: string; details: string };
 type RoomMessage = { id: number; body: string; mine: boolean; createdAt: string | number };
 type RoomEvent = { id: number; label: string; eventType: string; createdAt: string | number };
@@ -23,7 +23,7 @@ type OperationsCase = { id: number; externalId: string; caseType: "verification"
 type AccountIdentity = { email: string; displayName: string; role: "homeowner" | "contractor" | "employee" | "admin" | null; operationsRole?: "employee" | "admin" | null };
 type StaffMember = { id: number; email: string; displayName: string; role: "employee" | "admin"; createdAt: string | number };
 type VerificationDocument = { id: number; documentType: string; filename: string; reviewStatus: string; uploadedAt: string | number };
-type ContractorQuote = { id: number; jobId: number; externalId: string; title: string; category: string; amountCents: number; availableAt: string; status: string; createdAt: string | number };
+type ContractorQuote = { id: number; jobId: number; externalId: string; title: string; category: string; amountCents: number; availableAt: string; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; createdAt: string | number };
 type VerifiedContractor = { id: number; ownerEmail: string; businessName: string; primaryService: string; services: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: string; subscriptionStatus: string; payoutsEnabled: boolean; updatedAt: string | number };
 
 const categories = [
@@ -180,6 +180,17 @@ export default function Home() {
   const [progressUpdatingId, setProgressUpdatingId] = useState<number | null>(null);
   const [progressError, setProgressError] = useState<string | null>(null);
   const [scheduledStartValues, setScheduledStartValues] = useState<Record<number, string>>({});
+  const [onsiteVisitValues, setOnsiteVisitValues] = useState<Record<number, string>>({});
+  const [finalQuoteJob, setFinalQuoteJob] = useState<ContractorQuote | null>(null);
+  const [finalQuoteAmount, setFinalQuoteAmount] = useState("");
+  const [finalWorkDescription, setFinalWorkDescription] = useState("");
+  const [finalMaterials, setFinalMaterials] = useState("");
+  const [finalMeasurements, setFinalMeasurements] = useState("");
+  const [finalDepositAmount, setFinalDepositAmount] = useState("");
+  const [finalProgressAmount, setFinalProgressAmount] = useState("");
+  const [finalCompletionAmount, setFinalCompletionAmount] = useState("");
+  const [finalQuoteStatus, setFinalQuoteStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [finalQuoteError, setFinalQuoteError] = useState("");
   const [roomChangeOrders, setRoomChangeOrders] = useState<ChangeOrderRecord[]>([]);
   const [liveChangeOrderJob, setLiveChangeOrderJob] = useState<PersistedJob | null>(null);
   const [changeReason, setChangeReason] = useState("Hidden damage discovered");
@@ -860,23 +871,101 @@ export default function Home() {
 
   async function acceptSavedQuote(quote: PersistedQuote) {
     if (!selectedSavedJob) return;
+    if (quote.status === "final_quote_ready") { await decideFinalQuote(quote, "accept_final"); return; }
+    if (quote.status !== "submitted" && quote.status !== "onsite_requested") return;
     setSavedQuotesStatus("loading");
     try {
       const response = await fetch(`/api/jobs/${selectedSavedJob.id}/quotes`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quoteId: quote.id }),
+        body: JSON.stringify({ action: "request_onsite", quoteId: quote.id }),
       });
-      if (!response.ok) throw new Error("Unable to accept quote");
-      const bookedJob = { ...selectedSavedJob, status: "booked" };
-      setAcceptedQuoteId(quote.id);
-      setSavedQuotes((current) => current.map((item) => ({ ...item, status: item.id === quote.id ? "accepted" : "declined" })));
-      setSelectedSavedJob(bookedJob);
-      setPersistedJobs((current) => current.map((job) => job.id === selectedSavedJob.id ? bookedJob : job));
-      await openJobRoom(bookedJob);
+      const data = (await response.json().catch(() => ({}))) as { quote?: PersistedQuote; job?: PersistedJob; error?: string };
+      if (!response.ok || !data.quote) throw new Error(data.error || "Unable to request an on-site verification");
+      const verificationJob = { ...selectedSavedJob, ...(data.job ?? {}), status: "verification_pending" };
+      setSavedQuotes((current) => current.map((item) => item.id === quote.id ? { ...item, ...data.quote } : item));
+      setSelectedSavedJob(verificationJob);
+      setPersistedJobs((current) => current.map((job) => job.id === selectedSavedJob.id ? verificationJob : job));
       setSavedQuotesStatus("idle");
-    } catch {
+      showNotice(`${quote.contractorName} has been asked to schedule an on-site verification.`);
+    } catch (error) {
       setSavedQuotesStatus("error");
+      showNotice(error instanceof Error ? error.message : "Unable to request an on-site verification");
+    }
+  }
+
+  function quoteWorkflowLabel(quote: PersistedQuote) {
+    if (quote.status === "submitted") return "Request on-site visit";
+    if (quote.status === "onsite_requested") return "Visit request sent";
+    if (quote.status === "onsite_scheduled") return `Visit ${scheduledStartLabel(quote.onsiteVisitAt)}`;
+    if (quote.status === "final_quote_ready") return "Review final quote";
+    if (quote.status === "accepted") return "Final quote accepted ✓";
+    return quote.status.replaceAll("_", " ");
+  }
+
+  async function decideFinalQuote(quote: PersistedQuote, action: "accept_final" | "decline_final") {
+    if (!selectedSavedJob) return;
+    setSavedQuotesStatus("loading");
+    try {
+      const response = await fetch(`/api/jobs/${selectedSavedJob.id}/quotes`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, quoteId: quote.id }) });
+      const data = (await response.json().catch(() => ({}))) as { acceptedQuote?: PersistedQuote; quote?: PersistedQuote; error?: string };
+      if (!response.ok) throw new Error(data.error || "Unable to update final quote");
+      if (action === "accept_final" && data.acceptedQuote) {
+        const bookedJob = { ...selectedSavedJob, status: "booked" };
+        setAcceptedQuoteId(quote.id);
+        setSavedQuotes((current) => current.map((item) => ({ ...item, status: item.id === quote.id ? "accepted" : "declined" })));
+        setSelectedSavedJob(bookedJob);
+        setPersistedJobs((current) => current.map((job) => job.id === bookedJob.id ? bookedJob : job));
+        showNotice("Final quote accepted. Your booking record is ready.");
+      } else if (data.quote) {
+        setSavedQuotes((current) => current.map((item) => item.id === quote.id ? { ...item, ...data.quote } : item));
+        showNotice("Final quote declined. You can continue comparing other contractors.");
+      }
+      setSavedQuotesStatus("idle");
+    } catch (error) {
+      setSavedQuotesStatus("error");
+      showNotice(error instanceof Error ? error.message : "Unable to update final quote");
+    }
+  }
+
+  function openFinalQuote(quote: ContractorQuote) {
+    setFinalQuoteJob(quote);
+    setFinalQuoteAmount((quote.amountCents / 100).toString());
+    setFinalWorkDescription(quote.workDescription || "Describe the confirmed work, labour, site protection, cleanup and exclusions.");
+    setFinalMaterials(quote.materials || "List confirmed materials, product grades and who supplies them.");
+    setFinalMeasurements(quote.measurements || "Record the verified dimensions, quantities or fixture counts.");
+    setFinalDepositAmount((quote.depositCents || 0) ? ((quote.depositCents || 0) / 100).toString() : "");
+    setFinalProgressAmount((quote.progressCents || 0) ? ((quote.progressCents || 0) / 100).toString() : "");
+    setFinalCompletionAmount((quote.completionCents || 0) ? ((quote.completionCents || 0) / 100).toString() : "");
+    setFinalQuoteError("");
+    setFinalQuoteStatus("idle");
+  }
+
+  async function scheduleOnsiteVisit(quote: ContractorQuote) {
+    const value = onsiteVisitValues[quote.id] ?? dateTimeInputValue(quote.onsiteVisitAt);
+    if (!value) { showNotice("Choose an on-site visit date and time first."); return; }
+    try {
+      const response = await fetch(`/api/jobs/${quote.jobId}/quotes`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "schedule_onsite", quoteId: quote.id, onsiteVisitAt: new Date(value).toISOString() }) });
+      const data = (await response.json().catch(() => ({}))) as { quote?: ContractorQuote; error?: string };
+      if (!response.ok || !data.quote) throw new Error(data.error || "Unable to schedule the visit");
+      setContractorQuotes((current) => current.map((item) => item.id === quote.id ? { ...item, ...data.quote } : item));
+      showNotice(`On-site verification scheduled for ${scheduledStartLabel(data.quote.onsiteVisitAt)}.`);
+    } catch (error) { showNotice(error instanceof Error ? error.message : "Unable to schedule the visit"); }
+  }
+
+  async function submitFinalQuote() {
+    if (!finalQuoteJob) return;
+    setFinalQuoteStatus("saving"); setFinalQuoteError("");
+    try {
+      const response = await fetch(`/api/jobs/${finalQuoteJob.jobId}/quotes`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "submit_final", quoteId: finalQuoteJob.id, amount: Number(finalQuoteAmount), workDescription: finalWorkDescription, materials: finalMaterials, measurements: finalMeasurements, depositAmount: Number(finalDepositAmount), progressAmount: Number(finalProgressAmount), completionAmount: Number(finalCompletionAmount) }) });
+      const data = (await response.json().catch(() => ({}))) as { quote?: ContractorQuote; error?: string };
+      if (!response.ok || !data.quote) throw new Error(data.error || "Unable to submit the final quote");
+      setContractorQuotes((current) => current.map((item) => item.id === finalQuoteJob.id ? { ...item, ...data.quote } : item));
+      setFinalQuoteJob(null); setFinalQuoteStatus("idle");
+      showNotice("Final quote submitted for homeowner review.");
+    } catch (error) {
+      setFinalQuoteError(error instanceof Error ? error.message : "Unable to submit the final quote");
+      setFinalQuoteStatus("error");
     }
   }
 
@@ -1401,7 +1490,7 @@ export default function Home() {
               {savedRequestId && savedQuotesStatus === "loading" && <div className="matches-loading"><span>JL</span><h3>Loading verified quotes…</h3><p>Your saved request is ready. We’re retrieving its current quote status.</p></div>}
               {savedRequestId && savedQuotes.length > 0 && savedQuotes.map((quote, index) => (
                 <article className={`contractor-card ${index === 0 ? "featured" : ""}`} key={quote.id}>
-                  <div className="rank">0{index + 1}</div><div className="pro-logo">{quote.contractorName.split(" ").slice(0,2).map((word) => word[0]).join("")}</div><div className="pro-main"><div className="pro-title"><div><span className="match-badge">{index === 0 ? "Lowest submitted price" : "Verified contractor"}</span><h2>{quote.contractorName} <small>✓</small></h2></div></div><div className="pro-facts"><span>Profile approved by Operations</span><span>Quote stored with this job</span></div><div className="quote-row"><div><small>Available</small><b>{quote.availableAt}</b></div><div><small>Submitted quote</small><b className="quote-price">${(quote.amountCents / 100).toLocaleString()}</b></div></div><p className="quote-note">✓ {quote.message}</p><div className="card-actions"><button className="secondary-action" onClick={() => { setStep(3); go("request"); }}>Review scope</button><button className="primary-action" disabled={savedQuotesStatus === "loading" || (acceptedQuoteId !== null && acceptedQuoteId !== quote.id)} onClick={() => void acceptSavedQuote(quote)}>{quote.status === "accepted" ? "Selected ✓" : quote.status === "declined" ? "Another pro selected" : "Choose this pro"}</button></div></div>
+                  <div className="rank">0{index + 1}</div><div className="pro-logo">{quote.contractorName.split(" ").slice(0,2).map((word) => word[0]).join("")}</div><div className="pro-main"><div className="pro-title"><div><span className="match-badge">{quote.status === "final_quote_ready" ? "Final verified quote" : index === 0 ? "Lowest initial estimate" : "Verified contractor"}</span><h2>{quote.contractorName} <small>✓</small></h2></div></div><div className="pro-facts"><span>Profile approved by Operations</span><span>{quoteWorkflowLabel(quote)}</span></div><div className="quote-row"><div><small>{quote.status === "final_quote_ready" ? "On-site visit" : "Available"}</small><b>{quote.status === "onsite_scheduled" || quote.status === "final_quote_ready" ? scheduledStartLabel(quote.onsiteVisitAt) : quote.availableAt}</b></div><div><small>{quote.status === "final_quote_ready" ? "Final quote" : "Initial estimate"}</small><b className="quote-price">${(quote.amountCents / 100).toLocaleString()}</b></div></div><p className="quote-note">✓ {quote.status === "final_quote_ready" ? quote.workDescription : quote.message}</p>{quote.status === "final_quote_ready" && <div className="final-quote-summary"><b>Materials</b><p>{quote.materials}</p><b>Measurements</b><p>{quote.measurements}</p><div><span>Deposit ${(quote.depositCents || 0) / 100}</span><span>Progress ${(quote.progressCents || 0) / 100}</span><span>Completion ${(quote.completionCents || 0) / 100}</span></div></div>}<div className="card-actions"><button className="secondary-action" onClick={() => { setStep(3); go("request"); }}>Review request</button>{quote.status === "final_quote_ready" ? <><button className="secondary-action" onClick={() => void decideFinalQuote(quote, "decline_final")}>Decline</button><button className="primary-action" disabled={savedQuotesStatus === "loading"} onClick={() => void decideFinalQuote(quote, "accept_final")}>Accept final quote</button></> : <button className="primary-action" disabled={savedQuotesStatus === "loading" || quote.status !== "submitted"} onClick={() => void acceptSavedQuote(quote)}>{quoteWorkflowLabel(quote)}</button>}</div></div>
                 </article>
               ))}
               {!savedRequestId && <div className="matches-loading"><span>JL</span><h3>No request selected</h3><p>Post a request or open one from your account to compare its quotes.</p><button onClick={() => beginRequest()}>Post a request →</button></div>}
@@ -1410,10 +1499,10 @@ export default function Home() {
             {savedQuotes.length > 0 && <aside className="insight-card">
               <span className="insight-icon">✦</span>
               <p className="aside-label">JobLink insight</p>
-              <h3>{savedQuotes[0].contractorName} submitted the lowest current price.</h3>
-              <p>Compare the written scope and availability before choosing. JobLink does not invent rankings or prices.</p>
+              <h3>{savedQuotes[0].contractorName} submitted the lowest current estimate.</h3>
+              <p>Request an on-site verification before accepting a final quote. You can compare more than one verified contractor.</p>
               <div><span>Submitted price</span><b>${(savedQuotes[0].amountCents / 100).toLocaleString()}</b></div><div><span>Availability</span><b>{savedQuotes[0].availableAt}</b></div>
-              <button disabled={savedQuotesStatus === "loading" || Boolean(acceptedQuoteId)} onClick={() => void acceptSavedQuote(savedQuotes[0])}>{acceptedQuoteId ? "Contractor selected ✓" : "Choose lowest quote →"}</button>
+              <button disabled={savedQuotesStatus === "loading" || savedQuotes[0].status !== "submitted"} onClick={() => void acceptSavedQuote(savedQuotes[0])}>{savedQuotes[0].status === "submitted" ? "Request on-site visit →" : quoteWorkflowLabel(savedQuotes[0])}</button>
             </aside>}
           </div>
           {acceptedSavedQuote && <div className="accepted-banner"><span>✓</span><div><b>{acceptedSavedQuote.contractorName} has been selected.</b><p>Your booking record and Job Room are ready.</p></div><button onClick={() => go("tracking")}>Open job progress →</button></div>}
@@ -1608,7 +1697,7 @@ export default function Home() {
               <div className="job-tabs"><button className={jobView === "active" ? "selected" : ""} onClick={() => setJobView("active")}>Active <span>{conversations.filter((job) => job.status === "in_progress").length}</span></button><button className={jobView === "upcoming" ? "selected" : ""} onClick={() => setJobView("upcoming")}>Upcoming <span>{conversations.filter((job) => job.status === "booked").length}</span></button><button className={jobView === "completed" ? "selected" : ""} onClick={() => setJobView("completed")}>Completed <span>{conversations.filter((job) => job.status === "completed").length}</span></button><button className={jobView === "quotes" ? "selected" : ""} onClick={() => setJobView("quotes")}>Quotes <span>{contractorQuotes.length}</span></button></div>
               <div className="job-view-summary"><b>{jobView === "active" ? "Active work" : jobView === "upcoming" ? "Upcoming schedule" : jobView === "completed" ? "Completed jobs" : "Submitted quotes"}</b><span>{jobView === "active" ? "Live milestones and customer communication" : jobView === "upcoming" ? "Confirmed bookings" : jobView === "completed" ? "Completed work and warranty records" : `${contractorQuotes.filter((quote) => quote.status === "submitted").length} awaiting a homeowner decision`}</span></div>
               {jobView !== "quotes" && visibleContractorJobs.length > 0 && <div className="live-operations"><div className="pro-panel-head"><div><p className="aside-label">Live JobLink jobs</p><h2>{jobView === "completed" ? "Completed job records" : "Update customer progress"}</h2></div><span>Every update is timestamped</span></div>{progressError && <p className="progress-error">{progressError}</p>}{visibleContractorJobs.map((job) => <article key={job.id}><div className="live-job-heading"><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status.replaceAll("_", " ")}</small><h3>{job.title}</h3></div><div className="live-job-actions"><button disabled={job.status === "completed"} onClick={() => setLiveChangeOrderJob(job)}>+ Change order</button><button onClick={() => openJobRoom(job)}>Job Room ↗</button></div></div>{job.status === "booked" && <div className="schedule-start-control"><label htmlFor={`scheduled-start-${job.id}`}>Scheduled start date and time</label><div><input id={`scheduled-start-${job.id}`} type="datetime-local" value={scheduledStartValues[job.id] ?? dateTimeInputValue(job.scheduledStartAt)} onChange={(event) => setScheduledStartValues((current) => ({ ...current, [job.id]: event.target.value }))} /><button disabled={progressUpdatingId === job.id} onClick={() => void scheduleJobStart(job)}>{job.scheduledStartAt ? "Update start time" : "Schedule start"}</button></div>{job.scheduledStartAt && <small>Currently scheduled: {scheduledStartLabel(job.scheduledStartAt)}</small>}</div>}{job.status !== "completed" && <div className="milestone-actions">{([['materials_collected','Materials picked up'],['work_started','Started'],['halfway','50% complete'],['cleaning','Cleaning'],['finished','Finished']] as const).map(([stage,label]) => <button key={stage} disabled={progressUpdatingId === job.id} onClick={() => updateJobProgress(job, stage)}>{progressUpdatingId === job.id ? "Updating…" : label}</button>)}</div>}</article>)}</div>}
-              <div className="contractor-job-records">{jobView === "quotes" ? contractorQuotes.length ? contractorQuotes.map((quote) => <article key={quote.id}><span>QT</span><div><small>{quote.externalId} · {quote.status}</small><h3>{quote.title}</h3><p>${(quote.amountCents / 100).toLocaleString()} · {quote.availableAt}</p></div><em>{quote.status === "submitted" ? "Awaiting decision" : quote.status.replaceAll("_", " ")}</em></article>) : <div className="contractor-jobs-empty"><b>No submitted quotes.</b><p>Build a quote from an available opportunity.</p><button onClick={() => setProTab("opportunities")}>Find opportunities</button></div> : visibleContractorJobs.length ? visibleContractorJobs.map((job) => <article key={job.id}><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status.replaceAll("_", " ")}</small><h3>{job.title}</h3><p>{job.category} · {job.budget}</p></div><button onClick={() => openJobRoom(job)}>Open Job Room →</button></article>) : <div className="contractor-jobs-empty"><b>No {jobView} jobs.</b><p>Jobs move here automatically as customers accept quotes and work progresses.</p></div>}</div>
+              <div className="contractor-job-records">{jobView === "quotes" ? contractorQuotes.length ? contractorQuotes.map((quote) => <article key={quote.id}><span>QT</span><div><small>{quote.externalId} · {quote.status.replaceAll("_", " ")}</small><h3>{quote.title}</h3><p>${(quote.amountCents / 100).toLocaleString()} · {quote.availableAt}</p>{quote.onsiteVisitAt && <p className="quote-workflow-detail">On-site visit: {scheduledStartLabel(quote.onsiteVisitAt)}</p>}</div><div className="contractor-quote-actions">{quote.status === "onsite_requested" && <><input type="datetime-local" aria-label={`On-site visit for ${quote.title}`} value={onsiteVisitValues[quote.id] ?? dateTimeInputValue(quote.onsiteVisitAt)} onChange={(event) => setOnsiteVisitValues((current) => ({ ...current, [quote.id]: event.target.value }))} /><button onClick={() => void scheduleOnsiteVisit(quote)}>Schedule visit</button></>}{quote.status === "onsite_scheduled" && <button onClick={() => openFinalQuote(quote)}>Create final quote →</button>}{quote.status === "final_quote_ready" && <em>Awaiting homeowner decision</em>}{quote.status === "submitted" && <em>Awaiting on-site request</em>}</div></article>) : <div className="contractor-jobs-empty"><b>No submitted quotes.</b><p>Build a quote from an available opportunity.</p><button onClick={() => setProTab("opportunities")}>Find opportunities</button></div> : visibleContractorJobs.length ? visibleContractorJobs.map((job) => <article key={job.id}><span>{job.category.slice(0,2).toUpperCase()}</span><div><small>{job.externalId} · {job.status.replaceAll("_", " ")}</small><h3>{job.title}</h3><p>{job.category} · {job.budget}</p></div><button onClick={() => openJobRoom(job)}>Open Job Room →</button></article>) : <div className="contractor-jobs-empty"><b>No {jobView} jobs.</b><p>Jobs move here automatically as customers accept quotes and work progresses.</p></div>}</div>
               <div className="pro-panel payment-panel"><div><p className="aside-label">Demo payment ledger</p><h2>${(paymentRecords.filter((payment) => payment.status === "demo_paid").reduce((total, payment) => total + payment.contractorPayoutCents, 0) / 100).toLocaleString()}</h2><span>{paymentRecords.filter((payment) => payment.status === "demo_paid").length} simulated {paymentRecords.filter((payment) => payment.status === "demo_paid").length === 1 ? "job" : "jobs"} · no funds moved</span></div><button onClick={() => setProTab("business")}>Demo plan settings →</button></div>
             </div>
           )}
@@ -1669,6 +1758,8 @@ export default function Home() {
       )}
 
       <input id="verification-file-input" className="hidden-file-input" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadVerificationDocument(file); event.target.value = ""; }} />
+
+      {finalQuoteJob && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="final-quote-title"><div className="quote-drawer final-quote-drawer"><button className="overlay-close" onClick={() => setFinalQuoteJob(null)} aria-label="Close final quote">×</button><p className="step-kicker">On-site verification · {finalQuoteJob.externalId}</p><h2 id="final-quote-title">Prepare the final quote.</h2><p className="quote-job-title">Enter the confirmed scope from the on-site visit. The three payment checkpoints must equal the final total.</p><label className="field-label">Final project total<div className="price-input"><span>$</span><input value={finalQuoteAmount} onChange={(event) => setFinalQuoteAmount(event.target.value)} inputMode="decimal" /><em>CAD</em></div></label><label className="field-label">Confirmed work description<textarea rows={4} value={finalWorkDescription} onChange={(event) => setFinalWorkDescription(event.target.value)} /></label><label className="field-label">Materials and product details<textarea rows={3} value={finalMaterials} onChange={(event) => setFinalMaterials(event.target.value)} /></label><label className="field-label">Verified measurements or quantities<textarea rows={3} value={finalMeasurements} onChange={(event) => setFinalMeasurements(event.target.value)} /></label><div className="final-payment-grid"><label>Deposit at signing<input value={finalDepositAmount} onChange={(event) => setFinalDepositAmount(event.target.value)} inputMode="decimal" placeholder="$" /></label><label>Progress checkpoint<input value={finalProgressAmount} onChange={(event) => setFinalProgressAmount(event.target.value)} inputMode="decimal" placeholder="$" /></label><label>Completion balance<input value={finalCompletionAmount} onChange={(event) => setFinalCompletionAmount(event.target.value)} inputMode="decimal" placeholder="$" /></label></div><p className="final-payment-total">Checkpoints total: ${((Number(finalDepositAmount) || 0) + (Number(finalProgressAmount) || 0) + (Number(finalCompletionAmount) || 0)).toLocaleString()} · Final quote: ${(Number(finalQuoteAmount) || 0).toLocaleString()}</p>{finalQuoteError && <p className="quote-submit-error">{finalQuoteError}</p>}<button className="send-quote" disabled={finalQuoteStatus === "saving"} onClick={() => void submitFinalQuote()}>{finalQuoteStatus === "saving" ? "Submitting…" : "Send final quote for review →"}</button></div></div>}
 
       {liveChangeOrderJob && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="live-change-title"><button className="overlay-close" onClick={() => setLiveChangeOrderJob(null)} aria-label="Close change order">×</button><div className="quote-drawer change-drawer"><p className="step-kicker">{liveChangeOrderJob.externalId} · Change order</p><h2 id="live-change-title">Document extra work.</h2><p className="quote-job-title">{liveChangeOrderJob.title}</p><div className="change-alert"><span>!</span><p>The homeowner must approve this change before additional work begins.</p></div><label className="field-label">Reason<input value={changeReason} onChange={(event) => setChangeReason(event.target.value)} /></label><label className="field-label">Additional work<textarea rows={4} value={changeDescription} onChange={(event) => setChangeDescription(event.target.value)} /></label><label className="field-label">Additional amount<div className="price-input"><span>$</span><input value={changeAmount} onChange={(event) => setChangeAmount(event.target.value)} inputMode="decimal" /><em>CAD</em></div></label><label className="field-label">Schedule impact<input value={changeSchedule} onChange={(event) => setChangeSchedule(event.target.value)} placeholder="Example: Adds one business day" /></label>{changeStatus === "error" && <p className="quote-submit-error">The change order could not be sent.</p>}<button className="send-quote" disabled={changeStatus === "saving" || Number(changeAmount) <= 0 || changeReason.trim().length < 3 || changeDescription.trim().length < 10 || changeSchedule.trim().length < 3} onClick={submitLiveChangeOrder}>{changeStatus === "saving" ? "Sending…" : `Send $${Number(changeAmount || 0).toLocaleString()} change order →`}</button></div></div>}
 

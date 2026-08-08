@@ -131,6 +131,19 @@ footer { border-top: 1px solid var(--line); padding: 34px 4vw; display: grid; gr
 .scheduled-room-start { margin-top:8px !important; color:#fff !important; font-weight:750; }
 .account-gateway-close { position:absolute; top:16px; right:16px; z-index:2; border-color:var(--line); background:var(--cream); color:var(--ink); }
 .account-gateway > header { padding-right:56px; }
+.contractor-quote-actions { display:grid; gap:7px; justify-items:end; }
+.contractor-quote-actions input { max-width:205px; border:1px solid var(--line); background:var(--paper); padding:8px; font-size:8px; }
+.contractor-quote-actions button { border:0; background:var(--orange); color:white; padding:10px 12px; font-size:8px; font-weight:800; }
+.contractor-quote-actions em { color:var(--green); font-style:normal; font-size:8px; font-weight:800; }
+.quote-workflow-detail { color:var(--green) !important; font-weight:750; }
+.final-quote-drawer { padding-bottom:45px; }
+.final-quote-drawer textarea,.final-quote-drawer input { width:100%; border:1px solid var(--line); background:var(--cream); padding:11px; resize:vertical; }
+.final-payment-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:17px; }
+.final-payment-grid label { display:grid; gap:6px; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.07em; }
+.final-payment-total { background:var(--sage); color:var(--green); padding:11px; font-size:9px; font-weight:800; }
+.final-quote-summary { border-top:1px solid var(--line); padding-top:11px; margin-top:12px; font-size:9px; }
+.final-quote-summary b { display:block; color:var(--green); text-transform:uppercase; font-size:7px; letter-spacing:.08em; }.final-quote-summary p { margin:4px 0 9px; color:var(--muted); }.final-quote-summary > div { display:flex; flex-wrap:wrap; gap:6px; }.final-quote-summary span { border:1px solid var(--line); background:var(--paper); padding:5px 7px; font-size:8px; }
+@media (max-width:700px) { .final-payment-grid { grid-template-columns:1fr; }.contractor-quote-actions { justify-items:stretch; grid-column:1/-1; }.contractor-quote-actions input { max-width:none; } }
 @media (max-width:700px) { .schedule-start-control > div { grid-template-columns:1fr; }.schedule-start-control button { min-height:38px; }.saved-request-actions { grid-column:1/-1; flex-direction:row; }.saved-request-actions button { flex:1; }.job-room-close { top:10px; right:10px; } }
 
 @media (max-width: 980px) {

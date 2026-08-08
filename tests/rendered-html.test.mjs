@@ -119,7 +119,7 @@ test("supports custom request terms and persistent employee operations", async (
   assert.match(page, /trackingJob/);
   assert.match(page, /acceptedSavedQuote/);
   assert.match(page, /await loadSavedQuotes\(createdJob\)/);
-  assert.match(page, /await openJobRoom\(bookedJob\)/);
+  assert.match(page, /decideFinalQuote/);
   assert.match(page, /persistedJobs\.filter\(\(job\) => job\.status === "completed"\)/);
   assert.doesNotMatch(page, /Off-platform job import is ready/);
   const incompleteButtons = [...page.matchAll(/<button\b([^>]*)>/g)].filter(([, attributes]) => !/onClick=|type="submit"|disabled=/.test(attributes));
@@ -186,7 +186,7 @@ test("uses production-backed AI and verification with explicit demo money workfl
   assert.match(operationsRoute, /verifiedContractors/);
   assert.match(operationsRoute, /status: "open"/);
   assert.match(operationsRoute, /shouldReopen \? ""/);
-  assert.match(quoteRoute, /verificationStatus !== "verified"/);
+  assert.match(quoteRoute, /verificationStatus === "verified"/);
   assert.match(quoteRoute, /subscriptionStatus/);
   assert.match(aiRoute, /api\.openai\.com\/v1\/responses/);
   assert.match(aiRoute, /json_schema/);
@@ -247,4 +247,34 @@ test("protects request deletion and records a scheduled job start", async () => 
   assert.doesNotMatch(progressRoute, /crew_dispatched/);
   assert.match(schema, /scheduled_start_at/);
   assert.match(migration, /scheduled_start_at/);
+});
+
+test("runs on-site verification and final quotes before booking", async () => {
+  const [page, quoteRoute, contractorQuotes, schema, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+    source("../app/api/contractor-quotes/route.ts"),
+    source("../db/schema.ts"),
+    source("../drizzle/0015_onsite_final_quotes.sql"),
+  ]);
+
+  assert.match(page, /Request on-site visit/);
+  assert.match(page, /Scheduled start date and time/);
+  assert.match(page, /Create final quote/);
+  assert.match(page, /Confirmed work description/);
+  assert.match(page, /Accept final quote/);
+  assert.match(page, /decideFinalQuote/);
+  assert.match(quoteRoute, /request_onsite/);
+  assert.match(quoteRoute, /schedule_onsite/);
+  assert.match(quoteRoute, /submit_final/);
+  assert.match(quoteRoute, /accept_final/);
+  assert.match(quoteRoute, /decline_final/);
+  assert.match(quoteRoute, /within the next two business days/);
+  assert.match(quoteRoute, /Payment checkpoints must add up exactly to the final quote/);
+  assert.match(quoteRoute, /Only the verified contractor can submit this final quote/);
+  assert.match(contractorQuotes, /onsiteVisitAt/);
+  assert.match(schema, /onsite_visit_at/);
+  assert.match(schema, /work_description/);
+  assert.match(schema, /deposit_cents/);
+  assert.match(migration, /completion_cents/);
 });
