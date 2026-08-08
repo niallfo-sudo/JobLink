@@ -499,6 +499,10 @@ export default function Home() {
     if (view === "admin") void loadOperations();
   }, [view]);
 
+  useEffect(() => {
+    if (view === "admin" && adminTab === "verification") void loadOperations();
+  }, [view, adminTab]);
+
   async function addOperationsStaff(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStaffStatus("saving");

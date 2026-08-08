@@ -184,6 +184,8 @@ test("uses production-backed AI and verification with explicit demo money workfl
   assert.match(verificationRoute, /UPLOADS/);
   assert.match(operationsRoute, /contractorVerificationDocuments/);
   assert.match(operationsRoute, /verifiedContractors/);
+  assert.match(operationsRoute, /status: "open"/);
+  assert.match(operationsRoute, /shouldReopen \? ""/);
   assert.match(quoteRoute, /verificationStatus !== "verified"/);
   assert.match(quoteRoute, /subscriptionStatus/);
   assert.match(aiRoute, /api\.openai\.com\/v1\/responses/);

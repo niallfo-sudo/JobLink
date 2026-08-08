@@ -58,10 +58,23 @@ export async function POST(request: Request) {
         priority: "normal",
         status: "open",
         assignee: "Unassigned",
-        evidenceCount: 2,
+        evidenceCount: 0,
         dueLabel: "Due within 1 business day",
         details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile submitted", "Identity and insurance review required"] }),
-      }).onConflictDoNothing({ target: operationsCases.externalId });
+      }).onConflictDoUpdate({ target: operationsCases.externalId, set: {
+        title: "Contractor application review",
+        subject: profile.businessName,
+        summary: `Verify ${profile.businessName} before enabling ${profile.primaryService.toLowerCase()} matching.`,
+        risk: "low",
+        priority: "normal",
+        status: "open",
+        assignee: "Unassigned",
+        evidenceCount: 0,
+        dueLabel: "Due within 1 business day",
+        details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile re-submitted", "Identity and insurance review required"] }),
+        resolution: "",
+        updatedAt: new Date(),
+      } });
     } catch (error) {
       console.error("Verification case could not be queued", error);
     }

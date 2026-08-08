@@ -29,20 +29,34 @@ async function syncPendingVerificationCases(db: ReturnType<typeof getDb>) {
   const pendingProfiles = await db.select().from(contractorProfiles).where(inArray(contractorProfiles.verificationStatus, ["pending", "pending_review"]));
   for (const profile of pendingProfiles) {
     const documents = await db.select({ id: contractorVerificationDocuments.id, documentType: contractorVerificationDocuments.documentType, filename: contractorVerificationDocuments.filename, reviewStatus: contractorVerificationDocuments.reviewStatus }).from(contractorVerificationDocuments).where(eq(contractorVerificationDocuments.ownerEmail, profile.ownerEmail));
+    const externalId = `VR-P${profile.id}`;
+    const [existingCase] = await db.select({ status: operationsCases.status, assignee: operationsCases.assignee, resolution: operationsCases.resolution }).from(operationsCases).where(eq(operationsCases.externalId, externalId)).limit(1);
+    const shouldReopen = Boolean(existingCase && ["resolved", "dismissed"].includes(existingCase.status));
     await db.insert(operationsCases).values({
-      externalId: `VR-P${profile.id}`,
+      externalId,
       caseType: "verification",
       title: "Contractor application review",
       subject: profile.businessName,
       summary: `Verify ${profile.businessName} before enabling ${profile.primaryService.toLowerCase()} matching.`,
       risk: "low",
       priority: "normal",
-      status: "open",
-      assignee: "Unassigned",
+      status: shouldReopen ? "open" : existingCase?.status || "open",
+      assignee: shouldReopen ? "Unassigned" : existingCase?.assignee || "Unassigned",
       evidenceCount: documents.length,
       dueLabel: "Due within 1 business day",
       details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile submitted", `${documents.length} verification document${documents.length === 1 ? "" : "s"} uploaded`], documents }),
-    }).onConflictDoUpdate({ target: operationsCases.externalId, set: { subject: profile.businessName, evidenceCount: documents.length, details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile submitted", `${documents.length} verification document${documents.length === 1 ? "" : "s"} uploaded`], documents }), updatedAt: new Date() } });
+    }).onConflictDoUpdate({ target: operationsCases.externalId, set: {
+      title: "Contractor application review",
+      subject: profile.businessName,
+      summary: `Verify ${profile.businessName} before enabling ${profile.primaryService.toLowerCase()} matching.`,
+      status: shouldReopen ? "open" : existingCase?.status || "open",
+      assignee: shouldReopen ? "Unassigned" : existingCase?.assignee || "Unassigned",
+      evidenceCount: documents.length,
+      dueLabel: "Due within 1 business day",
+      details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile submitted", `${documents.length} verification document${documents.length === 1 ? "" : "s"} uploaded`], documents }),
+      resolution: shouldReopen ? "" : existingCase?.resolution || "",
+      updatedAt: new Date(),
+    } });
   }
 }
 
