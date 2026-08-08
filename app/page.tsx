@@ -930,7 +930,7 @@ export default function Home() {
       setSelectedSavedJob(verificationJob);
       setPersistedJobs((current) => current.map((job) => job.id === selectedSavedJob.id ? verificationJob : job));
       setSavedQuotesStatus("idle");
-      showNotice(`${quote.contractorName} has been asked to schedule an on-site verification.`);
+      showNotice(`${quote.contractorName} has been asked to schedule an on-site visit. This does not select the contractor or accept a price.`);
     } catch (error) {
       setSavedQuotesStatus("error");
       showNotice(error instanceof Error ? error.message : "Unable to request an on-site verification");
@@ -938,7 +938,7 @@ export default function Home() {
   }
 
   function quoteWorkflowLabel(quote: PersistedQuote) {
-    if (quote.status === "submitted") return "Request on-site visit";
+    if (quote.status === "submitted") return "Request on-site quote — no commitment";
     if (quote.status === "onsite_requested") return "Visit request sent";
     if (quote.status === "onsite_scheduled") return `Visit ${scheduledStartLabel(quote.onsiteVisitAt)}`;
     if (quote.status === "final_quote_ready") return "Review final quote";
@@ -1589,10 +1589,11 @@ export default function Home() {
       {view === "matches" && (
         <section className="app-shell matches-shell">
           <div className="dashboard-heading">
-            <div><p className="step-kicker">{savedRequestId ? `Request ${savedRequestId}` : "Quote comparison"}</p><h1>Your submitted quotes.</h1><p>Only real quotes from verified {category.toLowerCase()} contractors appear here.</p>{savedRequestId && <span className="persisted-note">✓ Saved to your JobLink account</span>}{uploadError && <span className="persisted-note upload-warning">! {uploadError}</span>}</div>
+            <div><p className="step-kicker">{savedRequestId ? `Request ${savedRequestId}` : "Quote comparison"}</p><h1>Estimates and final quotes.</h1><p>The first amount is a preliminary estimate only. You are not committed to a contractor or price until you approve their finalized on-site quote.</p>{savedRequestId && <span className="persisted-note">✓ Saved to your JobLink account</span>}{uploadError && <span className="persisted-note upload-warning">! {uploadError}</span>}</div>
             <div className="matching-status"><span><i /></span><div><b>{savedQuotes.length} quote{savedQuotes.length === 1 ? "" : "s"}</b><small>Loaded from your request</small></div></div>
           </div>
           <div className="job-summary-strip"><span><b>{category} · {selectedJobType}</b>{size} · {postalCode}</span><span><b>Target</b>{requestTimeline}</span><span><b>Budget</b>{requestBudget}</span><button onClick={() => { setStep(3); go("request"); }}>View request</button></div>
+          <div className="quote-stage-explainer"><article><span>1</span><div><b>Preliminary estimate</b><p>Compare an approximate price and request an on-site visit. This is not an acceptance, booking or commitment.</p></div></article><i>→</i><article><span>2</span><div><b>Finalized on-site quote</b><p>The contractor confirms the exact scope, materials, measurements and payment checkpoints.</p></div></article><i>→</i><article><span>3</span><div><b>Your approval</b><p>Only accepting the finalized quote selects the contractor and creates payment and signing steps.</p></div></article></div>
           <div className="match-layout">
             <div className="contractor-list">
               {savedRequestId && savedQuotesStatus === "loading" && <div className="matches-loading"><span>JL</span><h3>Loading verified quotes…</h3><p>Your saved request is ready. We’re retrieving its current quote status.</p></div>}
@@ -1608,9 +1609,9 @@ export default function Home() {
               <span className="insight-icon">✦</span>
               <p className="aside-label">JobLink insight</p>
               <h3>{savedQuotes[0].contractorName} submitted the lowest current estimate.</h3>
-              <p>Request an on-site verification before accepting a final quote. You can compare more than one verified contractor.</p>
+              <p>This is a preliminary, non-binding estimate. Requesting a visit does not select this contractor or accept their price. You may compare multiple on-site quotes.</p>
               <div><span>Submitted price</span><b>${(savedQuotes[0].amountCents / 100).toLocaleString()}</b></div><div><span>Availability</span><b>{savedQuotes[0].availableAt}</b></div>
-              <button disabled={savedQuotesStatus === "loading" || savedQuotes[0].status !== "submitted"} onClick={() => void acceptSavedQuote(savedQuotes[0])}>{savedQuotes[0].status === "submitted" ? "Request on-site visit →" : quoteWorkflowLabel(savedQuotes[0])}</button>
+              <button disabled={savedQuotesStatus === "loading" || savedQuotes[0].status !== "submitted"} onClick={() => void acceptSavedQuote(savedQuotes[0])}>{savedQuotes[0].status === "submitted" ? "Request on-site quote — no commitment →" : quoteWorkflowLabel(savedQuotes[0])}</button>
             </aside>}
           </div>
           {acceptedSavedQuote && <div className="accepted-banner"><span>✓</span><div><b>{acceptedSavedQuote.contractorName} has been selected.</b><p>Your booking record and Job Room are ready.</p></div><button onClick={() => go("tracking")}>Open job progress →</button></div>}

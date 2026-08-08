@@ -258,13 +258,18 @@ test("runs on-site verification and final quotes before booking", async () => {
     source("../drizzle/0015_onsite_final_quotes.sql"),
   ]);
 
-  assert.match(page, /Request on-site visit/);
+  assert.match(page, /Request on-site quote — no commitment/);
+  assert.match(page, /preliminary estimate only/i);
+  assert.match(page, /not an acceptance, booking or commitment/i);
+  assert.match(page, /Only accepting the finalized quote selects the contractor/);
   assert.match(page, /Scheduled start date and time/);
   assert.match(page, /Create final quote/);
   assert.match(page, /Confirmed work description/);
   assert.match(page, /Accept final quote/);
   assert.match(page, /decideFinalQuote/);
   assert.match(quoteRoute, /request_onsite/);
+  assert.match(quoteRoute, /Preliminary estimate only/);
+  assert.match(quoteRoute, /nonBinding: true/);
   assert.match(quoteRoute, /schedule_onsite/);
   assert.match(quoteRoute, /submit_final/);
   assert.match(quoteRoute, /accept_final/);
