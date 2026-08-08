@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       phone: payload.phone?.trim() || "", about: payload.about?.trim() || "", primaryService,
       services: JSON.stringify(Array.from(new Set([primaryService, ...(payload.services ?? [])].map((service) => service.trim()).filter(Boolean))).slice(0, 20)), homeBase: payload.homeBase?.trim() || "Hamilton, Ontario",
       serviceRadiusKm: radius, teamSize, emergencyAvailable: Boolean(payload.emergencyAvailable),
-      acceptingWork: payload.acceptingWork !== false, plan, verificationStatus: "pending_review", updatedAt: new Date(),
+      acceptingWork: false, plan, verificationStatus: "pending_review", updatedAt: new Date(),
     };
     const [profile] = await db.insert(contractorProfiles).values(values).onConflictDoUpdate({ target: contractorProfiles.ownerEmail, set: values }).returning();
     try {
@@ -77,7 +77,13 @@ export async function PATCH(request: Request) {
       if (!plans.has(plan)) return Response.json({ error: "Invalid plan" }, { status: 400 });
       updates.plan = plan;
     }
-    if (payload.acceptingWork !== undefined) updates.acceptingWork = Boolean(payload.acceptingWork);
+    if (payload.acceptingWork !== undefined) {
+      if (payload.acceptingWork) {
+        const [currentProfile] = await getDb().select({ verificationStatus: contractorProfiles.verificationStatus }).from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, user.email)).limit(1);
+        if (currentProfile?.verificationStatus !== "verified") return Response.json({ error: "Verification approval is required before accepting work" }, { status: 403 });
+      }
+      updates.acceptingWork = Boolean(payload.acceptingWork);
+    }
     if (payload.emergencyAvailable !== undefined) updates.emergencyAvailable = Boolean(payload.emergencyAvailable);
     if (payload.serviceRadiusKm !== undefined) updates.serviceRadiusKm = Math.min(100, Math.max(5, Number(payload.serviceRadiusKm) || 30));
     const [profile] = await getDb().update(contractorProfiles).set(updates).where(eq(contractorProfiles.ownerEmail, user.email)).returning();

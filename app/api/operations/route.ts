@@ -5,6 +5,7 @@ import { getChatGPTUser } from "../../chatgpt-auth";
 
 const allowedStatuses = new Set(["open", "in_review", "waiting", "resolved", "dismissed"]);
 const allowedRisks = new Set(["low", "medium", "high", "critical"]);
+const allowedVerificationDecisions = new Set(["approved", "changes_requested", "rejected"]);
 
 async function requireOperationsUser() {
   const user = await getChatGPTUser();
@@ -114,18 +115,40 @@ export async function PATCH(request: Request) {
   try {
     const access = await requireOperationsUser();
     if ("error" in access) return access.error;
-    const payload = (await request.json()) as { id?: number; status?: string; risk?: string; assignee?: string; resolution?: string; note?: string };
+    const payload = (await request.json()) as { id?: number; status?: string; risk?: string; assignee?: string; resolution?: string; note?: string; decision?: string };
     if (!Number.isInteger(payload.id)) return Response.json({ error: "Case id is required" }, { status: 400 });
     const [existing] = await access.db.select().from(operationsCases).where(eq(operationsCases.id, Number(payload.id))).limit(1);
     if (!existing) return Response.json({ error: "Case not found" }, { status: 404 });
     if (payload.status && !allowedStatuses.has(payload.status)) return Response.json({ error: "Invalid case status" }, { status: 400 });
     if (payload.risk && !allowedRisks.has(payload.risk)) return Response.json({ error: "Invalid risk level" }, { status: 400 });
+    if (payload.decision && !allowedVerificationDecisions.has(payload.decision)) return Response.json({ error: "Invalid verification decision" }, { status: 400 });
+    const caseDetails = JSON.parse(existing.details || "{}") as { ownerEmail?: string };
+    if (payload.decision && (existing.caseType !== "verification" || !caseDetails.ownerEmail)) return Response.json({ error: "This case is not linked to a contractor profile" }, { status: 400 });
     const updates: Partial<typeof operationsCases.$inferInsert> = { updatedAt: new Date() };
     if (payload.status) updates.status = payload.status;
     if (payload.risk) updates.risk = payload.risk;
     if (typeof payload.assignee === "string") updates.assignee = payload.assignee.trim().slice(0, 80) || "Unassigned";
     if (typeof payload.resolution === "string") updates.resolution = payload.resolution.trim().slice(0, 2000);
+    if (payload.decision === "approved") {
+      updates.status = "resolved";
+      updates.resolution = payload.resolution?.trim().slice(0, 2000) || "Contractor verification approved.";
+    }
+    if (payload.decision === "changes_requested") {
+      updates.status = "waiting";
+      updates.resolution = payload.resolution?.trim().slice(0, 2000) || "Additional verification information requested.";
+    }
+    if (payload.decision === "rejected") {
+      updates.status = "resolved";
+      updates.resolution = payload.resolution?.trim().slice(0, 2000) || "Contractor verification declined.";
+    }
     await access.db.update(operationsCases).set(updates).where(eq(operationsCases.id, existing.id));
+    if (payload.decision && caseDetails.ownerEmail) {
+      await access.db.update(contractorProfiles).set({
+        verificationStatus: payload.decision === "approved" ? "verified" : payload.decision === "rejected" ? "rejected" : "pending_review",
+        acceptingWork: payload.decision === "approved",
+        updatedAt: new Date(),
+      }).where(eq(contractorProfiles.ownerEmail, caseDetails.ownerEmail));
+    }
     if (payload.note?.trim()) await access.db.insert(operationsCaseNotes).values({ caseId: existing.id, authorEmail: access.user.email, body: payload.note.trim().slice(0, 2000) });
     const [updated] = await access.db.select().from(operationsCases).where(eq(operationsCases.id, existing.id)).limit(1);
     const notes = await access.db.select().from(operationsCaseNotes).where(eq(operationsCaseNotes.caseId, existing.id)).orderBy(desc(operationsCaseNotes.createdAt));

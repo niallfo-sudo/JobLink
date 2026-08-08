@@ -84,8 +84,11 @@ test("wires existing controls and contractor service matching", async () => {
   assert.match(profileRoute, /serviceCategories/);
   assert.match(profileRoute, /operationsCases/);
   assert.match(profileRoute, /Contractor application review/);
+  assert.match(profileRoute, /Verification approval is required before accepting work/);
+  assert.match(profileRoute, /acceptingWork: false/);
   assert.match(opportunitiesRoute, /contractorProfiles/);
   assert.match(opportunitiesRoute, /acceptingWork/);
+  assert.match(opportunitiesRoute, /verificationStatus !== "verified"/);
   assert.match(jobsRoute, /quoteProviderNames/);
   assert.match(jobsRoute, /providerNames\[0\]/);
 });
@@ -126,7 +129,11 @@ test("supports custom request terms and persistent employee operations", async (
   assert.match(operationsRoute, /syncPendingVerificationCases/);
   assert.match(operationsRoute, /contractorProfiles\.verificationStatus/);
   assert.match(operationsRoute, /onConflictDoNothing/);
+  assert.match(operationsRoute, /allowedVerificationDecisions/);
+  assert.match(operationsRoute, /verificationStatus: payload\.decision/);
   assert.match(page, /operationsStatus !== "loading" && operationsStatus !== "error"/);
+  assert.match(page, /Approve contractor/);
+  assert.match(page, /contractorVerificationCopy/);
   assert.match(page, /No contractor applications are waiting for verification/);
   assert.match(operationsRoute, /Administrator access required/);
   assert.match(operationsRoute, /export async function POST/);
