@@ -330,3 +330,26 @@ test("requires a recorded two-party service agreement before work can start", as
   assert.match(schema, /agreementSignatures/);
   assert.match(migration, /agreement_signatures/);
 });
+
+test("gives Operations a persistent payment-proof hold and clearance workflow", async () => {
+  const [page, operationsRoute, paymentRoute, schema, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/operations/route.ts"),
+    source("../app/api/payments/route.ts"),
+    source("../db/schema.ts"),
+    source("../drizzle/0018_payment_operations_review.sql"),
+  ]);
+
+  assert.match(page, /Proof review queue/);
+  assert.match(page, /Place on hold/);
+  assert.match(page, /Clear for homeowner/);
+  assert.match(page, /Operations review/);
+  assert.match(operationsRoute, /payment_milestone_review/);
+  assert.match(operationsRoute, /operations_hold/);
+  assert.match(operationsRoute, /Only submitted proof can be placed on hold/);
+  assert.match(operationsRoute, /Only a held release can be cleared/);
+  assert.match(operationsRoute, /payment_release_held/);
+  assert.match(paymentRoute, /paymentMilestones/);
+  assert.match(schema, /operationsReviewedBy/);
+  assert.match(migration, /payment_milestones_operations_review_idx/);
+});

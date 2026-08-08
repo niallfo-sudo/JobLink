@@ -12,7 +12,8 @@ type Opportunity = { numericId?: number; id: string; service: string; title: str
 type RoomMessage = { id: number; body: string; mine: boolean; createdAt: string | number };
 type RoomEvent = { id: number; label: string; eventType: string; createdAt: string | number };
 type ContractorProfile = { businessName: string; legalName: string; phone: string; businessAddress: string; yearsInBusiness: number; about: string; primaryService: string; services: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: "starter" | "growth" | "pro"; subscriptionStatus: string; payoutsEnabled: boolean; verificationStatus: string };
-type PaymentMilestone = { id: number; paymentId: number; label: string; milestoneType: string; amountCents: number; status: string; proofNote: string; proofSubmittedAt?: string | number | null; homeownerApprovedAt?: string | number | null; releasedAt?: string | number | null };
+type PaymentMilestone = { id: number; paymentId: number; label: string; milestoneType: string; amountCents: number; status: string; proofNote: string; operationsNote?: string; proofSubmittedAt?: string | number | null; homeownerApprovedAt?: string | number | null; releasedAt?: string | number | null };
+type PaymentReview = PaymentMilestone & { externalId: string; jobTitle: string; contractorName: string; operationsNote?: string; operationsReviewedBy?: string | null; operationsReviewedAt?: string | number | null };
 type PaymentRecord = { id: number; externalId: string; title: string; contractorName: string; subtotalCents: number; customerFeeCents: number; totalCents: number; contractorPayoutCents: number; releasedCents: number; status: string; processor: string; viewerRole: "homeowner" | "contractor"; milestones?: PaymentMilestone[]; createdAt: string | number };
 type DocumentSignature = { id: number; signerRole: "homeowner" | "contractor"; signerName: string; signedAt: string | number; signingMethod: string };
 type GeneratedDocument = { id: number; externalId: string; jobTitle: string; jobNumber: string; documentType: string; title: string; status: string; viewerRole?: "homeowner" | "contractor"; signatures?: DocumentSignature[]; createdAt: string | number };
@@ -34,7 +35,7 @@ function PaymentReleaseWorkflow({ payment, actionId, onFund, onSubmitProof, onAp
   return <section className="payment-release-workflow">
     <div className="payment-release-header"><div><p className="aside-label">Protected release plan</p><h3>{payment.externalId} · ${((payment.releasedCents || 0) / 100).toLocaleString()} released</h3><p>Full job amount is held first; each contractor payment needs proof and homeowner approval.</p></div><span className={`payment-status payment-${payment.status}`}>{payment.status.replaceAll("_", " ")}</span></div>
     {payment.viewerRole === "homeowner" && payment.status === "demo_pending" && <button className="primary-action" disabled={actionId === `fund-${payment.id}`} onClick={() => onFund(payment)}>{actionId === `fund-${payment.id}` ? "Funding…" : `Fund full job total $${(payment.totalCents / 100).toLocaleString()} (demo)`}</button>}
-    {milestones.length ? <div className="payment-milestone-list">{milestones.map((milestone) => <article key={milestone.id}><div><b>{milestone.label}</b><span>${(milestone.amountCents / 100).toLocaleString()} · {milestone.status.replaceAll("_", " ")}</span>{milestone.proofNote && <p><strong>Contractor proof:</strong> {milestone.proofNote}</p>}</div>{payment.viewerRole === "contractor" && milestone.status === "demo_held" && <div className="payment-proof-entry"><textarea value={proofs[milestone.id] ?? ""} onChange={(event) => setProofs((current) => ({ ...current, [milestone.id]: event.target.value }))} placeholder="Describe completed work, materials or photos uploaded to the Job Room." /><button disabled={actionId === `proof-${milestone.id}`} onClick={() => onSubmitProof(payment, milestone, proofs[milestone.id] ?? "")}>{actionId === `proof-${milestone.id}` ? "Submitting…" : "Submit proof for approval"}</button></div>}{payment.viewerRole === "homeowner" && milestone.status === "proof_submitted" && <button className="primary-action" disabled={actionId === `approve-${milestone.id}`} onClick={() => onApprove(payment, milestone)}>{actionId === `approve-${milestone.id}` ? "Approving…" : "Approve and release (demo)"}</button>}</article>)}</div> : <p className="quote-panel-state">Payment checkpoints will appear after the final quote is accepted.</p>}
+    {milestones.length ? <div className="payment-milestone-list">{milestones.map((milestone) => <article key={milestone.id}><div><b>{milestone.label}</b><span>${(milestone.amountCents / 100).toLocaleString()} · {milestone.status.replaceAll("_", " ")}</span>{milestone.proofNote && <p><strong>Contractor proof:</strong> {milestone.proofNote}</p>}{milestone.operationsNote && <p><strong>Operations review:</strong> {milestone.operationsNote}</p>}</div>{payment.viewerRole === "contractor" && milestone.status === "demo_held" && <div className="payment-proof-entry"><textarea value={proofs[milestone.id] ?? ""} onChange={(event) => setProofs((current) => ({ ...current, [milestone.id]: event.target.value }))} placeholder="Describe completed work, materials or photos uploaded to the Job Room." /><button disabled={actionId === `proof-${milestone.id}`} onClick={() => onSubmitProof(payment, milestone, proofs[milestone.id] ?? "")}>{actionId === `proof-${milestone.id}` ? "Submitting…" : "Submit proof for approval"}</button></div>}{payment.viewerRole === "homeowner" && milestone.status === "proof_submitted" && <button className="primary-action" disabled={actionId === `approve-${milestone.id}`} onClick={() => onApprove(payment, milestone)}>{actionId === `approve-${milestone.id}` ? "Approving…" : "Approve and release (demo)"}</button>}</article>)}</div> : <p className="quote-panel-state">Payment checkpoints will appear after the final quote is accepted.</p>}
   </section>;
 }
 
@@ -47,6 +48,11 @@ function AgreementSignatureWorkflow({ document, actionId, onSign }: { document: 
   const homeowner = signatures.find((signature) => signature.signerRole === "homeowner");
   const contractor = signatures.find((signature) => signature.signerRole === "contractor");
   return <section className="agreement-signature-workflow"><div className="agreement-signature-header"><div><p className="aside-label">Service agreement</p><h3>{document.jobNumber} · signature status</h3><p>Review the final scope, materials, payment checkpoints and job terms before signing.</p></div><button onClick={() => window.open(`/api/documents/${document.id}`, "_blank", "noopener,noreferrer")}>Open agreement ↗</button></div><div className="signature-status-grid"><span className={homeowner ? "signed" : "pending"}>Homeowner: {homeowner ? `${homeowner.signerName} · signed` : "pending"}</span><span className={contractor ? "signed" : "pending"}>Contractor: {contractor ? `${contractor.signerName} · signed` : "pending"}</span></div>{document.status === "fully_signed" ? <p className="agreement-complete">Both parties have signed. The contractor can schedule work after full-job funding is confirmed.</p> : signedByViewer ? <p className="agreement-complete">You signed on {new Date(signedByViewer.signedAt).toLocaleString()}. Waiting for the other party.</p> : <div className="agreement-sign-form"><label>Legal name<input value={signerName} onChange={(event) => setSignerName(event.target.value)} placeholder="Enter your full legal name" /></label><label className="signature-consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /> <span>I reviewed this agreement and intend to sign it electronically. JobLink will retain this signature record.</span></label><button className="primary-action" disabled={actionId === document.id || !consent || signerName.trim().length < 2} onClick={() => onSign(document, signerName, consent)}>{actionId === document.id ? "Recording signature…" : "Sign service agreement"}</button><small>For court use or specific trade requirements, have Ontario counsel review your final agreement and signing process.</small></div>}</section>;
+}
+
+function OperationsPaymentReviewQueue({ reviews, actionId, onReview }: { reviews: PaymentReview[]; actionId: string | null; onReview: (review: PaymentReview, decision: "hold" | "clear", note: string) => void }) {
+  const [notes, setNotes] = useState<Record<number, string>>({});
+  return <section className="operations-payment-review"><div className="operations-payment-review-head"><div><p className="step-kicker">Payment oversight</p><h2>Proof review queue.</h2><p>Use a hold only when evidence needs additional review. Cleared releases return to the homeowner for approval.</p></div><span>{reviews.length} open</span></div>{reviews.length ? <div className="operations-payment-review-list">{reviews.map((review) => <article key={review.id}><div><b>{review.externalId} · {review.label}</b><small>{review.jobTitle} · {review.contractorName} · ${(review.amountCents / 100).toLocaleString()}</small><p><strong>Submitted proof:</strong> {review.proofNote}</p>{review.operationsNote && <p><strong>Last Operations note:</strong> {review.operationsNote}</p>}</div><div className="operations-payment-review-actions"><textarea value={notes[review.id] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [review.id]: event.target.value }))} placeholder="Reason for hold or clearance" /><div>{review.status === "proof_submitted" ? <button className="reject" disabled={actionId === `hold-${review.id}`} onClick={() => onReview(review, "hold", notes[review.id] ?? "")}>{actionId === `hold-${review.id}` ? "Saving…" : "Place on hold"}</button> : <button className="approve" disabled={actionId === `clear-${review.id}`} onClick={() => onReview(review, "clear", notes[review.id] ?? "")}>{actionId === `clear-${review.id}` ? "Saving…" : "Clear for homeowner"}</button>}</div></div></article>)}</div> : <div className="operations-no-results"><b>No payment proof needs Operations attention.</b><p>Submitted proof appears here until the homeowner approves it or Operations places it on hold.</p></div>}</section>;
 }
 
 const categories = [
@@ -243,6 +249,8 @@ export default function Home() {
   const [helpSearch, setHelpSearch] = useState("");
   const [messageSearch, setMessageSearch] = useState("");
   const [operationsCases, setOperationsCases] = useState<OperationsCase[]>([]);
+  const [paymentReviews, setPaymentReviews] = useState<PaymentReview[]>([]);
+  const [paymentReviewAction, setPaymentReviewAction] = useState<string | null>(null);
   const [operationsStats, setOperationsStats] = useState({ jobs: 0, activeJobs: 0, paymentVolumeCents: 0, openCases: 0 });
   const [operationsViewer, setOperationsViewer] = useState<{ email?: string; displayName: string; role: string } | null>(null);
   const [operationsStaff, setOperationsStaff] = useState<StaffMember[]>([]);
@@ -514,8 +522,9 @@ export default function Home() {
     try {
       const response = await fetch("/api/operations");
       if (!response.ok) throw new Error("Operations workspace unavailable");
-      const data = (await response.json()) as { cases?: OperationsCase[]; stats?: typeof operationsStats; viewer?: { email?: string; displayName: string; role: string }; staff?: StaffMember[]; verifiedContractors?: VerifiedContractor[] };
+      const data = (await response.json()) as { cases?: OperationsCase[]; stats?: typeof operationsStats; viewer?: { email?: string; displayName: string; role: string }; staff?: StaffMember[]; verifiedContractors?: VerifiedContractor[]; paymentReviews?: PaymentReview[] };
       setOperationsCases(data.cases ?? []);
+      setPaymentReviews(data.paymentReviews ?? []);
       setOperationsStaff(data.staff ?? []);
       setVerifiedContractors(data.verifiedContractors ?? []);
       if (data.stats) setOperationsStats(data.stats);
@@ -646,6 +655,21 @@ export default function Home() {
       showNotice(decision === "approved" ? `${data.case.subject} is now verified.` : decision === "rejected" ? `${data.case.subject} was not approved.` : decision === "changes_requested" ? `More information was requested from ${data.case.subject}.` : `${data.case.externalId} saved.`);
     } catch {
       setOperationsStatus("error");
+    }
+  }
+
+  async function reviewPaymentProof(review: PaymentReview, decision: "hold" | "clear", reason: string) {
+    setPaymentReviewAction(`${decision}-${review.id}`);
+    try {
+      const response = await fetch("/api/operations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "payment_milestone_review", milestoneId: review.id, decision, reason }) });
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Payment review could not be saved");
+      await loadOperations();
+      showNotice(decision === "hold" ? "Release placed on hold and both parties notified." : "Release cleared for homeowner approval.");
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "Payment review could not be saved");
+    } finally {
+      setPaymentReviewAction(null);
     }
   }
 
@@ -1633,6 +1657,8 @@ export default function Home() {
           </div></div>
         </section>
       )}
+
+      {view === "admin" && adminTab === "overview" && operationsStatus !== "loading" && operationsStatus !== "error" && <OperationsPaymentReviewQueue reviews={paymentReviews} actionId={paymentReviewAction} onReview={(review, decision, note) => void reviewPaymentProof(review, decision, note)} />}
 
       {view === "account" && (
         <section className="account-shell">

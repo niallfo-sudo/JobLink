@@ -1,8 +1,9 @@
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { contractorProfiles, contractorVerificationDocuments, jobRequests, operationsCaseNotes, operationsCases, paymentRecords, users } from "../../../db/schema";
+import { contractorProfiles, contractorVerificationDocuments, jobEvents, jobRequests, operationsCaseNotes, operationsCases, paymentMilestones, paymentRecords, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { env } from "cloudflare:workers";
+import { notify } from "../../../lib/notifications";
 
 const allowedStatuses = new Set(["open", "in_review", "waiting", "resolved", "dismissed"]);
 const allowedRisks = new Set(["low", "medium", "high", "critical"]);
@@ -74,6 +75,7 @@ export async function GET() {
     const [jobCount] = await access.db.select({ value: sql<number>`count(*)` }).from(jobRequests);
     const [activeJobCount] = await access.db.select({ value: sql<number>`count(*)` }).from(jobRequests).where(inArray(jobRequests.status, ["matching", "quoted", "booked", "in_progress"]));
     const [paymentTotal] = await access.db.select({ value: sql<number>`coalesce(sum(${paymentRecords.totalCents}), 0)` }).from(paymentRecords);
+    const paymentReviewRows = await access.db.select({ milestone: paymentMilestones, payment: paymentRecords, job: { externalId: jobRequests.externalId, title: jobRequests.title } }).from(paymentMilestones).innerJoin(paymentRecords, eq(paymentMilestones.paymentId, paymentRecords.id)).innerJoin(jobRequests, eq(paymentMilestones.jobId, jobRequests.id)).where(inArray(paymentMilestones.status, ["proof_submitted", "operations_hold"])).orderBy(desc(paymentMilestones.updatedAt));
     const staff = await access.db.select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, createdAt: users.createdAt }).from(users).where(inArray(users.role, ["employee", "admin"]));
     const verifiedContractors = await access.db.select().from(contractorProfiles).where(eq(contractorProfiles.verificationStatus, "verified")).orderBy(desc(contractorProfiles.updatedAt));
     return Response.json({
@@ -96,6 +98,7 @@ export async function GET() {
         payoutsEnabled: profile.payoutsEnabled,
         updatedAt: profile.updatedAt,
       })),
+      paymentReviews: paymentReviewRows.map((row) => ({ ...row.milestone, externalId: row.job.externalId, jobTitle: row.job.title, contractorName: row.payment.contractorName })),
       stats: { jobs: jobCount?.value ?? 0, activeJobs: activeJobCount?.value ?? 0, paymentVolumeCents: paymentTotal?.value ?? 0, openCases: cases.filter((item) => !["resolved", "dismissed"].includes(item.status)).length },
     });
   } catch (error) {
@@ -108,7 +111,7 @@ export async function POST(request: Request) {
   try {
     const access = await requireOperationsUser();
     if ("error" in access) return access.error;
-    const payload = (await request.json()) as { action?: string; email?: string; displayName?: string; role?: string; caseType?: string; title?: string; subject?: string; summary?: string; risk?: string; priority?: string; dueLabel?: string };
+    const payload = (await request.json()) as { action?: string; email?: string; displayName?: string; role?: string; caseType?: string; title?: string; subject?: string; summary?: string; risk?: string; priority?: string; dueLabel?: string; milestoneId?: number; decision?: "hold" | "clear"; reason?: string };
     if (payload.action === "case") {
       const caseType = payload.caseType && ["verification", "fraud", "dispute"].includes(payload.caseType) ? payload.caseType : "";
       const title = payload.title?.trim().slice(0, 160) ?? "";
@@ -133,6 +136,27 @@ export async function POST(request: Request) {
         details: JSON.stringify({ createdBy: access.user.email, signals: ["Manually opened by Operations"] }),
       }).returning();
       return Response.json({ case: { ...createdCase, details: JSON.parse(createdCase.details || "{}"), notes: [] } }, { status: 201 });
+    }
+
+    if (payload.action === "payment_milestone_review") {
+      const milestoneId = Number(payload.milestoneId);
+      const reason = payload.reason?.trim().slice(0, 1000) || "";
+      if (!Number.isInteger(milestoneId) || !payload.decision) return Response.json({ error: "A payment milestone and review decision are required" }, { status: 400 });
+      if (reason.length < 5) return Response.json({ error: "Add a short Operations review note" }, { status: 400 });
+      const [milestone] = await access.db.select().from(paymentMilestones).where(eq(paymentMilestones.id, milestoneId)).limit(1);
+      if (!milestone) return Response.json({ error: "Payment milestone not found" }, { status: 404 });
+      if (payload.decision === "hold" && milestone.status !== "proof_submitted") return Response.json({ error: "Only submitted proof can be placed on hold" }, { status: 409 });
+      if (payload.decision === "clear" && milestone.status !== "operations_hold") return Response.json({ error: "Only a held release can be cleared" }, { status: 409 });
+      const [payment] = await access.db.select().from(paymentRecords).where(eq(paymentRecords.id, milestone.paymentId)).limit(1);
+      const [job] = await access.db.select().from(jobRequests).where(eq(jobRequests.id, milestone.jobId)).limit(1);
+      if (!payment || !job) return Response.json({ error: "Payment job context not found" }, { status: 404 });
+      const now = new Date();
+      const nextStatus = payload.decision === "hold" ? "operations_hold" : "proof_submitted";
+      const [updatedMilestone] = await access.db.update(paymentMilestones).set({ status: nextStatus, operationsReviewedBy: access.user.email, operationsReviewedAt: now, operationsNote: reason, updatedAt: now }).where(eq(paymentMilestones.id, milestone.id)).returning();
+      await access.db.insert(jobEvents).values({ jobId: job.id, eventType: payload.decision === "hold" ? "payment_release_held" : "payment_release_cleared", label: `Operations ${payload.decision === "hold" ? "held" : "cleared"} the ${milestone.label.toLowerCase()} release`, metadata: JSON.stringify({ milestoneId, reviewedBy: access.user.email, reason }) });
+      await notify(job.ownerEmail, { jobId: job.id, type: payload.decision === "hold" ? "payment_release_held" : "payment_release_cleared", title: payload.decision === "hold" ? "Payment release under review" : "Payment release cleared", body: `${job.externalId}: Operations ${payload.decision === "hold" ? "placed the release on hold" : "cleared the release for homeowner approval"}.` });
+      if (payment.contractorEmail) await notify(payment.contractorEmail, { jobId: job.id, type: payload.decision === "hold" ? "payment_release_held" : "payment_release_cleared", title: payload.decision === "hold" ? "Payment release under review" : "Payment release cleared", body: `${job.externalId}: ${reason}` });
+      return Response.json({ milestone: updatedMilestone });
     }
 
     if (access.role !== "admin") return Response.json({ error: "Administrator access required" }, { status: 403 });
