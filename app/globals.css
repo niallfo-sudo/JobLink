@@ -174,6 +174,7 @@ footer { border-top: 1px solid var(--line); padding: 34px 4vw; display: grid; gr
 .staff-directory article em { border-radius:20px; padding:5px 8px; background:var(--sage); color:var(--green); font-style:normal; font-size:7px; font-weight:850; text-transform:uppercase; }
 .staff-directory article button { border:1px solid var(--line); background:transparent; padding:8px 10px; font-size:8px; font-weight:800; }
 .staff-directory article button:disabled { color:var(--muted); opacity:.6; }
+.operations-no-results button { border:0; background:var(--orange); color:white; padding:11px 15px; font-weight:800; }
 @media (max-width:900px) { .operations-team-grid { grid-template-columns:1fr; }.staff-directory article { grid-template-columns:38px minmax(0,1fr) auto; }.staff-directory article button { grid-column:2/4; } }
 @media (max-width:520px) { .staff-directory article { grid-template-columns:34px 1fr; }.staff-directory article > em,.staff-directory article button { grid-column:2; justify-self:start; } }
 

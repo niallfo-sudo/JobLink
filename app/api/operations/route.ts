@@ -1,6 +1,6 @@
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { jobRequests, operationsCaseNotes, operationsCases, paymentRecords, users } from "../../../db/schema";
+import { contractorProfiles, jobRequests, operationsCaseNotes, operationsCases, paymentRecords, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 
 const allowedStatuses = new Set(["open", "in_review", "waiting", "resolved", "dismissed"]);
@@ -20,10 +20,35 @@ async function requireOperationsUser() {
   return { user, db, role: record.role };
 }
 
+async function syncPendingVerificationCases(db: ReturnType<typeof getDb>) {
+  const pendingProfiles = await db.select().from(contractorProfiles).where(inArray(contractorProfiles.verificationStatus, ["pending", "pending_review"]));
+  for (const profile of pendingProfiles) {
+    await db.insert(operationsCases).values({
+      externalId: `VR-P${profile.id}`,
+      caseType: "verification",
+      title: "Contractor application review",
+      subject: profile.businessName,
+      summary: `Verify ${profile.businessName} before enabling ${profile.primaryService.toLowerCase()} matching.`,
+      risk: "low",
+      priority: "normal",
+      status: "open",
+      assignee: "Unassigned",
+      evidenceCount: 2,
+      dueLabel: "Due within 1 business day",
+      details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile submitted", "Identity and insurance review required"] }),
+    }).onConflictDoNothing({ target: operationsCases.externalId });
+  }
+}
+
 export async function GET() {
   try {
     const access = await requireOperationsUser();
     if ("error" in access) return access.error;
+    try {
+      await syncPendingVerificationCases(access.db);
+    } catch (error) {
+      console.error("Pending verification cases could not be synchronized", error);
+    }
     const cases = await access.db.select().from(operationsCases).orderBy(desc(operationsCases.updatedAt));
     const notes = cases.length ? await access.db.select().from(operationsCaseNotes).where(inArray(operationsCaseNotes.caseId, cases.map((item) => item.id))).orderBy(desc(operationsCaseNotes.createdAt)) : [];
     const [jobCount] = await access.db.select({ value: sql<number>`count(*)` }).from(jobRequests);

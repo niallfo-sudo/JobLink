@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { contractorProfiles, users } from "../../../db/schema";
+import { contractorProfiles, operationsCases, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 
 const plans = new Set(["starter", "growth", "pro"]);
@@ -42,6 +42,24 @@ export async function POST(request: Request) {
       acceptingWork: payload.acceptingWork !== false, plan, verificationStatus: "pending_review", updatedAt: new Date(),
     };
     const [profile] = await db.insert(contractorProfiles).values(values).onConflictDoUpdate({ target: contractorProfiles.ownerEmail, set: values }).returning();
+    try {
+      await db.insert(operationsCases).values({
+        externalId: `VR-P${profile.id}`,
+        caseType: "verification",
+        title: "Contractor application review",
+        subject: profile.businessName,
+        summary: `Verify ${profile.businessName} before enabling ${profile.primaryService.toLowerCase()} matching.`,
+        risk: "low",
+        priority: "normal",
+        status: "open",
+        assignee: "Unassigned",
+        evidenceCount: 2,
+        dueLabel: "Due within 1 business day",
+        details: JSON.stringify({ ownerEmail: profile.ownerEmail, primaryService: profile.primaryService, signals: ["Business profile submitted", "Identity and insurance review required"] }),
+      }).onConflictDoNothing({ target: operationsCases.externalId });
+    } catch (error) {
+      console.error("Verification case could not be queued", error);
+    }
     return Response.json({ profile: { ...profile, services: JSON.parse(profile.services) } }, { status: 201 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });

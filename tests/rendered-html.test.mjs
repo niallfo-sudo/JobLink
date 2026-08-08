@@ -82,6 +82,8 @@ test("wires existing controls and contractor service matching", async () => {
   }
   assert.doesNotMatch(page, /Ask AI to negotiate|negotiating &&/);
   assert.match(profileRoute, /serviceCategories/);
+  assert.match(profileRoute, /operationsCases/);
+  assert.match(profileRoute, /Contractor application review/);
   assert.match(opportunitiesRoute, /contractorProfiles/);
   assert.match(opportunitiesRoute, /acceptingWork/);
   assert.match(jobsRoute, /quoteProviderNames/);
@@ -121,7 +123,11 @@ test("supports custom request terms and persistent employee operations", async (
   assert.match(operationsRoute, /Employee access required/);
   assert.doesNotMatch(operationsRoute, /seedCases|ensureSeedCases/);
   assert.match(operationsRoute, /Operations workspace unavailable/);
+  assert.match(operationsRoute, /syncPendingVerificationCases/);
+  assert.match(operationsRoute, /contractorProfiles\.verificationStatus/);
+  assert.match(operationsRoute, /onConflictDoNothing/);
   assert.match(page, /operationsStatus !== "loading" && operationsStatus !== "error"/);
+  assert.match(page, /No contractor applications are waiting for verification/);
   assert.match(operationsRoute, /Administrator access required/);
   assert.match(operationsRoute, /export async function POST/);
   assert.match(operationsRoute, /export async function DELETE/);
