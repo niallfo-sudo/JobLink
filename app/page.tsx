@@ -126,6 +126,7 @@ export default function Home() {
   const [quoteNote, setQuoteNote] = useState("");
   const [quoteAvailability, setQuoteAvailability] = useState("");
   const [quoteSubmitStatus, setQuoteSubmitStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [quoteSubmitError, setQuoteSubmitError] = useState("");
   const [accountTab, setAccountTab] = useState<AccountTab>("jobs");
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [supportStatus, setSupportStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -775,25 +776,32 @@ export default function Home() {
 
   async function submitQuote() {
     if (!quoteJob) return;
-    if (!quoteJob.numericId) { setQuoteSubmitStatus("error"); return; }
+    if (!quoteJob.numericId) { setQuoteSubmitError("This opportunity is missing its job reference. Refresh Opportunities and try again."); setQuoteSubmitStatus("error"); return; }
     setQuoteSubmitStatus("saving");
+    setQuoteSubmitError("");
     try {
       const response = await fetch(`/api/jobs/${quoteJob.numericId}/quotes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: Number(quoteAmount), message: quoteNote, availableAt: quoteAvailability, contractorName: contractorProfile?.businessName || businessName }),
       });
-      if (!response.ok) throw new Error("Unable to submit quote");
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Unable to submit quote");
       setQuoteSent(quoteJob.id);
       setQuoteSubmitStatus("idle");
       setQuoteJob(null);
-    } catch {
+    } catch (error) {
+      setQuoteSubmitError(error instanceof Error ? error.message : "Unable to submit quote");
       setQuoteSubmitStatus("error");
     }
   }
 
   function openQuote(job: Opportunity) {
     setQuoteSubmitStatus("idle");
+    setQuoteSubmitError("");
+    setQuoteAmount("");
+    setQuoteNote("Quote includes labour, materials and cleanup. Final scope will be confirmed with the homeowner before work begins.");
+    setQuoteAvailability("Schedule to be confirmed with the homeowner");
     setQuoteJob(job);
   }
 
@@ -1595,8 +1603,9 @@ export default function Home() {
                 <label className="field-label" htmlFor="quote-note">Message to customer</label><textarea id="quote-note" value={quoteNote} onChange={(event) => setQuoteNote(event.target.value)} rows={4} />
                 <label className="field-label" htmlFor="quote-date">Earliest start or availability</label><input id="quote-date" value={quoteAvailability} onChange={(event) => setQuoteAvailability(event.target.value)} placeholder="Example: Tuesday after 9 AM or any weekday next week" />
                 <div className="quote-protection"><span>✓</span><p>Customer contact details remain private until they accept your quote.</p></div>
-                {quoteSubmitStatus === "error" && <p className="quote-submit-error">This quote could not be sent. Check the amount and try again.</p>}
-                <button className="send-quote" disabled={quoteSubmitStatus === "saving" || Number(quoteAmount) < 10 || quoteAvailability.trim().length < 3 || quoteNote.trim().length < 10} onClick={submitQuote}>{quoteSubmitStatus === "saving" ? "Sending quote…" : `Send $${Number(quoteAmount || 0).toLocaleString()} quote →`}</button>
+                {quoteSubmitStatus === "error" && <p className="quote-submit-error">{quoteSubmitError || "This quote could not be sent. Check the amount and try again."}</p>}
+                {Number(quoteAmount || 0) < 10 && <p className="quote-field-hint">Enter an estimated price of at least $10 to send this quote.</p>}
+                <button className="send-quote" disabled={quoteSubmitStatus === "saving" || Number(quoteAmount) < 10} onClick={submitQuote}>{quoteSubmitStatus === "saving" ? "Sending quote…" : `Send $${Number(quoteAmount || 0).toLocaleString()} quote →`}</button>
               </div>
             </div>
           )}

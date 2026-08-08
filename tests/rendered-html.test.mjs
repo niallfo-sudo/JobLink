@@ -175,6 +175,9 @@ test("uses production-backed AI and verification with explicit demo money workfl
   assert.match(page, /startPaymentCheckout/);
   assert.match(page, /startSubscriptionCheckout/);
   assert.match(page, /openPayoutSetup/);
+  assert.match(page, /setQuoteNote\("Quote includes labour, materials and cleanup/);
+  assert.match(page, /data\.error \|\| "Unable to submit quote"/);
+  assert.doesNotMatch(page, /quoteAvailability\.trim\(\)\.length < 3 \|\| quoteNote\.trim\(\)\.length < 10/);
   assert.doesNotMatch(page, /Start voice demo|Harbour Home Response|Arriving in 14 minutes|Niall L\.|North & Beam/);
   assert.match(schema, /contractor_verification_documents/);
   assert.match(schema, /stripe_connect_account_id/);
