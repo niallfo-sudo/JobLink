@@ -20,7 +20,7 @@ type AppNotification = { id: number; jobId: number | null; notificationType: str
 type JobAttachment = { id: number; filename: string; contentType: string; sizeBytes: number; kind: "image" | "video"; url: string; createdAt: string | number };
 type OperationsNote = { id: number; authorEmail: string; body: string; createdAt: string | number };
 type OperationsCase = { id: number; externalId: string; caseType: "verification" | "fraud" | "dispute"; title: string; subject: string; summary: string; risk: "low" | "medium" | "high" | "critical"; priority: string; status: "open" | "in_review" | "waiting" | "resolved" | "dismissed"; assignee: string; evidenceCount: number; dueLabel: string; details: { signals?: string[]; ownerEmail?: string; primaryService?: string; documents?: { id: number; documentType: string; filename: string; reviewStatus: string }[]; [key: string]: unknown }; resolution: string; notes: OperationsNote[]; updatedAt: string | number };
-type AccountIdentity = { email: string; displayName: string; role: "homeowner" | "contractor" | "employee" | "admin" | null };
+type AccountIdentity = { email: string; displayName: string; role: "homeowner" | "contractor" | "employee" | "admin" | null; operationsRole?: "employee" | "admin" | null };
 type StaffMember = { id: number; email: string; displayName: string; role: "employee" | "admin"; createdAt: string | number };
 type VerificationDocument = { id: number; documentType: string; filename: string; reviewStatus: string; uploadedAt: string | number };
 type ContractorQuote = { id: number; jobId: number; externalId: string; title: string; category: string; amountCents: number; availableAt: string; status: string; createdAt: string | number };
@@ -1144,7 +1144,7 @@ export default function Home() {
             </article>
           </div>
           {accountActionError && <p className="account-gateway-error">{accountActionError}</p>}
-          <footer>{accountIdentity ? <><span>{accountIdentity.email} · {accountIdentity.role ? accountIdentity.role.replace("employee", "operations employee") : "choose an account type"}</span><a href="/signout-with-chatgpt?return_to=%2F">Sign out</a></> : <span>Secure authentication is handled by ChatGPT. JobLink does not store a password.</span>}</footer>
+          <footer>{accountIdentity ? <><span>{accountIdentity.email} · {accountIdentity.role ? accountIdentity.role.replace("employee", "operations employee") : "choose an account type"}{accountIdentity.operationsRole ? ` · Operations ${accountIdentity.operationsRole} access retained` : ""}</span><a href="/signout-with-chatgpt?return_to=%2F">Sign out</a></> : <span>Secure authentication is handled by ChatGPT. JobLink does not store a password.</span>}</footer>
         </section>
       </div>}
 

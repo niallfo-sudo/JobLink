@@ -5,6 +5,7 @@ export const users = sqliteTable("users", {
   email: text("email").notNull(),
   displayName: text("display_name").notNull(),
   role: text("role").notNull().default("homeowner"),
+  activeWorkspace: text("active_workspace"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [uniqueIndex("users_email_unique").on(table.email)]);
 

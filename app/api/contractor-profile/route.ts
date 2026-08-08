@@ -33,7 +33,12 @@ export async function POST(request: Request) {
     const radius = Math.min(100, Math.max(5, Number(payload.serviceRadiusKm) || 30));
     const teamSize = Math.min(500, Math.max(1, Number(payload.teamSize) || 1));
     const db = getDb();
-    await db.insert(users).values({ email: user.email, displayName: user.displayName, role: "contractor" }).onConflictDoUpdate({ target: users.email, set: { displayName: user.displayName, role: "contractor" } });
+    const [existingUser] = await db.select({ role: users.role }).from(users).where(eq(users.email, user.email)).limit(1);
+    if (existingUser && ["employee", "admin"].includes(existingUser.role)) {
+      await db.update(users).set({ displayName: user.displayName, activeWorkspace: "contractor" }).where(eq(users.email, user.email));
+    } else {
+      await db.insert(users).values({ email: user.email, displayName: user.displayName, role: "contractor", activeWorkspace: "contractor" }).onConflictDoUpdate({ target: users.email, set: { displayName: user.displayName, role: "contractor", activeWorkspace: "contractor" } });
+    }
     const values = {
       ownerEmail: user.email, businessName, legalName: payload.legalName?.trim() || businessName,
       phone: payload.phone?.trim() || "", businessAddress: payload.businessAddress?.trim() || "", yearsInBusiness: Math.min(200, Math.max(0, Number(payload.yearsInBusiness) || 0)), about: payload.about?.trim() || "", primaryService,
@@ -76,7 +81,7 @@ export async function PATCH(request: Request) {
       if (payload.acceptingWork) {
         const [currentProfile] = await getDb().select({ verificationStatus: contractorProfiles.verificationStatus, subscriptionStatus: contractorProfiles.subscriptionStatus }).from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, user.email)).limit(1);
         if (currentProfile?.verificationStatus !== "verified") return Response.json({ error: "Verification approval is required before accepting work" }, { status: 403 });
-        if (!["active", "trialing"].includes(currentProfile.subscriptionStatus)) return Response.json({ error: "An active subscription is required before accepting work" }, { status: 403 });
+        if (!["active", "trialing", "demo_active"].includes(currentProfile.subscriptionStatus)) return Response.json({ error: "An active subscription is required before accepting work" }, { status: 403 });
       }
       updates.acceptingWork = Boolean(payload.acceptingWork);
     }

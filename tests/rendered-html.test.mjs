@@ -211,7 +211,9 @@ test("provides secure homeowner, contractor and operations account entry", async
   assert.match(page, /signout-with-chatgpt/);
   assert.doesNotMatch(page, /type="password"/);
   assert.match(accountRoute, /selfServiceRoles/);
-  assert.match(accountRoute, /Employee roles are managed in Operations/);
+  assert.match(accountRoute, /activeWorkspace/);
+  assert.match(accountRoute, /operationsRole/);
+  assert.match(page, /Operations.*access retained/);
   assert.doesNotMatch(accountRoute, /selfServiceRoles.*admin/);
   assert.match(operationsRoute, /Employee access required/);
   assert.match(auth, /oai-authenticated-user-email/);

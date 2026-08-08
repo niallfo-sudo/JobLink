@@ -11,12 +11,14 @@ export async function GET() {
     if (!identity) return Response.json({ user: null });
 
     const db = getDb();
-    const [record] = await db.select({ role: users.role }).from(users).where(eq(users.email, identity.email)).limit(1);
+    const [record] = await db.select({ role: users.role, activeWorkspace: users.activeWorkspace }).from(users).where(eq(users.email, identity.email)).limit(1);
+    const operationsRole = record && ["employee", "admin"].includes(record.role) ? record.role : null;
     return Response.json({
       user: {
         email: identity.email,
         displayName: identity.displayName,
-        role: record?.role ?? null,
+        role: operationsRole ? record?.activeWorkspace ?? record.role : record?.role ?? null,
+        operationsRole,
       },
     });
   } catch (error) {
@@ -38,20 +40,24 @@ export async function PATCH(request: Request) {
     const db = getDb();
     const [existing] = await db.select({ role: users.role }).from(users).where(eq(users.email, identity.email)).limit(1);
     if (existing && ["employee", "admin"].includes(existing.role)) {
-      return Response.json({ error: "Employee roles are managed in Operations" }, { status: 403 });
+      await db.update(users).set({ displayName: identity.displayName, activeWorkspace: payload.role }).where(eq(users.email, identity.email));
+      return Response.json({
+        user: { email: identity.email, displayName: identity.displayName, role: payload.role, operationsRole: existing.role },
+      });
     }
 
     await db.insert(users).values({
       email: identity.email,
       displayName: identity.displayName,
       role: payload.role,
+      activeWorkspace: payload.role,
     }).onConflictDoUpdate({
       target: users.email,
-      set: { displayName: identity.displayName, role: payload.role },
+      set: { displayName: identity.displayName, role: payload.role, activeWorkspace: payload.role },
     });
 
     return Response.json({
-      user: { email: identity.email, displayName: identity.displayName, role: payload.role },
+      user: { email: identity.email, displayName: identity.displayName, role: payload.role, operationsRole: null },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Account could not be updated";
