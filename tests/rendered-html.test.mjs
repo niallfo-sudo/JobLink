@@ -223,3 +223,28 @@ test("provides secure homeowner, contractor and operations account entry", async
   assert.match(operationsRoute, /Employee access required/);
   assert.match(auth, /oai-authenticated-user-email/);
 });
+
+test("protects request deletion and records a scheduled job start", async () => {
+  const [page, jobRoute, progressRoute, schema, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/[id]/route.ts"),
+    source("../app/api/jobs/[id]/progress/route.ts"),
+    source("../db/schema.ts"),
+    source("../drizzle/0014_scheduled_start.sql"),
+  ]);
+
+  assert.match(page, /deleteSavedRequest/);
+  assert.match(page, /Delete request/);
+  assert.match(page, /scheduleJobStart/);
+  assert.match(page, /Scheduled start date and time/);
+  assert.doesNotMatch(page, /Crew leaving/);
+  assert.match(jobRoute, /export async function DELETE/);
+  assert.match(jobRoute, /A request can only be deleted before a contractor is accepted/);
+  assert.match(jobRoute, /jobRequests\.ownerEmail, user\.email/);
+  assert.match(jobRoute, /scheduledStartAt/);
+  assert.match(jobRoute, /Only the selected contractor can schedule this job/);
+  assert.match(jobRoute, /start_scheduled/);
+  assert.doesNotMatch(progressRoute, /crew_dispatched/);
+  assert.match(schema, /scheduled_start_at/);
+  assert.match(migration, /scheduled_start_at/);
+});

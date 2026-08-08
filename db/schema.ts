@@ -64,6 +64,7 @@ export const jobRequests = sqliteTable("job_requests", {
   postalCode: text("postal_code").notNull().default(""),
   emergency: integer("emergency", { mode: "boolean" }).notNull().default(false),
   status: text("status").notNull().default("matching"),
+  scheduledStartAt: integer("scheduled_start_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
