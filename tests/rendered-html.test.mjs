@@ -31,6 +31,9 @@ test("persists authenticated support requests with JobLink references", async ()
 
   assert.match(route, /getChatGPTUser/);
   assert.match(route, /insert\(supportRequests\)/);
+  assert.match(route, /insert\(operationsCases\)/);
+  assert.match(route, /Trust and safety report/);
+  assert.match(route, /Payment or invoice support request/);
   assert.match(route, /`JL-S\$\{crypto\.randomUUID/);
   assert.match(schema, /sqliteTable\("support_requests"/);
   assert.match(schema, /support_requests_requester_created_idx/);
@@ -137,11 +140,15 @@ test("supports custom request terms and persistent employee operations", async (
   assert.match(page, /No contractor applications are waiting for verification/);
   assert.match(operationsRoute, /Administrator access required/);
   assert.match(operationsRoute, /export async function POST/);
+  assert.match(operationsRoute, /payload\.action === "case"/);
+  assert.match(operationsRoute, /Case type, title, subject and summary are required/);
   assert.match(operationsRoute, /export async function DELETE/);
   assert.match(operationsRoute, /You cannot remove your own administrator access/);
   assert.match(page, /Operations team/);
   assert.match(page, /addOperationsStaff/);
   assert.match(page, /removeOperationsStaff/);
+  assert.match(page, /createOperationsCase/);
+  assert.match(page, /Create a new case/);
   assert.match(operationsRoute, /operationsCaseNotes/);
   assert.match(operationsRoute, /export async function PATCH/);
   assert.match(jobRoute, /emergency_responder_confirmed/);

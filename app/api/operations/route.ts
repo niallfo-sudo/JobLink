@@ -72,9 +72,34 @@ export async function POST(request: Request) {
   try {
     const access = await requireOperationsUser();
     if ("error" in access) return access.error;
-    if (access.role !== "admin") return Response.json({ error: "Administrator access required" }, { status: 403 });
+    const payload = (await request.json()) as { action?: string; email?: string; displayName?: string; role?: string; caseType?: string; title?: string; subject?: string; summary?: string; risk?: string; priority?: string; dueLabel?: string };
+    if (payload.action === "case") {
+      const caseType = payload.caseType && ["verification", "fraud", "dispute"].includes(payload.caseType) ? payload.caseType : "";
+      const title = payload.title?.trim().slice(0, 160) ?? "";
+      const subject = payload.subject?.trim().slice(0, 160) ?? "";
+      const summary = payload.summary?.trim().slice(0, 2000) ?? "";
+      const risk = payload.risk && allowedRisks.has(payload.risk) ? payload.risk : "medium";
+      const priority = payload.priority && ["normal", "high", "urgent"].includes(payload.priority) ? payload.priority : "normal";
+      if (!caseType || !title || !subject || !summary) return Response.json({ error: "Case type, title, subject and summary are required" }, { status: 400 });
+      const prefix = caseType === "verification" ? "VR" : caseType === "fraud" ? "FR" : "DS";
+      const [createdCase] = await access.db.insert(operationsCases).values({
+        externalId: `${prefix}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+        caseType,
+        title,
+        subject,
+        summary,
+        risk,
+        priority,
+        status: "open",
+        assignee: access.user.displayName,
+        evidenceCount: 0,
+        dueLabel: payload.dueLabel?.trim().slice(0, 80) || (priority === "urgent" ? "Respond today" : "Due in 1 business day"),
+        details: JSON.stringify({ createdBy: access.user.email, signals: ["Manually opened by Operations"] }),
+      }).returning();
+      return Response.json({ case: { ...createdCase, details: JSON.parse(createdCase.details || "{}"), notes: [] } }, { status: 201 });
+    }
 
-    const payload = (await request.json()) as { email?: string; displayName?: string; role?: string };
+    if (access.role !== "admin") return Response.json({ error: "Administrator access required" }, { status: 403 });
     const email = payload.email?.trim().toLowerCase() ?? "";
     const role = payload.role === "admin" ? "admin" : payload.role === "employee" ? "employee" : "";
     if (!/^\S+@\S+\.\S+$/.test(email)) return Response.json({ error: "Enter a valid employee email" }, { status: 400 });
