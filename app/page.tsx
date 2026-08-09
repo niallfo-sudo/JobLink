@@ -576,6 +576,13 @@ export default function Home() {
   }, [view]);
 
   useEffect(() => {
+    if (view !== "matches" || !selectedSavedJob) return;
+    void loadSavedQuotes(selectedSavedJob);
+    const refreshQuotes = window.setInterval(() => void loadSavedQuotes(selectedSavedJob), 12_000);
+    return () => window.clearInterval(refreshQuotes);
+  }, [view, selectedSavedJob?.id]);
+
+  useEffect(() => {
     fetch("/api/notifications").then((response) => response.ok ? response.json() : Promise.reject()).then((data: { notifications?: AppNotification[] }) => setNotifications(data.notifications ?? [])).catch(() => undefined);
   }, [view, quoteSent, acceptedQuoteId, roomMessages.length, roomEvents.length]);
 
@@ -1951,7 +1958,7 @@ export default function Home() {
         <section className="app-shell matches-shell">
           <div className="dashboard-heading">
             <div><p className="step-kicker">{savedRequestId ? `Request ${savedRequestId}` : "Quote comparison"}</p><h1>Estimates and final quotes.</h1><p>The first amount is a preliminary estimate only. You are not committed to a contractor or price until you approve their finalized on-site quote.</p>{savedRequestId && <span className="persisted-note">✓ Saved to your JobLink account</span>}{uploadError && <span className="persisted-note upload-warning">! {uploadError}</span>}</div>
-            <div className="matching-status"><span><i /></span><div><b>{savedQuotes.length} quote{savedQuotes.length === 1 ? "" : "s"}</b><small>Loaded from your request</small></div></div>
+            <button className="secondary-action" disabled={!selectedSavedJob || savedQuotesStatus === "loading"} onClick={() => selectedSavedJob && void loadSavedQuotes(selectedSavedJob)}>{savedQuotesStatus === "loading" ? "Refreshing…" : "Refresh quotes"}</button><div className="matching-status"><span><i /></span><div><b>{savedQuotes.length} quote{savedQuotes.length === 1 ? "" : "s"}</b><small>Loaded from your request</small></div></div>
           </div>
           <div className="job-summary-strip"><span><b>{category} · {selectedJobType}</b>{size} · {postalCode}</span><span><b>Target</b>{requestTimeline}</span><span><b>Pricing</b>Contractors provide initial ranges</span><button onClick={() => { setStep(3); go("request"); }}>View request</button></div>
             <div className="quote-stage-explainer"><article><span>1</span><div><b>Preliminary estimate</b><p>Compare an approximate price and request an on-site visit. This is not an acceptance, booking or commitment.</p></div></article><i>→</i><article><span>2</span><div><b>Finalized on-site quote</b><p>The contractor confirms the exact scope, materials, measurements and payment checkpoints.</p></div></article><i>→</i><article><span>3</span><div><b>Agreement, funding and acceptance</b><p>Choose a final quote, both parties sign the demo service agreement, then accept and fund the full job total for incremental releases.</p></div></article></div>
