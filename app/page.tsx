@@ -1955,6 +1955,7 @@ export default function Home() {
       {view === "discover" && (
         <>
           <section className="hero">
+            <div className="hero-header-image"><img src="/og.png" alt="JobLink: trusted work and protected payments" /></div>
             <div className="eyebrow"><span /> One request. The right pros.</div>
             <div className="hero-grid">
               <div className="hero-copy">
