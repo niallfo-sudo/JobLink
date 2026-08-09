@@ -107,6 +107,8 @@ test("lets Operations administrators switch between verified demo contractor com
   assert.match(page, /contractor accounts available/);
   assert.match(demoRoute, /Operations administrators only/);
   assert.match(demoRoute, /from\(contractorProfiles\)/);
+  assert.match(demoRoute, /ensureGeneralContractorsDemo/);
+  assert.match(demoRoute, /General Contractors Inc\./);
   assert.match(demoRoute, /DEMO_CONTRACTOR_COOKIE/);
   assert.match(actor, /account\?\.role !== "admin"/);
   assert.doesNotMatch(actor, /@joblink\.demo/);
