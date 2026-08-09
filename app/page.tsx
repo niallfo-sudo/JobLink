@@ -1107,6 +1107,10 @@ export default function Home() {
   async function acceptSavedQuote(quote: PersistedQuote) {
     if (!selectedSavedJob) return;
     if (quote.status === "final_quote_ready") { await decideFinalQuote(quote, "accept_final"); return; }
+    if (quote.status === "onsite_proposed") {
+      setOnsiteSchedulingQuote(quote);
+      return;
+    }
     if (quote.status !== "submitted" && quote.status !== "onsite_requested") return;
     if (quote.status === "submitted") {
       setPreferredOnsiteSlots([{ date: "", startTime: "09:00", endTime: "12:00" }, { date: "", startTime: "13:00", endTime: "16:00" }, { date: "", startTime: "", endTime: "" }]);
@@ -1239,7 +1243,7 @@ export default function Home() {
       const data = (await response.json().catch(() => ({}))) as { quote?: ContractorQuote; error?: string };
       if (!response.ok || !data.quote) throw new Error(data.error || "Unable to schedule the visit");
       setContractorQuotes((current) => current.map((item) => item.id === quote.id ? { ...item, ...data.quote } : item));
-      setContractorRequestQuote((current) => current?.id === quote.id ? { ...current, ...data.quote } : current);
+      setContractorRequestQuote((current) => current?.id === quote.id ? null : current);
       showNotice(`On-site verification scheduled for ${scheduledStartLabel(data.quote.onsiteVisitAt)}.`);
     } catch (error) { showNotice(error instanceof Error ? error.message : "Unable to schedule the visit"); }
   }
@@ -1250,6 +1254,7 @@ export default function Home() {
       const data = (await response.json().catch(() => ({}))) as { quote?: ContractorQuote; error?: string };
       if (!response.ok || !data.quote) throw new Error(data.error || "Unable to confirm the preferred time range");
       setContractorQuotes((current) => current.map((item) => item.id === quote.id ? { ...item, ...data.quote } : item));
+      setContractorRequestQuote((current) => current?.id === quote.id ? null : current);
       showNotice(`On-site time range confirmed: ${onsiteRangeLabel(range)}.`);
     } catch (error) { showNotice(error instanceof Error ? error.message : "Unable to confirm the preferred time range"); }
   }
@@ -1911,7 +1916,7 @@ export default function Home() {
               <h3>{savedQuotes[0].contractorName} is the best overall current match.</h3>
               <p>Offers are ordered by JobLink Score and Quote Rating. Price only breaks a tie. This is a preliminary, non-binding estimate, so you may compare multiple on-site quotes.</p>
               <div><span>JobLink Score</span><b>{savedQuotes[0].contractor?.jobLinkScore ?? "Building"}</b></div><div><span>Quote Rating</span><b>{savedQuotes[0].contractor?.quoteRating ?? "Building"}</b></div><div><span>Submitted price</span><b>${(savedQuotes[0].amountCents / 100).toLocaleString()}</b></div><div><span>Availability</span><b>{savedQuotes[0].availableAt}</b></div>
-              <button disabled={savedQuotesStatus === "loading" || savedQuotes[0].status !== "submitted"} onClick={() => void acceptSavedQuote(savedQuotes[0])}>{savedQuotes[0].status === "submitted" ? "Request on-site quote — no commitment →" : quoteWorkflowLabel(savedQuotes[0])}</button>
+              <button disabled={savedQuotesStatus === "loading" || !["submitted", "onsite_proposed"].includes(savedQuotes[0].status)} onClick={() => void acceptSavedQuote(savedQuotes[0])}>{savedQuotes[0].status === "submitted" ? "Request on-site quote — no commitment →" : quoteWorkflowLabel(savedQuotes[0])}</button>
             </aside>}
           </div>
           {acceptedSavedQuote && <div className="accepted-banner"><span>✓</span><div><b>{acceptedSavedQuote.contractorName} has been selected.</b><p>Your booking record and Job Room are ready.</p></div><button onClick={() => go("tracking")}>Open job progress →</button></div>}
