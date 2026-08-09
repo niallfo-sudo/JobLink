@@ -658,3 +658,26 @@ test("returns a render-safe contractor profile when a demo subscription is activ
   assert.match(subscriptionRoute, /services: parseServices\(updated\.services\)/);
   assert.match(subscriptionRoute, /approvedServices: parseServices\(updated\.approvedServices\)/);
 });
+
+test("coordinates homeowner visit preferences with contractor confirmations and proposals", async () => {
+  const [page, quoteRoute, contractorQuotesRoute, schema, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+    source("../app/api/contractor-quotes/route.ts"),
+    source("../db/schema.ts"),
+    source("../drizzle/0024_onsite_schedule_preferences.sql"),
+  ]);
+
+  assert.match(page, /Choose preferred times/);
+  assert.match(page, /Homeowner preferred times/);
+  assert.match(page, /Confirm or propose visit/);
+  assert.match(page, /Contractor-proposed times/);
+  assert.match(page, /confirm_proposed_onsite/);
+  assert.match(quoteRoute, /preferredSlots/);
+  assert.match(quoteRoute, /onsite_proposed/);
+  assert.match(quoteRoute, /confirm_proposed_onsite/);
+  assert.match(contractorQuotesRoute, /onsitePreferences: quotes\.onsitePreferences/);
+  assert.match(schema, /onsitePreferences: text\("onsite_preferences"\)/);
+  assert.match(migration, /onsite_preferences/);
+  assert.match(migration, /onsite_proposals/);
+});

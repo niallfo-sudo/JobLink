@@ -88,6 +88,8 @@ export const quotes = sqliteTable("quotes", {
   estimatedFinishAt: integer("estimated_finish_at", { mode: "timestamp_ms" }),
   status: text("status").notNull().default("submitted"),
   onsiteVisitAt: integer("onsite_visit_at", { mode: "timestamp_ms" }),
+  onsitePreferences: text("onsite_preferences").notNull().default("[]"),
+  onsiteProposals: text("onsite_proposals").notNull().default("[]"),
   workDescription: text("work_description").notNull().default(""),
   materials: text("materials").notNull().default(""),
   measurements: text("measurements").notNull().default(""),

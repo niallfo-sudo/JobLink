@@ -33,6 +33,23 @@ function validOnsiteVisit(value: string | undefined) {
   return visit;
 }
 
+function parseOnsiteSlots(value: unknown) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 3) return null;
+  const slots = value.map((slot) => typeof slot === "string" ? validOnsiteVisit(slot) : null);
+  if (slots.some((slot) => !slot)) return null;
+  const unique = new Map(slots.map((slot) => [slot!.toISOString(), slot!]));
+  return unique.size === slots.length ? [...unique.values()] : null;
+}
+
+function storedOnsiteSlots(value: string | null | undefined) {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed.filter((slot): slot is string => typeof slot === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 function estimatedDate(value: string | undefined) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const date = new Date(`${value}T12:00:00`);
@@ -129,7 +146,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       const profile = quote.contractorEmail ? profileByEmail.get(quote.contractorEmail) : undefined;
       const rating = quote.contractorEmail ? ratingByEmail.get(quote.contractorEmail) : undefined;
       const publicRatings = quote.contractorEmail ? publicContractorRatings({ reviewCount: Number(rating?.reviewCount ?? 0), averageScore: Number(rating?.averageScore ?? 0), acceptedJobCount: acceptedByEmail.get(quote.contractorEmail) ?? 0, completedJobCount: completedByEmail.get(quote.contractorEmail) ?? 0, quoteDeltas: accuracyByEmail.get(quote.contractorEmail) ?? [] }) : null;
-      return { ...quote, finalOptions: parseFinalOptions(quote.finalOptions), contractor: profile ? { ...profile, approvedServices: JSON.parse(profile.approvedServices || "[]"), reviewCount: Number(rating?.reviewCount ?? 0), averageRating: rating?.averageScore ? Number(rating.averageScore) / 100 : null, ...publicRatings } : null };
+      return { ...quote, onsitePreferences: storedOnsiteSlots(quote.onsitePreferences), onsiteProposals: storedOnsiteSlots(quote.onsiteProposals), finalOptions: parseFinalOptions(quote.finalOptions), contractor: profile ? { ...profile, approvedServices: JSON.parse(profile.approvedServices || "[]"), reviewCount: Number(rating?.reviewCount ?? 0), averageRating: rating?.averageScore ? Number(rating.averageScore) / 100 : null, ...publicRatings } : null };
     });
     detailedQuotes.sort((left, right) => (right.contractor?.matchScore ?? 0) - (left.contractor?.matchScore ?? 0) || left.amountCents - right.amountCents);
     return Response.json({ job, quotes: detailedQuotes });
@@ -177,7 +194,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const contractor = await getContractorActor();
   if (!identity || !contractor) return Response.json({ error: "Sign in required" }, { status: 401 });
   const jobId = Number((await context.params).id);
-  const payload = (await request.json()) as { action?: "request_onsite" | "schedule_onsite" | "submit_final" | "accept_final" | "decline_final"; quoteId?: number; onsiteVisitAt?: string; amount?: number; workDescription?: string; materials?: string; measurements?: string; depositAmount?: number; progressAmount?: number; completionAmount?: number; finalOptions?: unknown; selectedOptionId?: string };
+  const payload = (await request.json()) as { action?: "request_onsite" | "schedule_onsite" | "confirm_proposed_onsite" | "submit_final" | "accept_final" | "decline_final"; quoteId?: number; onsiteVisitAt?: string; preferredSlots?: unknown; amount?: number; workDescription?: string; materials?: string; measurements?: string; depositAmount?: number; progressAmount?: number; completionAmount?: number; finalOptions?: unknown; selectedOptionId?: string };
   const quoteId = Number(payload.quoteId);
   if (!Number.isInteger(jobId) || !Number.isInteger(quoteId) || !payload.action) return Response.json({ error: "A quote and workflow action are required" }, { status: 400 });
   try {
@@ -190,22 +207,37 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       if (job.ownerEmail !== identity.email) return Response.json({ error: "Job not found" }, { status: 404 });
       if (!["matching", "verification_pending", "final_quote_ready"].includes(job.status) || !["submitted", "onsite_requested"].includes(quote.status)) return Response.json({ error: "This estimate is not available for an on-site verification" }, { status: 409 });
       if (!quote.contractorEmail || !await eligibleProfile(quote.contractorEmail)) return Response.json({ error: "This contractor is not currently eligible for verification" }, { status: 409 });
-      const [updatedQuote] = await db.update(quotes).set({ status: "onsite_requested" }).where(eq(quotes.id, quote.id)).returning();
+      const preferredSlots = parseOnsiteSlots(payload.preferredSlots);
+      if (!preferredSlots) return Response.json({ error: "Provide one to three preferred weekday visit times within the next two business days" }, { status: 400 });
+      const [updatedQuote] = await db.update(quotes).set({ status: "onsite_requested", onsitePreferences: JSON.stringify(preferredSlots.map((slot) => slot.toISOString())), onsiteProposals: "[]" }).where(eq(quotes.id, quote.id)).returning();
       await db.update(jobRequests).set({ status: "verification_pending", updatedAt: new Date() }).where(eq(jobRequests.id, jobId));
-      await db.insert(jobEvents).values({ jobId, eventType: "onsite_requested", label: `On-site verification requested from ${quote.contractorName}`, metadata: JSON.stringify({ quoteId }) });
-      await notify(quote.contractorEmail, { jobId, type: "onsite_requested", title: "On-site verification requested", body: `Schedule a visit for ${job.externalId} within two business days.` });
-      return Response.json({ quote: updatedQuote, job: { ...job, status: "verification_pending" } });
+      await db.insert(jobEvents).values({ jobId, eventType: "onsite_requested", label: `On-site verification requested from ${quote.contractorName}`, metadata: JSON.stringify({ quoteId, preferredSlots: preferredSlots.map((slot) => slot.toISOString()) }) });
+      await notify(quote.contractorEmail, { jobId, type: "onsite_requested", title: "On-site verification requested", body: `Choose one of the homeowner's preferred times for ${job.externalId}, or suggest another time within two business days.` });
+      return Response.json({ quote: { ...updatedQuote, onsitePreferences: preferredSlots.map((slot) => slot.toISOString()), onsiteProposals: [] }, job: { ...job, status: "verification_pending" } });
     }
 
     if (payload.action === "schedule_onsite") {
       if (quote.contractorEmail !== contractor.email || !await eligibleProfile(contractor.email)) return Response.json({ error: "Only the verified contractor can schedule this visit" }, { status: 403 });
-      if (!["onsite_requested", "onsite_scheduled"].includes(quote.status)) return Response.json({ error: "The homeowner must request an on-site verification first" }, { status: 409 });
+      if (!["onsite_requested", "onsite_proposed", "onsite_scheduled"].includes(quote.status)) return Response.json({ error: "The homeowner must request an on-site verification first" }, { status: 409 });
       const visit = validOnsiteVisit(payload.onsiteVisitAt);
       if (!visit) return Response.json({ error: "Schedule a weekday visit within the next two business days" }, { status: 400 });
-      const [updatedQuote] = await db.update(quotes).set({ status: "onsite_scheduled", onsiteVisitAt: visit }).where(eq(quotes.id, quote.id)).returning();
-      await db.insert(jobEvents).values({ jobId, eventType: "onsite_scheduled", label: `On-site verification scheduled for ${visit.toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}`, metadata: JSON.stringify({ quoteId, onsiteVisitAt: visit.toISOString() }) });
-      await notify(job.ownerEmail, { jobId, type: "onsite_scheduled", title: "On-site visit scheduled", body: `${quote.contractorName} scheduled ${job.externalId} for ${visit.toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}.` });
-      return Response.json({ quote: updatedQuote });
+      const preferences = storedOnsiteSlots(quote.onsitePreferences);
+      const matchesPreference = preferences.includes(visit.toISOString());
+      const [updatedQuote] = await db.update(quotes).set(matchesPreference ? { status: "onsite_scheduled", onsiteVisitAt: visit, onsiteProposals: "[]" } : { status: "onsite_proposed", onsiteProposals: JSON.stringify([visit.toISOString()]) }).where(eq(quotes.id, quote.id)).returning();
+      const eventType = matchesPreference ? "onsite_scheduled" : "onsite_proposed";
+      await db.insert(jobEvents).values({ jobId, eventType, label: matchesPreference ? `On-site verification scheduled for ${visit.toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}` : `${quote.contractorName} suggested an alternate on-site visit time`, metadata: JSON.stringify({ quoteId, onsiteVisitAt: visit.toISOString() }) });
+      await notify(job.ownerEmail, { jobId, type: eventType, title: matchesPreference ? "On-site visit scheduled" : "Alternate visit time proposed", body: matchesPreference ? `${quote.contractorName} selected your preferred time for ${job.externalId}.` : `${quote.contractorName} suggested ${visit.toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })} for ${job.externalId}. Confirm it to book the visit.` });
+      return Response.json({ quote: { ...updatedQuote, onsitePreferences: preferences, onsiteProposals: matchesPreference ? [] : [visit.toISOString()] } });
+    }
+
+    if (payload.action === "confirm_proposed_onsite") {
+      if (job.ownerEmail !== identity.email || quote.status !== "onsite_proposed") return Response.json({ error: "This proposed visit is not available to confirm" }, { status: 409 });
+      const visit = validOnsiteVisit(payload.onsiteVisitAt);
+      if (!visit || !storedOnsiteSlots(quote.onsiteProposals).includes(visit.toISOString())) return Response.json({ error: "Choose one of the contractor's proposed visit times" }, { status: 400 });
+      const [updatedQuote] = await db.update(quotes).set({ status: "onsite_scheduled", onsiteVisitAt: visit, onsiteProposals: "[]" }).where(eq(quotes.id, quote.id)).returning();
+      await db.insert(jobEvents).values({ jobId, eventType: "onsite_scheduled", label: `Homeowner confirmed on-site verification for ${visit.toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}`, metadata: JSON.stringify({ quoteId, onsiteVisitAt: visit.toISOString() }) });
+      await notify(quote.contractorEmail, { jobId, type: "onsite_scheduled", title: "On-site visit confirmed", body: `The homeowner confirmed ${visit.toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })} for ${job.externalId}.` });
+      return Response.json({ quote: { ...updatedQuote, onsitePreferences: storedOnsiteSlots(quote.onsitePreferences), onsiteProposals: [] } });
     }
 
     if (payload.action === "submit_final") {

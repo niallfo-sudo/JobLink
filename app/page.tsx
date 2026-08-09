@@ -11,7 +11,7 @@ type PersistedJob = { id: number; externalId: string; category: string; title: s
 type ContractorComparison = { primaryService: string; approvedServices: string[]; homeBase: string; serviceRadiusKm: number; yearsInBusiness: number; teamSize: number; emergencyAvailable: boolean; about: string; verificationStatus: string; reviewCount: number; averageRating: number | null; jobLinkScore?: number | null; quoteRating?: number | null; quoteComparisonCount?: number; matchScore?: number };
 type FinalQuoteOption = { id: string; title: string; description: string; amountCents: number; depositCents: number; progressCents: number; completionCents: number };
 type FinalQuoteOptionDraft = { id: string; title: string; description: string; amount: string; depositAmount: string; progressAmount: string; completionAmount: string };
-type PersistedQuote = { id: number; contractorName: string; amountCents: number; initialMinCents?: number; initialMaxCents?: number; message: string; availableAt: string; estimatedStartAt?: string | number | null; estimatedFinishAt?: string | number | null; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; finalOptions?: FinalQuoteOption[]; selectedFinalOptionId?: string | null; contractor?: ContractorComparison | null };
+type PersistedQuote = { id: number; contractorName: string; amountCents: number; initialMinCents?: number; initialMaxCents?: number; message: string; availableAt: string; estimatedStartAt?: string | number | null; estimatedFinishAt?: string | number | null; status: string; onsiteVisitAt?: string | number | null; onsitePreferences?: string[]; onsiteProposals?: string[]; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; finalOptions?: FinalQuoteOption[]; selectedFinalOptionId?: string | null; contractor?: ContractorComparison | null };
 type Opportunity = { numericId?: number; id: string; service: string; title: string; distance: string; budget: string; timing: string; match: number; posted: string; details: string };
 type RoomMessage = { id: number; body: string; mine: boolean; createdAt: string | number };
 type RoomEvent = { id: number; label: string; eventType: string; createdAt: string | number };
@@ -30,7 +30,7 @@ type OperationsCase = { id: number; externalId: string; caseType: "verification"
 type AccountIdentity = { email: string; displayName: string; role: "homeowner" | "contractor" | "employee" | "admin" | null; operationsRole?: "employee" | "admin" | null };
 type StaffMember = { id: number; email: string; displayName: string; role: "employee" | "admin"; createdAt: string | number };
 type VerificationDocument = { id: number; documentType: string; filename: string; reviewStatus: string; uploadedAt: string | number };
-type ContractorQuote = { id: number; jobId: number; externalId: string; title: string; category: string; description?: string; size?: string; timeline?: string; postalCode?: string; amountCents: number; initialMinCents?: number; initialMaxCents?: number; quoteAccuracyDelta?: number; quoteAccuracyStatus?: string; availableAt: string; estimatedStartAt?: string | number | null; estimatedFinishAt?: string | number | null; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; finalOptions?: FinalQuoteOption[]; selectedFinalOptionId?: string | null; createdAt: string | number };
+type ContractorQuote = { id: number; jobId: number; externalId: string; title: string; category: string; description?: string; size?: string; timeline?: string; postalCode?: string; amountCents: number; initialMinCents?: number; initialMaxCents?: number; quoteAccuracyDelta?: number; quoteAccuracyStatus?: string; availableAt: string; estimatedStartAt?: string | number | null; estimatedFinishAt?: string | number | null; status: string; onsiteVisitAt?: string | number | null; onsitePreferences?: string[]; onsiteProposals?: string[]; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; finalOptions?: FinalQuoteOption[]; selectedFinalOptionId?: string | null; createdAt: string | number };
 type VerifiedContractor = { id: number; ownerEmail: string; businessName: string; primaryService: string; requestedServices: string[]; approvedServices: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: string; subscriptionStatus: string; payoutsEnabled: boolean; updatedAt: string | number };
 type OperationsJob = { id: number; externalId: string; ownerEmail: string; category: string; title: string; budget: string; timeline: string; emergency: boolean; status: string; scheduledStartAt?: string | number | null; createdAt: string | number; updatedAt: string | number; matchingContractors: Array<{ businessName: string; ownerEmail: string; primaryService: string }>; quotes: Array<{ id: number; contractorEmail?: string | null; contractorName: string; amountCents: number; status: string; createdAt: string | number }> };
 type DemoContractorCompany = { ownerEmail: string; businessName: string; primaryService: string; homeBase: string; verificationStatus: string };
@@ -227,6 +227,8 @@ export default function Home() {
   const [progressError, setProgressError] = useState<string | null>(null);
   const [scheduledStartValues, setScheduledStartValues] = useState<Record<number, string>>({});
   const [onsiteVisitValues, setOnsiteVisitValues] = useState<Record<number, string>>({});
+  const [onsiteSchedulingQuote, setOnsiteSchedulingQuote] = useState<PersistedQuote | null>(null);
+  const [preferredOnsiteSlots, setPreferredOnsiteSlots] = useState(["", "", ""]);
   const [finalQuoteJob, setFinalQuoteJob] = useState<ContractorQuote | null>(null);
   const [contractorRequestQuote, setContractorRequestQuote] = useState<ContractorQuote | null>(null);
   const [finalQuoteAmount, setFinalQuoteAmount] = useState("");
@@ -1089,6 +1091,11 @@ export default function Home() {
     if (!selectedSavedJob) return;
     if (quote.status === "final_quote_ready") { await decideFinalQuote(quote, "accept_final"); return; }
     if (quote.status !== "submitted" && quote.status !== "onsite_requested") return;
+    if (quote.status === "submitted") {
+      setPreferredOnsiteSlots(["", "", ""]);
+      setOnsiteSchedulingQuote(quote);
+      return;
+    }
     setSavedQuotesStatus("loading");
     try {
       const response = await fetch(`/api/jobs/${selectedSavedJob.id}/quotes`, {
@@ -1110,9 +1117,43 @@ export default function Home() {
     }
   }
 
+  async function submitPreferredOnsiteSlots() {
+    if (!selectedSavedJob || !onsiteSchedulingQuote) return;
+    const slots = preferredOnsiteSlots.filter(Boolean).map((slot) => new Date(slot).toISOString());
+    if (!slots.length) { showNotice("Add at least one preferred visit date and time."); return; }
+    setSavedQuotesStatus("loading");
+    try {
+      const response = await fetch(`/api/jobs/${selectedSavedJob.id}/quotes`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "request_onsite", quoteId: onsiteSchedulingQuote.id, preferredSlots: slots }) });
+      const data = (await response.json().catch(() => ({}))) as { quote?: PersistedQuote; job?: PersistedJob; error?: string };
+      if (!response.ok || !data.quote) throw new Error(data.error || "Unable to send your visit preferences");
+      const verificationJob = { ...selectedSavedJob, ...(data.job ?? {}), status: "verification_pending" };
+      setSavedQuotes((current) => current.map((quote) => quote.id === data.quote!.id ? { ...quote, ...data.quote } : quote));
+      setPersistedJobs((current) => current.map((job) => job.id === verificationJob.id ? verificationJob : job));
+      setSelectedSavedJob(verificationJob);
+      setOnsiteSchedulingQuote(null);
+      showNotice(`Your preferred visit times were sent to ${onsiteSchedulingQuote.contractorName}.`);
+    } catch (error) { showNotice(error instanceof Error ? error.message : "Unable to send your visit preferences"); }
+    finally { setSavedQuotesStatus("idle"); }
+  }
+
+  async function confirmProposedOnsite(quote: PersistedQuote, value: string) {
+    if (!selectedSavedJob) return;
+    setSavedQuotesStatus("loading");
+    try {
+      const response = await fetch(`/api/jobs/${selectedSavedJob.id}/quotes`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "confirm_proposed_onsite", quoteId: quote.id, onsiteVisitAt: value }) });
+      const data = (await response.json().catch(() => ({}))) as { quote?: PersistedQuote; error?: string };
+      if (!response.ok || !data.quote) throw new Error(data.error || "Unable to confirm the visit");
+      setSavedQuotes((current) => current.map((item) => item.id === quote.id ? { ...item, ...data.quote } : item));
+      setOnsiteSchedulingQuote(null);
+      showNotice(`On-site visit confirmed for ${scheduledStartLabel(data.quote.onsiteVisitAt)}.`);
+    } catch (error) { showNotice(error instanceof Error ? error.message : "Unable to confirm the visit"); }
+    finally { setSavedQuotesStatus("idle"); }
+  }
+
   function quoteWorkflowLabel(quote: PersistedQuote) {
     if (quote.status === "submitted") return "Request on-site quote — no commitment";
     if (quote.status === "onsite_requested") return "Visit request sent";
+    if (quote.status === "onsite_proposed") return "Review proposed visit time";
     if (quote.status === "onsite_scheduled") return `Visit ${scheduledStartLabel(quote.onsiteVisitAt)}`;
     if (quote.status === "final_quote_ready") return "Review final quote";
     if (quote.status === "accepted") return "Final quote accepted ✓";
@@ -1833,6 +1874,8 @@ export default function Home() {
         </section>
       )}
 
+      {view === "matches" && savedQuotes.some((quote) => quote.status === "onsite_proposed") && <section className="app-shell onsite-proposal-alert"><div><p className="step-kicker">On-site verification</p><h2>A contractor suggested a different visit time.</h2><p>Review and confirm the proposed time before the visit is booked.</p></div>{savedQuotes.filter((quote) => quote.status === "onsite_proposed").map((quote) => <button key={quote.id} onClick={() => setOnsiteSchedulingQuote(quote)}>Review {quote.contractorName}'s proposal →</button>)}</section>}
+
       {view === "tracking" && (
         <section className="app-shell tracking-shell">
           {!trackingJob ? <div className="operations-empty"><span>JL</span><h2>No booked job to track</h2><p>Live progress appears after you select a submitted contractor quote.</p><button onClick={() => void openLatestRequest("matches")}>View my latest request</button></div> : <>
@@ -2033,6 +2076,8 @@ export default function Home() {
 
           {proTab === "jobs" && jobView === "quotes" && contractorQuotes.some((quote) => quote.status === "onsite_requested") && <section className="onsite-request-panel"><div><p className="aside-label">Action required</p><h2>Homeowner visit requests</h2><p>A homeowner has asked you to schedule an on-site verification. Review their request, then choose a weekday visit within two business days.</p></div><div className="onsite-request-list">{contractorQuotes.filter((quote) => quote.status === "onsite_requested").map((quote) => <article key={quote.id}><div><small>{quote.externalId} · {quote.category}</small><b>{quote.title}</b><span>Requested on-site verification</span></div><button onClick={() => setContractorRequestQuote(quote)}>View request & schedule →</button></article>)}</div></section>}
 
+          {proTab === "jobs" && jobView === "quotes" && contractorQuotes.some((quote) => quote.status === "onsite_requested") && <section className="preferred-slot-panel"><b>Homeowner preferred times</b>{contractorQuotes.filter((quote) => quote.status === "onsite_requested").flatMap((quote) => (quote.onsitePreferences ?? []).map((slot) => <button key={`${quote.id}-${slot}`} onClick={() => { setOnsiteVisitValues((current) => ({ ...current, [quote.id]: dateTimeInputValue(slot) })); setContractorRequestQuote(quote); }}>{quote.title} · {scheduledStartLabel(slot)}</button>))}</section>}
+
           {proTab === "inbox" && (
             <div className="pro-page inbox-page">
               <div className="pro-page-heading"><div><p className="step-kicker">Messages</p><h1>Customer conversations.</h1></div></div>
@@ -2095,7 +2140,9 @@ export default function Home() {
 
       <input id="verification-file-input" className="hidden-file-input" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadVerificationDocument(file); event.target.value = ""; }} />
 
-      {contractorRequestQuote && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="contractor-request-title"><div className="quote-drawer contractor-request-drawer"><button className="overlay-close" onClick={() => setContractorRequestQuote(null)} aria-label="Close request details">×</button><p className="step-kicker">Homeowner request · {contractorRequestQuote.externalId}</p><h2 id="contractor-request-title">{contractorRequestQuote.title}</h2><p className="quote-job-title">Review the submitted scope before selecting an on-site visit time.</p><div className="quote-scope"><span>✦</span><div><b>Requested scope</b><p>{contractorRequestQuote.description || "The homeowner has requested an on-site verification for this job."}</p></div></div><dl className="contractor-request-details"><div><dt>Service</dt><dd>{contractorRequestQuote.category}</dd></div><div><dt>Job size</dt><dd>{contractorRequestQuote.size || "Not provided"}</dd></div><div><dt>Timeline</dt><dd>{contractorRequestQuote.timeline || "To be confirmed"}</dd></div><div><dt>Area</dt><dd>{contractorRequestQuote.postalCode || "Shared after scheduling"}</dd></div></dl>{contractorRequestQuote.status === "onsite_requested" ? <section className="onsite-request-schedule"><b>On-site verification requested</b><p>Choose a weekday visit within the next two business days.</p><label htmlFor={`onsite-request-${contractorRequestQuote.id}`}>Visit date and time<input id={`onsite-request-${contractorRequestQuote.id}`} type="datetime-local" value={onsiteVisitValues[contractorRequestQuote.id] ?? dateTimeInputValue(contractorRequestQuote.onsiteVisitAt)} onChange={(event) => setOnsiteVisitValues((current) => ({ ...current, [contractorRequestQuote.id]: event.target.value }))} /></label><button className="send-quote" onClick={() => void scheduleOnsiteVisit(contractorRequestQuote)}>Schedule on-site visit →</button></section> : <section className="onsite-request-schedule"><b>On-site visit scheduled</b><p>{scheduledStartLabel(contractorRequestQuote.onsiteVisitAt)}</p><button className="send-quote" onClick={() => { setContractorRequestQuote(null); openFinalQuote(contractorRequestQuote); }}>Create finalized quote →</button></section>}</div></div>}
+      {onsiteSchedulingQuote && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="onsite-preferences-title"><div className="quote-drawer"><button className="overlay-close" onClick={() => setOnsiteSchedulingQuote(null)} aria-label="Close on-site scheduling">×</button><p className="step-kicker">On-site verification · {onsiteSchedulingQuote.contractorName}</p><h2 id="onsite-preferences-title">Choose preferred times.</h2><p className="quote-job-title">Provide up to three weekday date-and-time options within the next two business days. The contractor can confirm one or suggest another time for your approval.</p>{onsiteSchedulingQuote.status === "submitted" ? <><div className="onsite-slot-inputs">{preferredOnsiteSlots.map((slot, index) => <label key={index}>Preferred time {index + 1}{index === 0 ? " (required)" : " (optional)"}<input type="datetime-local" value={slot} onChange={(event) => setPreferredOnsiteSlots((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /></label>)}</div><button className="send-quote" disabled={savedQuotesStatus === "loading"} onClick={() => void submitPreferredOnsiteSlots()}>{savedQuotesStatus === "loading" ? "Sending…" : "Send preferred times →"}</button></> : <section className="onsite-request-schedule"><b>Contractor-proposed times</b><p>Select a time to confirm the on-site visit.</p>{(onsiteSchedulingQuote.onsiteProposals ?? []).map((slot) => <button key={slot} className="send-quote" disabled={savedQuotesStatus === "loading"} onClick={() => void confirmProposedOnsite(onsiteSchedulingQuote, slot)}>Confirm {scheduledStartLabel(slot)} →</button>)}</section>}</div></div>}
+
+      {contractorRequestQuote && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="contractor-request-title"><div className="quote-drawer contractor-request-drawer"><button className="overlay-close" onClick={() => setContractorRequestQuote(null)} aria-label="Close request details">×</button><p className="step-kicker">Homeowner request · {contractorRequestQuote.externalId}</p><h2 id="contractor-request-title">{contractorRequestQuote.title}</h2><p className="quote-job-title">Review the submitted scope before selecting an on-site visit time.</p><div className="quote-scope"><span>✦</span><div><b>Requested scope</b><p>{contractorRequestQuote.description || "The homeowner has requested an on-site verification for this job."}</p></div></div><dl className="contractor-request-details"><div><dt>Service</dt><dd>{contractorRequestQuote.category}</dd></div><div><dt>Job size</dt><dd>{contractorRequestQuote.size || "Not provided"}</dd></div><div><dt>Timeline</dt><dd>{contractorRequestQuote.timeline || "To be confirmed"}</dd></div><div><dt>Area</dt><dd>{contractorRequestQuote.postalCode || "Shared after scheduling"}</dd></div></dl>{contractorRequestQuote.status === "onsite_requested" ? <section className="onsite-request-schedule"><b>On-site verification requested</b><p>Choose a homeowner-preferred time to confirm it immediately, or enter a different time to send it back to the homeowner for confirmation.</p><label htmlFor={`onsite-request-${contractorRequestQuote.id}`}>Visit date and time<input id={`onsite-request-${contractorRequestQuote.id}`} type="datetime-local" value={onsiteVisitValues[contractorRequestQuote.id] ?? dateTimeInputValue(contractorRequestQuote.onsiteVisitAt)} onChange={(event) => setOnsiteVisitValues((current) => ({ ...current, [contractorRequestQuote.id]: event.target.value }))} /></label><button className="send-quote" onClick={() => void scheduleOnsiteVisit(contractorRequestQuote)}>Confirm or propose visit →</button></section> : <section className="onsite-request-schedule"><b>On-site visit scheduled</b><p>{scheduledStartLabel(contractorRequestQuote.onsiteVisitAt)}</p><button className="send-quote" onClick={() => { setContractorRequestQuote(null); openFinalQuote(contractorRequestQuote); }}>Create finalized quote →</button></section>}</div></div>}
 
       {finalQuoteJob && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="final-quote-title">
         <div className="quote-drawer final-quote-drawer">
