@@ -670,7 +670,9 @@ test("coordinates homeowner visit preferences with contractor confirmations and 
 
   assert.match(page, /Choose preferred time ranges/);
   assert.match(page, /Homeowner preferred time ranges/);
-  assert.match(page, /Confirm or propose visit/);
+  assert.match(page, /Choose visit options/);
+  assert.match(page, /Homeowner preferred time ranges/);
+  assert.match(page, /Send alternate time for approval/);
   assert.match(page, /Contractor-proposed times/);
   assert.match(page, /Ask for another time suggestion/);
   assert.match(page, /onsite-range-input/);
