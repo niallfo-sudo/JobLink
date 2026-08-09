@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
-import { agreementSignatures, documentRecords, jobEvents, jobRequests } from "../../../../../db/schema";
+import { agreementSignatures, documentRecords, jobAttachments, jobEvents, jobRequests } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
 import { notify } from "../../../../../lib/notifications";
 
@@ -20,6 +20,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!document || document.documentType !== "service_agreement") return Response.json({ error: "Service agreement not found" }, { status: 404 });
     const signerRole = document.ownerEmail === user.email ? "homeowner" : document.contractorEmail === user.email ? "contractor" : null;
     if (!signerRole) return Response.json({ error: "You are not a party to this agreement" }, { status: 403 });
+    if (signerRole === "homeowner") {
+      const photos = await db.select({ id: jobAttachments.id }).from(jobAttachments).where(and(eq(jobAttachments.jobId, document.jobId), eq(jobAttachments.ownerEmail, user.email), eq(jobAttachments.stage, "pre_work"), eq(jobAttachments.kind, "image"))).limit(1);
+      if (!photos.length) return Response.json({ error: "Upload at least one before-work photo before signing this agreement" }, { status: 409 });
+    }
     const [job] = await db.select().from(jobRequests).where(eq(jobRequests.id, document.jobId)).limit(1);
     if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
     const now = new Date();

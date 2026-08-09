@@ -288,6 +288,7 @@ export const jobAttachments = sqliteTable("job_attachments", {
   contentType: text("content_type").notNull(),
   sizeBytes: integer("size_bytes").notNull(),
   kind: text("kind").notNull(),
+  stage: text("stage").notNull().default("request"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
   uniqueIndex("job_attachments_storage_key_unique").on(table.storageKey),

@@ -738,3 +738,24 @@ test("places a homeowner approval action beside contractor-proposed visit times"
   assert.match(page, /setOnsiteSchedulingQuote\(quote\)/);
   assert.match(css, /quote-approval-banner/);
 });
+
+test("requires before-work photos and limits booked jobs to the selected contractor", async () => {
+  const [page, attachmentsRoute, signatureRoute, checkoutRoute, conversationsRoute, schema, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/[id]/attachments/route.ts"),
+    source("../app/api/documents/[id]/sign/route.ts"),
+    source("../app/api/payments/checkout/route.ts"),
+    source("../app/api/conversations/route.ts"),
+    source("../db/schema.ts"),
+    source("../drizzle/0026_pre_work_job_photos.sql"),
+  ]);
+  assert.match(page, /Before-work photos required/);
+  assert.match(page, /before signing or funding/i);
+  assert.match(attachmentsRoute, /form\.get\("stage"\) === "pre_work"/);
+  assert.match(attachmentsRoute, /Before-work documentation must use/);
+  assert.match(signatureRoute, /before-work photo before signing/i);
+  assert.match(checkoutRoute, /before-work photo before funding/i);
+  assert.match(conversationsRoute, /eq\(quotes\.status, "accepted"\)/);
+  assert.match(schema, /stage: text\("stage"\)/);
+  assert.match(migration, /ADD `stage` text NOT NULL DEFAULT 'request'/);
+});

@@ -19,9 +19,9 @@ type RoomEvent = { id: number; label: string; eventType: string; createdAt: stri
 type ContractorProfile = { businessName: string; legalName: string; phone: string; businessAddress: string; yearsInBusiness: number; about: string; primaryService: string; services: string[]; approvedServices: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: "starter" | "growth" | "pro"; subscriptionStatus: string; payoutsEnabled: boolean; verificationStatus: string };
 type PaymentMilestone = { id: number; paymentId: number; label: string; milestoneType: string; amountCents: number; status: string; proofNote: string; operationsNote?: string; proofSubmittedAt?: string | number | null; homeownerApprovedAt?: string | number | null; releasedAt?: string | number | null };
 type PaymentReview = PaymentMilestone & { externalId: string; jobTitle: string; contractorName: string; operationsNote?: string; operationsReviewedBy?: string | null; operationsReviewedAt?: string | number | null };
-type PaymentRecord = { id: number; jobId: number; externalId: string; title: string; contractorName: string; subtotalCents: number; customerFeeCents: number; totalCents: number; contractorPayoutCents: number; releasedCents: number; status: string; processor: string; viewerRole: "homeowner" | "contractor"; completionReviewSubmitted?: boolean; milestones?: PaymentMilestone[]; createdAt: string | number };
+type PaymentRecord = { id: number; jobId: number; externalId: string; title: string; contractorName: string; subtotalCents: number; customerFeeCents: number; totalCents: number; contractorPayoutCents: number; releasedCents: number; status: string; processor: string; viewerRole: "homeowner" | "contractor"; completionReviewSubmitted?: boolean; preWorkPhotoCount?: number; milestones?: PaymentMilestone[]; createdAt: string | number };
 type DocumentSignature = { id: number; signerRole: "homeowner" | "contractor"; signerName: string; signedAt: string | number; signingMethod: string };
-type GeneratedDocument = { id: number; quoteId?: number | null; jobTitle: string; jobNumber: string; documentType: string; title: string; status: string; viewerRole?: "homeowner" | "contractor"; signatures?: DocumentSignature[]; createdAt: string | number };
+type GeneratedDocument = { id: number; jobId: number; quoteId?: number | null; jobTitle: string; jobNumber: string; documentType: string; title: string; status: string; viewerRole?: "homeowner" | "contractor"; signatures?: DocumentSignature[]; preWorkPhotoCount?: number; createdAt: string | number };
 type ChangeOrderRecord = { id: number; externalId: string; reason: string; description: string; amountCents: number; scheduleImpact: string; status: string; contractorName: string; decisionName?: string | null };
 type VerifiedReview = { id: number; workmanship: number; communication: number; punctuality: number; cleanliness: number; averageScore: number; comment: string };
 type AppNotification = { id: number; jobId: number | null; notificationType: string; title: string; body: string; readAt: string | number | null; createdAt: string | number };
@@ -35,6 +35,26 @@ type ContractorQuote = { id: number; jobId: number; externalId: string; title: s
 type VerifiedContractor = { id: number; ownerEmail: string; businessName: string; primaryService: string; requestedServices: string[]; approvedServices: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: string; subscriptionStatus: string; payoutsEnabled: boolean; updatedAt: string | number };
 type OperationsJob = { id: number; externalId: string; ownerEmail: string; category: string; title: string; budget: string; timeline: string; emergency: boolean; status: string; scheduledStartAt?: string | number | null; createdAt: string | number; updatedAt: string | number; matchingContractors: Array<{ businessName: string; ownerEmail: string; primaryService: string }>; quotes: Array<{ id: number; contractorEmail?: string | null; contractorName: string; amountCents: number; status: string; createdAt: string | number }> };
 type DemoContractorCompany = { ownerEmail: string; businessName: string; primaryService: string; homeBase: string; verificationStatus: string };
+
+function BeforeWorkPhotoUpload({ jobId, photoCount, onUploaded }: { jobId: number; photoCount: number; onUploaded: () => void }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  async function upload(files: FileList | null) {
+    if (!files?.length) return;
+    setUploading(true); setError("");
+    try {
+      const form = new FormData();
+      form.append("stage", "pre_work");
+      Array.from(files).slice(0, 5).forEach((file) => form.append("files", file));
+      const response = await fetch(`/api/jobs/${jobId}/attachments`, { method: "POST", body: form });
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Unable to upload before-work photos");
+      onUploaded();
+    } catch (uploadError) { setError(uploadError instanceof Error ? uploadError.message : "Unable to upload before-work photos"); }
+    finally { setUploading(false); }
+  }
+  return <section className="before-work-photo-upload"><b>Before-work photos required</b><p>Upload clear images of the work area before signing or funding. They are kept with the JobLink job record for scope and completion verification.</p>{photoCount > 0 ? <span className="agreement-complete">{photoCount} before-work photo{photoCount === 1 ? "" : "s"} recorded ✓</span> : <label>Choose images<input type="file" accept="image/jpeg,image/png,image/webp,image/heic" multiple disabled={uploading} onChange={(event) => void upload(event.target.files)} /></label>}{uploading && <small>Uploading before-work photos…</small>}{error && <small className="quote-submit-error">{error}</small>}</section>;
+}
 
 function PaymentReleaseWorkflow({ payment, actionId, onFund, onSubmitProof, onApprove, onOpenReview }: { payment: PaymentRecord; actionId: string | null; onFund: (payment: PaymentRecord) => void; onSubmitProof: (payment: PaymentRecord, milestone: PaymentMilestone, proof: string) => void; onApprove: (payment: PaymentRecord, milestone: PaymentMilestone) => void; onOpenReview: (payment: PaymentRecord) => void }) {
   const [proofs, setProofs] = useState<Record<number, string>>({});
@@ -2039,8 +2059,8 @@ export default function Home() {
               </>}
               {accountTab === "documents" && <>
                 <div className="account-section-head"><div><p className="aside-label">Paperwork</p><h2>Documents</h2></div><span>{generatedDocuments.length} generated</span></div>
-                <div className="document-readiness"><span>✦</span><div><b>Paperwork is generated from accepted quotes.</b><p>Each secure document captures the job scope, selected professional, accepted amount and current payment status.</p></div></div>
-                <div className="agreement-signature-workflows">{generatedDocuments.filter((document) => document.documentType === "service_agreement").map((document) => <AgreementSignatureWorkflow key={`agreement-${document.id}`} document={document} actionId={documentSigningId} onSign={(record, signerName, consent) => void signServiceAgreement(record, signerName, consent)} />)}</div>
+                <div className="document-readiness"><span>✦</span><div><b>Paperwork is prepared before final acceptance.</b><p>Upload before-work photos, then both parties sign the service agreement before the homeowner can accept and fund the final job total.</p></div></div>
+                <div className="agreement-signature-workflows">{generatedDocuments.filter((document) => document.documentType === "service_agreement").map((document) => <div key={`agreement-photo-${document.id}`}>{document.viewerRole === "homeowner" && <BeforeWorkPhotoUpload jobId={document.jobId} photoCount={document.preWorkPhotoCount ?? 0} onUploaded={() => void refreshGeneratedDocuments()} />}<AgreementSignatureWorkflow document={document} actionId={documentSigningId} onSign={(record, signerName, consent) => void signServiceAgreement(record, signerName, consent)} /></div>)}</div>
                 {generatedDocuments.length === 0 ? <div className="documents-empty"><span>DOC</span><h3>No generated paperwork yet</h3><p>Accept a quote to create the service agreement, accepted quote and invoice.</p></div> : <div className="document-group"><h3>JobLink documents</h3>{generatedDocuments.map((document) => <article key={document.id}><span className="doc-icon">{document.documentType === "invoice" ? "INV" : document.documentType === "accepted_quote" ? "QTE" : "AGR"}</span><div><b>{document.title}</b><small>{document.jobNumber} · {document.jobTitle} · {document.status.replaceAll("_", " ")}</small></div><button onClick={() => window.open(`/api/documents/${document.id}`, "_blank", "noopener,noreferrer")}>Open printable ↗</button></article>)}</div>}
               </>}
               {accountTab === "saved" && <>

@@ -25,7 +25,7 @@ async function authorizedJob(jobId: number, email: string) {
   if (!job) return null;
   if (job.ownerEmail === email) return { job, viewerRole: "homeowner" as const };
   const [contractorAccess] = await db.select({ jobId: quotes.jobId }).from(quotes)
-    .where(and(eq(quotes.jobId, jobId), eq(quotes.contractorEmail, email))).limit(1);
+    .where(and(eq(quotes.jobId, jobId), eq(quotes.contractorEmail, email), eq(quotes.status, "accepted"))).limit(1);
   return contractorAccess ? { job, viewerRole: "contractor" as const } : null;
 }
 
@@ -41,6 +41,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     contentType: jobAttachments.contentType,
     sizeBytes: jobAttachments.sizeBytes,
     kind: jobAttachments.kind,
+    stage: jobAttachments.stage,
     createdAt: jobAttachments.createdAt,
   }).from(jobAttachments).where(eq(jobAttachments.jobId, jobId)).orderBy(asc(jobAttachments.createdAt));
   return Response.json({ attachments: attachments.map((attachment) => ({ ...attachment, url: `/api/jobs/${jobId}/attachments/${attachment.id}` })) });
@@ -55,9 +56,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!access || access.viewerRole !== "homeowner") return Response.json({ error: "Job not found" }, { status: 404 });
 
   const form = await request.formData();
+  const stage = form.get("stage") === "pre_work" ? "pre_work" : null;
+  if (!stage) return Response.json({ error: "This upload must be identified as before-work documentation" }, { status: 400 });
   const files = form.getAll("files").filter((value): value is File => value instanceof File && value.size > 0);
   if (!files.length || files.length > 5) return Response.json({ error: "Choose between 1 and 5 files" }, { status: 400 });
-  if (files.some((file) => !allowedTypes.has(file.type))) return Response.json({ error: "Use JPG, PNG, WebP, HEIC, MP4, MOV or WebM files" }, { status: 400 });
+  if (files.some((file) => !allowedTypes.has(file.type) || !file.type.startsWith("image/"))) return Response.json({ error: "Before-work documentation must use JPG, PNG, WebP or HEIC images" }, { status: 400 });
   if (files.some((file) => file.size > maxFileBytes) || files.reduce((sum, file) => sum + file.size, 0) > maxTotalBytes) {
     return Response.json({ error: "Uploads are limited to 25 MB each and 50 MB total" }, { status: 400 });
   }
@@ -79,6 +82,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       contentType: file.type,
       sizeBytes: file.size,
       kind,
+      stage,
     }))).returning();
     return Response.json({ attachments: saved.map(({ storageKey: _storageKey, ownerEmail: _ownerEmail, ...attachment }) => ({ ...attachment, url: `/api/jobs/${jobId}/attachments/${attachment.id}` })) }, { status: 201 });
   } catch (error) {

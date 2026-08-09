@@ -19,7 +19,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const [job] = await db.select().from(jobRequests).where(eq(jobRequests.id, jobId)).limit(1);
   if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
   const [contractorAccess] = job.ownerEmail === user.email ? [{ jobId }] : await db.select({ jobId: quotes.jobId }).from(quotes)
-    .where(and(eq(quotes.jobId, jobId), eq(quotes.contractorEmail, user.email))).limit(1);
+    .where(and(eq(quotes.jobId, jobId), eq(quotes.contractorEmail, user.email), eq(quotes.status, "accepted"))).limit(1);
   if (!contractorAccess) return Response.json({ error: "Job not found" }, { status: 404 });
 
   const [attachment] = await db.select().from(jobAttachments)

@@ -1,6 +1,6 @@
 import { desc, eq, inArray, or } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { jobRequests, paymentMilestones, paymentRecords, verifiedReviews } from "../../../db/schema";
+import { jobAttachments, jobRequests, paymentMilestones, paymentRecords, verifiedReviews } from "../../../db/schema";
 import { getContractorActor } from "../../contractor-demo";
 
 export async function GET() {
@@ -13,12 +13,13 @@ export async function GET() {
       .orderBy(desc(paymentRecords.createdAt)).limit(50);
     const ids = rows.map((row) => row.payment.id);
     const jobIds = rows.map((row) => row.payment.jobId);
-    const [milestones, reviews] = await Promise.all([
+    const [milestones, reviews, attachments] = await Promise.all([
       ids.length ? getDb().select().from(paymentMilestones).where(inArray(paymentMilestones.paymentId, ids)).orderBy(paymentMilestones.id) : [],
       jobIds.length ? getDb().select({ jobId: verifiedReviews.jobId }).from(verifiedReviews).where(inArray(verifiedReviews.jobId, jobIds)) : [],
+      jobIds.length ? getDb().select({ jobId: jobAttachments.jobId, kind: jobAttachments.kind, stage: jobAttachments.stage }).from(jobAttachments).where(inArray(jobAttachments.jobId, jobIds)) : [],
     ]);
     const reviewedJobIds = new Set(reviews.map((review) => review.jobId));
-    return Response.json({ payments: rows.map((row) => ({ ...row.payment, ...row.job, completionReviewSubmitted: reviewedJobIds.has(row.payment.jobId), viewerRole: row.payment.ownerEmail === user.email ? "homeowner" : "contractor", milestones: milestones.filter((milestone) => milestone.paymentId === row.payment.id) })) });
+    return Response.json({ payments: rows.map((row) => ({ ...row.payment, ...row.job, completionReviewSubmitted: reviewedJobIds.has(row.payment.jobId), preWorkPhotoCount: attachments.filter((attachment) => attachment.jobId === row.payment.jobId && attachment.stage === "pre_work" && attachment.kind === "image").length, viewerRole: row.payment.ownerEmail === user.email ? "homeowner" : "contractor", milestones: milestones.filter((milestone) => milestone.paymentId === row.payment.id) })) });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }
