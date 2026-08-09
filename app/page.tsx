@@ -66,6 +66,11 @@ function PaymentReleaseWorkflow({ payment, actionId, onFund, onSubmitProof, onAp
   </section>;
 }
 
+function DemoLifecycleControls({ jobs, actionId, onRun }: { jobs: PersistedJob[]; actionId: string | null; onRun: (job: PersistedJob, action: "seed" | "sign" | "fund" | "approve_all") => void }) {
+  if (!jobs.length) return null;
+  return <section className="demo-lifecycle-panel"><div><p className="aside-label">Demo job simulator</p><h3>Create sample documents, signatures and payment activity.</h3><p>Every action below is clearly marked as a simulation. It creates no legal signature, charge, transfer or real approval.</p></div><div className="demo-lifecycle-list">{jobs.map((job) => <article key={`demo-${job.id}`}><div><b>{job.title}</b><small>{job.externalId} · {job.status.replaceAll("_", " ")}</small></div><div><button disabled={actionId !== null} onClick={() => onRun(job, "seed")}>{actionId === `seed-${job.id}` ? "Creating…" : "1. Create demo records"}</button><button disabled={actionId !== null} onClick={() => onRun(job, "sign")}>{actionId === `sign-${job.id}` ? "Signing…" : "2. Simulate signatures"}</button><button disabled={actionId !== null} onClick={() => onRun(job, "fund")}>{actionId === `fund-${job.id}` ? "Funding…" : "3. Simulate funding"}</button><button disabled={actionId !== null} onClick={() => onRun(job, "approve_all")}>{actionId === `approve_all-${job.id}` ? "Recording…" : "4. Simulate approvals"}</button></div></article>)}</div></section>;
+}
+
 function AgreementSignatureWorkflow({ document, actionId, onSign }: { document: GeneratedDocument; actionId: number | null; onSign: (document: GeneratedDocument, signerName: string, consent: boolean) => void }) {
   const [signerName, setSignerName] = useState("");
   const [consent, setConsent] = useState(false);
@@ -242,6 +247,7 @@ export default function Home() {
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([]);
   const [paymentCheckoutId, setPaymentCheckoutId] = useState<number | null>(null);
   const [paymentWorkflowAction, setPaymentWorkflowAction] = useState<string | null>(null);
+  const [demoLifecycleAction, setDemoLifecycleAction] = useState<string | null>(null);
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
   const [documentSigningId, setDocumentSigningId] = useState<number | null>(null);
   const [progressUpdatingId, setProgressUpdatingId] = useState<number | null>(null);
@@ -343,6 +349,7 @@ export default function Home() {
   const finalProgress = Math.max(0, Number(finalProgressAmount) || 0);
   const finalCheckpointOverage = finalDeposit + finalProgress > finalProjectTotal;
   const finalCompletionBalance = Math.max(0, finalProjectTotal - finalDeposit - finalProgress);
+  const demoEligibleJobs = persistedJobs.filter((job) => ["booked", "in_progress", "completed"].includes(job.status));
   const requestStepValid = step === 0 ? scope.trim().length >= 5 : step === 1 ? size.trim().length >= 2 && (requestDetailLevel === "basic" || (selectedJobTasks.length > 0 && Object.values(detailFieldValues).some((value) => value.trim().length > 0))) : step === 2 ? postalCode.trim().length >= 3 && (timeline !== "Custom" || customTimeline.trim().length >= 3) : true;
 
   function signInFor(portal: "homeowner" | "contractor" | "admin") {
@@ -1476,6 +1483,21 @@ export default function Home() {
     } catch { /* Preserve the latest visible documents. */ }
   }
 
+  async function runDemoLifecycle(job: PersistedJob, action: "seed" | "sign" | "fund" | "approve_all") {
+    setDemoLifecycleAction(`${action}-${job.id}`);
+    try {
+      const response = await fetch("/api/demo/lifecycle", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId: job.id, action }) });
+      const data = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+      if (!response.ok) throw new Error(data.error || "Unable to run the demo simulation");
+      await Promise.all([refreshGeneratedDocuments(), refreshPaymentRecords()]);
+      showNotice(data.message || "Demo records updated. No money moved.");
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "Unable to run the demo simulation");
+    } finally {
+      setDemoLifecycleAction(null);
+    }
+  }
+
   async function signServiceAgreement(document: GeneratedDocument, signerName: string, consent: boolean) {
     setDocumentSigningId(document.id);
     try {
@@ -2079,6 +2101,7 @@ export default function Home() {
               {accountTab === "payments" && <>
                 <div className="account-section-head"><div><p className="aside-label">Money</p><h2>Payments</h2></div><span className="protected-badge">Secure checkout</span></div>
                 <div className="payment-readiness"><span>◎</span><div><b>Payment demo for accepted quotes.</b><p>Simulate the complete payment record and fee breakdown without charging a card or moving money.</p></div><em>Demo only</em></div>
+                <DemoLifecycleControls jobs={demoEligibleJobs} actionId={demoLifecycleAction} onRun={(job, action) => void runDemoLifecycle(job, action)} />
                 <div className="payment-release-workflows">{paymentRecords.map((payment) => <PaymentReleaseWorkflow key={`workflow-${payment.id}`} payment={payment} actionId={paymentWorkflowAction} onFund={(record) => void startPaymentCheckout(record)} onSubmitProof={(record, milestone, proof) => void submitPaymentProof(record, milestone, proof)} onApprove={(record, milestone) => void approvePaymentMilestone(record, milestone)} onOpenReview={(record) => void openCompletionReview(record)} />)}</div>
                 {paymentRecords.length > 0 && <div className="live-payment-list"><div className="transaction-head"><span>Job</span><span>Professional</span><span>Status</span><span>Total</span></div>{paymentRecords.map((payment) => <div key={payment.id}><span>{payment.externalId}</span><span><b>{payment.contractorName}</b>{payment.title}</span><em>{payment.status.replaceAll("_", " ")}</em><strong>${(payment.totalCents / 100).toLocaleString()}</strong><small>Demo: contractor ${(payment.subtotalCents / 100).toLocaleString()} + JobLink fee ${(payment.customerFeeCents / 100).toLocaleString()}</small>{payment.viewerRole === "homeowner" && payment.status !== "demo_paid" && <button disabled={paymentCheckoutId === payment.id} onClick={() => void startPaymentCheckout(payment)}>{paymentCheckoutId === payment.id ? "Simulating…" : "Simulate payment →"}</button>}</div>)}</div>}
                 <div className="payment-summary"><article><span>Accepted job value</span><b>${(paymentRecords.reduce((total, payment) => total + payment.subtotalCents, 0) / 100).toLocaleString()}</b><small>Contractor prices recorded</small></article><article><span>Demo JobLink fees</span><b>${(paymentRecords.reduce((total, payment) => total + payment.customerFeeCents, 0) / 100).toLocaleString()}</b><small>Simulated 3% customer fee</small></article><article><span>Simulated payments</span><b className="card-ending">{paymentRecords.filter((payment) => payment.status === "demo_paid").length}</b><small>No card charged · no funds moved</small></article></div>
@@ -2087,6 +2110,7 @@ export default function Home() {
               {accountTab === "documents" && <>
                 <div className="account-section-head"><div><p className="aside-label">Paperwork</p><h2>Documents</h2></div><span>{generatedDocuments.length} generated</span></div>
                 <div className="document-readiness"><span>✦</span><div><b>Paperwork is prepared before final acceptance.</b><p>Upload before-work photos, then both parties sign the service agreement before the homeowner can accept and fund the final job total.</p></div></div>
+                <DemoLifecycleControls jobs={demoEligibleJobs} actionId={demoLifecycleAction} onRun={(job, action) => void runDemoLifecycle(job, action)} />
                 <div className="agreement-signature-workflows">{generatedDocuments.filter((document) => document.documentType === "service_agreement").map((document) => <div key={`agreement-photo-${document.id}`}>{document.viewerRole === "homeowner" && <BeforeWorkPhotoUpload jobId={document.jobId} photoCount={document.preWorkPhotoCount ?? 0} onUploaded={() => void refreshGeneratedDocuments()} />}<AgreementSignatureWorkflow document={document} actionId={documentSigningId} onSign={(record, signerName, consent) => void signServiceAgreement(record, signerName, consent)} /></div>)}</div>
                 {generatedDocuments.length === 0 ? <div className="documents-empty"><span>DOC</span><h3>No generated paperwork yet</h3><p>Accept a quote to create the service agreement, accepted quote and invoice.</p></div> : <div className="document-group"><h3>JobLink documents</h3>{generatedDocuments.map((document) => <article key={document.id}><span className="doc-icon">{document.documentType === "invoice" ? "INV" : document.documentType === "accepted_quote" ? "QTE" : "AGR"}</span><div><b>{document.title}</b><small>{document.jobNumber} · {document.jobTitle} · {document.status.replaceAll("_", " ")}</small></div><button onClick={() => window.open(`/api/documents/${document.id}`, "_blank", "noopener,noreferrer")}>Open printable ↗</button></article>)}</div>}
               </>}
