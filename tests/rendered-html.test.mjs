@@ -406,6 +406,20 @@ test("waives quote-rating deductions when an out-of-range final quote is selecte
   assert.match(reputationRoute, /accepted_out_of_range/);
 });
 
+test("shows and ranks preliminary estimates using JobLink Score and Quote Rating", async () => {
+  const [page, quoteRoute] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+  ]);
+
+  assert.match(page, /Initial estimate ratings/);
+  assert.match(page, /JobLink Score and Quote Rating determine the order/);
+  assert.match(page, /best overall current match/);
+  assert.match(quoteRoute, /publicContractorRatings/);
+  assert.match(quoteRoute, /matchScore/);
+  assert.match(quoteRoute, /detailedQuotes\.sort/);
+});
+
 test("compares verified contractor information and estimated project dates on preliminary quotes", async () => {
   const [page, quoteRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),

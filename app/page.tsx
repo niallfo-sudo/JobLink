@@ -7,7 +7,7 @@ type ProTab = "overview" | "opportunities" | "jobs" | "inbox" | "business";
 type AccountTab = "jobs" | "payments" | "documents" | "saved";
 type AdminTab = "overview" | "jobs" | "verification" | "contractors" | "fraud" | "disputes" | "team";
 type PersistedJob = { id: number; externalId: string; category: string; title: string; description?: string; size?: string; timeline?: string; postalCode?: string; emergency?: boolean; status: string; budget: string; scheduledStartAt?: string | number | null; createdAt: string | number };
-type ContractorComparison = { primaryService: string; approvedServices: string[]; homeBase: string; serviceRadiusKm: number; yearsInBusiness: number; teamSize: number; emergencyAvailable: boolean; about: string; verificationStatus: string; reviewCount: number; averageRating: number | null };
+type ContractorComparison = { primaryService: string; approvedServices: string[]; homeBase: string; serviceRadiusKm: number; yearsInBusiness: number; teamSize: number; emergencyAvailable: boolean; about: string; verificationStatus: string; reviewCount: number; averageRating: number | null; jobLinkScore?: number | null; quoteRating?: number | null; quoteComparisonCount?: number; matchScore?: number };
 type FinalQuoteOption = { id: string; title: string; description: string; amountCents: number; depositCents: number; progressCents: number; completionCents: number };
 type FinalQuoteOptionDraft = { id: string; title: string; description: string; amount: string; depositAmount: string; progressAmount: string; completionAmount: string };
 type PersistedQuote = { id: number; contractorName: string; amountCents: number; initialMinCents?: number; initialMaxCents?: number; message: string; availableAt: string; estimatedStartAt?: string | number | null; estimatedFinishAt?: string | number | null; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; finalOptions?: FinalQuoteOption[]; selectedFinalOptionId?: string | null; contractor?: ContractorComparison | null };
@@ -1746,13 +1746,14 @@ export default function Home() {
               ))}
               {!savedRequestId && <div className="matches-loading"><span>JL</span><h3>No request selected</h3><p>Post a request or open one from your account to compare its quotes.</p><button onClick={() => beginRequest()}>Post a request →</button></div>}
               {savedRequestId && savedQuotesStatus !== "loading" && savedQuotes.length === 0 && <div className="matches-loading"><span>JL</span><h3>Waiting for verified contractors</h3><p>Your request is live. JobLink will notify you when a qualified contractor submits a real quote.</p><button onClick={() => go("account")}>Open my requests →</button></div>}
+              {savedRequestId && savedQuotes.length > 0 && <section className="estimate-rating-summary"><div><p className="aside-label">Initial estimate ratings</p><h3>Ranked offers</h3><p>JobLink Score and Quote Rating determine the order. Price only breaks a tie.</p></div><div className="estimate-rating-list">{savedQuotes.map((quote, index) => <article key={`ratings-${quote.id}`}><span>#{index + 1}</span><b>{quote.contractorName}</b><small>JobLink Score <strong>{quote.contractor?.jobLinkScore ?? "Building"}</strong> · Quote Rating <strong>{quote.contractor?.quoteRating ?? "Building"}</strong></small></article>)}</div></section>}
             </div>
             {savedQuotes.length > 0 && <aside className="insight-card">
               <span className="insight-icon">✦</span>
               <p className="aside-label">JobLink insight</p>
-              <h3>{savedQuotes[0].contractorName} submitted the lowest current estimate.</h3>
-              <p>This is a preliminary, non-binding estimate. Requesting a visit does not select this contractor or accept their price. You may compare multiple on-site quotes.</p>
-              <div><span>Submitted price</span><b>${(savedQuotes[0].amountCents / 100).toLocaleString()}</b></div><div><span>Availability</span><b>{savedQuotes[0].availableAt}</b></div>
+              <h3>{savedQuotes[0].contractorName} is the best overall current match.</h3>
+              <p>Offers are ordered by JobLink Score and Quote Rating. Price only breaks a tie. This is a preliminary, non-binding estimate, so you may compare multiple on-site quotes.</p>
+              <div><span>JobLink Score</span><b>{savedQuotes[0].contractor?.jobLinkScore ?? "Building"}</b></div><div><span>Quote Rating</span><b>{savedQuotes[0].contractor?.quoteRating ?? "Building"}</b></div><div><span>Submitted price</span><b>${(savedQuotes[0].amountCents / 100).toLocaleString()}</b></div><div><span>Availability</span><b>{savedQuotes[0].availableAt}</b></div>
               <button disabled={savedQuotesStatus === "loading" || savedQuotes[0].status !== "submitted"} onClick={() => void acceptSavedQuote(savedQuotes[0])}>{savedQuotes[0].status === "submitted" ? "Request on-site quote — no commitment →" : quoteWorkflowLabel(savedQuotes[0])}</button>
             </aside>}
           </div>

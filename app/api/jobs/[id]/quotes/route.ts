@@ -50,6 +50,19 @@ function quoteAccuracy(initialMinCents: number, initialMaxCents: number, finalCe
   return { delta: -Math.min(6, Math.max(2, Math.ceil((distance / initialMinCents) * 10))), status: "out_of_range" };
 }
 
+function publicContractorRatings(input: { reviewCount: number; averageScore: number; acceptedJobCount: number; completedJobCount: number; quoteDeltas: number[] }) {
+  const quality = input.reviewCount ? Math.round(input.averageScore / 5) : 0;
+  const completion = input.acceptedJobCount ? Math.round((input.completedJobCount / input.acceptedJobCount) * 100) : 0;
+  const documentation = input.completedJobCount ? Math.min(100, Math.round((input.reviewCount / input.completedJobCount) * 100)) : 0;
+  const jobLinkScore = input.acceptedJobCount ? Math.round(quality * 0.55 + completion * 0.30 + documentation * 0.15) : null;
+  const quoteComparisonCount = input.quoteDeltas.length;
+  const averageQuoteDelta = quoteComparisonCount ? input.quoteDeltas.reduce((sum, delta) => sum + delta, 0) / quoteComparisonCount : 0;
+  const quoteRating = quoteComparisonCount ? Math.max(0, Math.min(100, Math.round(70 + averageQuoteDelta + Math.min(10, Math.max(0, quoteComparisonCount - 1) * 2)))) : null;
+  // New businesses are not punished for having no history. Price is only used as a tie-breaker.
+  const matchScore = Math.round((jobLinkScore ?? 60) * 0.60 + (quoteRating ?? 70) * 0.35 + (input.reviewCount ? quality : 60) * 0.05);
+  return { jobLinkScore, quoteRating, quoteComparisonCount, matchScore };
+}
+
 function parseFinalOptions(value: string | null | undefined): FinalQuoteOption[] {
   try {
     const parsed = JSON.parse(value || "[]");
@@ -96,18 +109,30 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
     const db = getDb();
     const rows = await db.select().from(quotes).where(eq(quotes.jobId, jobId)).orderBy(asc(quotes.amountCents));
-    const contractorEmails = rows.flatMap((quote) => quote.contractorEmail ? [quote.contractorEmail] : []);
-    const [profiles, ratings] = contractorEmails.length ? await Promise.all([
+    const contractorEmails = [...new Set(rows.flatMap((quote) => quote.contractorEmail ? [quote.contractorEmail] : []))];
+    const [profiles, ratings, acceptedRows, completedRows, accuracyRows] = contractorEmails.length ? await Promise.all([
       db.select({ ownerEmail: contractorProfiles.ownerEmail, primaryService: contractorProfiles.primaryService, approvedServices: contractorProfiles.approvedServices, homeBase: contractorProfiles.homeBase, serviceRadiusKm: contractorProfiles.serviceRadiusKm, yearsInBusiness: contractorProfiles.yearsInBusiness, teamSize: contractorProfiles.teamSize, emergencyAvailable: contractorProfiles.emergencyAvailable, about: contractorProfiles.about, verificationStatus: contractorProfiles.verificationStatus }).from(contractorProfiles).where(inArray(contractorProfiles.ownerEmail, contractorEmails)),
       db.select({ contractorEmail: verifiedReviews.contractorEmail, reviewCount: count(), averageScore: avg(verifiedReviews.averageScore) }).from(verifiedReviews).where(inArray(verifiedReviews.contractorEmail, contractorEmails)).groupBy(verifiedReviews.contractorEmail),
-    ]) : [[], []];
+      db.select({ contractorEmail: quotes.contractorEmail }).from(quotes).where(and(inArray(quotes.contractorEmail, contractorEmails), eq(quotes.status, "accepted"))),
+      db.select({ contractorEmail: quotes.contractorEmail }).from(quotes).innerJoin(jobRequests, eq(quotes.jobId, jobRequests.id)).where(and(inArray(quotes.contractorEmail, contractorEmails), eq(quotes.status, "accepted"), eq(jobRequests.status, "completed"))),
+      db.select({ contractorEmail: quotes.contractorEmail, quoteAccuracyDelta: quotes.quoteAccuracyDelta }).from(quotes).where(and(inArray(quotes.contractorEmail, contractorEmails), ne(quotes.quoteAccuracyStatus, "pending"), ne(quotes.quoteAccuracyStatus, "unavailable"), ne(quotes.quoteAccuracyStatus, "accepted_out_of_range"))),
+    ]) : [[], [], [], [], []];
     const profileByEmail = new Map(profiles.map((profile) => [profile.ownerEmail, profile]));
     const ratingByEmail = new Map(ratings.map((rating) => [rating.contractorEmail, rating]));
-    return Response.json({ job, quotes: rows.map((quote) => {
+    const acceptedByEmail = new Map<string, number>();
+    const completedByEmail = new Map<string, number>();
+    const accuracyByEmail = new Map<string, number[]>();
+    for (const row of acceptedRows) if (row.contractorEmail) acceptedByEmail.set(row.contractorEmail, (acceptedByEmail.get(row.contractorEmail) ?? 0) + 1);
+    for (const row of completedRows) if (row.contractorEmail) completedByEmail.set(row.contractorEmail, (completedByEmail.get(row.contractorEmail) ?? 0) + 1);
+    for (const row of accuracyRows) if (row.contractorEmail) accuracyByEmail.set(row.contractorEmail, [...(accuracyByEmail.get(row.contractorEmail) ?? []), row.quoteAccuracyDelta ?? 0]);
+    const detailedQuotes = rows.map((quote) => {
       const profile = quote.contractorEmail ? profileByEmail.get(quote.contractorEmail) : undefined;
       const rating = quote.contractorEmail ? ratingByEmail.get(quote.contractorEmail) : undefined;
-      return { ...quote, finalOptions: parseFinalOptions(quote.finalOptions), contractor: profile ? { ...profile, approvedServices: JSON.parse(profile.approvedServices || "[]"), reviewCount: Number(rating?.reviewCount ?? 0), averageRating: rating?.averageScore ? Number(rating.averageScore) / 100 : null } : null };
-    }) });
+      const publicRatings = quote.contractorEmail ? publicContractorRatings({ reviewCount: Number(rating?.reviewCount ?? 0), averageScore: Number(rating?.averageScore ?? 0), acceptedJobCount: acceptedByEmail.get(quote.contractorEmail) ?? 0, completedJobCount: completedByEmail.get(quote.contractorEmail) ?? 0, quoteDeltas: accuracyByEmail.get(quote.contractorEmail) ?? [] }) : null;
+      return { ...quote, finalOptions: parseFinalOptions(quote.finalOptions), contractor: profile ? { ...profile, approvedServices: JSON.parse(profile.approvedServices || "[]"), reviewCount: Number(rating?.reviewCount ?? 0), averageRating: rating?.averageScore ? Number(rating.averageScore) / 100 : null, ...publicRatings } : null };
+    });
+    detailedQuotes.sort((left, right) => (right.contractor?.matchScore ?? 0) - (left.contractor?.matchScore ?? 0) || left.amountCents - right.amountCents);
+    return Response.json({ job, quotes: detailedQuotes });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unable to load quotes" }, { status: 500 });
   }
