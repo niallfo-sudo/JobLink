@@ -25,7 +25,7 @@ export async function GET() {
       createdAt: jobRequests.createdAt,
     }).from(jobRequests).orderBy(desc(jobRequests.createdAt)).limit(20);
     const enabledServices = (JSON.parse(profile.approvedServices || "[]") as string[]).map((service) => service.toLowerCase());
-    return Response.json({ jobs: jobs.filter((job) => job.status === "matching" && enabledServices.some((service) => service.includes(job.category.toLowerCase()) || job.category.toLowerCase().includes(service)) && (!job.emergency || profile.emergencyAvailable !== false)) });
+    return Response.json({ jobs: jobs.filter((job) => job.status === "matching" && enabledServices.includes(job.category.toLowerCase()) && (!job.emergency || profile.emergencyAvailable !== false)) });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }

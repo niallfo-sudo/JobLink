@@ -208,7 +208,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const profile = await eligibleProfile(user.email);
     if (!profile || !profile.acceptingWork) return Response.json({ error: "A verified, active contractor profile that is accepting work is required" }, { status: 403 });
     const services = (JSON.parse(profile.approvedServices || "[]") as string[]).map((service) => service.toLowerCase());
-    if (!services.some((service: string) => service.includes(job.category.toLowerCase()) || job.category.toLowerCase().includes(service))) return Response.json({ error: "This job is outside your verified services" }, { status: 403 });
+    if (!services.includes(job.category.toLowerCase())) return Response.json({ error: "This job is outside your verified services" }, { status: 403 });
     const [existingQuote] = await db.select({ id: quotes.id }).from(quotes).where(and(eq(quotes.jobId, jobId), eq(quotes.contractorEmail, user.email))).limit(1);
     if (existingQuote) return Response.json({ error: `${profile.businessName} has already submitted a quote for this request. Switch to a different contractor company to submit another quote.` }, { status: 409 });
     const [quote] = await db.insert(quotes).values({ jobId, contractorEmail: user.email, contractorName: profile.businessName, amountCents, initialMinCents, initialMaxCents, message: preliminaryMessage, availableAt: payload.availableAt?.trim() || "On-site availability to be confirmed", estimatedStartAt }).returning();

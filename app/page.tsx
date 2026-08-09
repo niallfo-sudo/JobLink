@@ -364,7 +364,7 @@ export default function Home() {
       const response = await fetch("/api/demo-auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace }) });
       const data = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Demo access could not be started");
-      window.location.reload();
+      window.location.assign(workspace === "contractor" ? "/?workspace=contractor" : "/");
     } catch (error) {
       setAccountActionError(error instanceof Error ? error.message : "Demo access could not be started");
       setAccountActionStatus("error");
@@ -469,7 +469,7 @@ export default function Home() {
       const response = await fetch("/api/demo-contractor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contractorEmail }) });
       const data = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Company could not be changed");
-      window.location.reload();
+      window.location.assign("/?workspace=contractor");
     } catch (error) {
       setDemoCompanySwitching(false);
       showNotice(error instanceof Error ? error.message : "Company could not be changed");
@@ -506,7 +506,21 @@ export default function Home() {
         const user = data.user ?? null;
         setAccountIdentity(user);
         setAccountLoaded(true);
-        const portal = new URLSearchParams(window.location.search).get("portal");
+        const search = new URLSearchParams(window.location.search);
+        const portal = search.get("portal");
+        const workspace = search.get("workspace");
+        if (workspace === "contractor" && user && (user.role === "contractor" || user.operationsRole === "admin")) {
+          window.history.replaceState({}, "", window.location.pathname);
+          fetch("/api/contractor-profile")
+            .then((response) => response.ok ? response.json() : Promise.reject())
+            .then((profileData: { profile?: ContractorProfile | null }) => {
+              if (!active) return;
+              if (profileData.profile) setContractorProfile(profileData.profile);
+              go(profileData.profile ? "contractor" : "onboarding");
+            })
+            .catch(() => active && go("onboarding"));
+          return;
+        }
         if (portal && ["homeowner", "contractor", "admin"].includes(portal)) {
           window.history.replaceState({}, "", window.location.pathname);
           if (portal === "admin" && user) window.setTimeout(() => void openOperationsLogin(true), 0);
@@ -930,7 +944,7 @@ export default function Home() {
 
   const availableOpportunities = useMemo(() => {
     const enabledServices = (contractorProfile?.approvedServices ?? []).map((service) => service.toLowerCase());
-    const matchesService = (job: Opportunity) => enabledServices.some((service) => service.includes(job.service.toLowerCase()) || job.service.toLowerCase().includes(service));
+    const matchesService = (job: Opportunity) => enabledServices.some((service) => service === job.service.toLowerCase());
     const filtered = liveOpportunities
       .filter((job) => !dismissedOpportunities.includes(job.id) && matchesService(job))
       .filter((job) => job.distance === "Within service area" || Number.parseFloat(job.distance) <= opportunityRadius);

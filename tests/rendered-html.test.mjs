@@ -150,6 +150,25 @@ test("opens an existing contractor profile instead of onboarding", async () => {
   assert.match(page, /go\("contractor"\)/);
 });
 
+test("keeps demo contractor workspaces and job pipelines separate", async () => {
+  const [page, opportunitiesRoute, quoteRoute, conversationsRoute, operationsRoute] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/opportunities/route.ts"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+    source("../app/api/conversations/route.ts"),
+    source("../app/api/operations/route.ts"),
+  ]);
+
+  assert.match(page, /window\.location\.assign\("\/\?workspace=contractor"\)/);
+  assert.match(page, /workspace === "contractor"/);
+  assert.match(page, /service === job\.service\.toLowerCase\(\)/);
+  assert.match(opportunitiesRoute, /enabledServices\.includes\(job\.category\.toLowerCase\(\)\)/);
+  assert.match(quoteRoute, /services\.includes\(job\.category\.toLowerCase\(\)\)/);
+  assert.match(operationsRoute, /services\.includes\(category\)/);
+  assert.match(conversationsRoute, /eq\(quotes\.status, "accepted"\)/);
+  assert.doesNotMatch(conversationsRoute, /jobRequests\.ownerEmail/);
+});
+
 test("gives contractor applicants examples for every onboarding text field", async () => {
   const page = await source("../app/page.tsx");
   for (const example of ["1234567 Ontario Inc.", "Hamilton Home Improvements", "123 Main Street, Hamilton, ON L8P 1A1", "(905) 555-0123", "Example: 12", "Example: 6", "Licensed and insured residential renovation contractor", "Example: Hamilton, Ontario"]) assert.match(page, new RegExp(example.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));

@@ -30,7 +30,7 @@ function contractorMatchesJob(profile: typeof contractorProfiles.$inferSelect, j
   if (job.emergency && !profile.emergencyAvailable) return false;
   const category = job.category.toLowerCase();
   const services = approvedProfileServices(profile).map((service) => service.toLowerCase());
-  return services.some((service) => service.includes(category) || category.includes(service));
+  return services.includes(category);
 }
 
 async function requireOperationsUser() {
