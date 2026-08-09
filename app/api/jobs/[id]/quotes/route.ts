@@ -1,6 +1,6 @@
 import { and, asc, avg, count, eq, inArray, ne } from "drizzle-orm";
 import { getDb } from "../../../../../db";
-import { contractorProfiles, documentRecords, jobEvents, jobRequests, paymentMilestones, paymentRecords, quotes, verifiedReviews } from "../../../../../db/schema";
+import { agreementSignatures, contractorProfiles, documentRecords, jobEvents, jobRequests, paymentMilestones, paymentRecords, quotes, verifiedReviews } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
 import { getContractorActor } from "../../../../contractor-demo";
 import { notify } from "../../../../../lib/notifications";
@@ -225,7 +225,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const contractor = await getContractorActor();
   if (!identity || !contractor) return Response.json({ error: "Sign in required" }, { status: 401 });
   const jobId = Number((await context.params).id);
-  const payload = (await request.json()) as { action?: "request_onsite" | "schedule_onsite" | "confirm_proposed_onsite" | "reject_proposed_onsite" | "submit_final" | "accept_final" | "decline_final"; quoteId?: number; onsiteVisitAt?: string; preferredSlots?: unknown; amount?: number; workDescription?: string; materials?: string; measurements?: string; finalStartDate?: string; finalCompletionDate?: string; depositAmount?: number; progressAmount?: number; completionAmount?: number; progressRequirement?: string; finalOptions?: unknown; selectedOptionId?: string };
+  const payload = (await request.json()) as { action?: "request_onsite" | "schedule_onsite" | "confirm_proposed_onsite" | "reject_proposed_onsite" | "submit_final" | "prepare_agreement" | "accept_final" | "decline_final"; quoteId?: number; onsiteVisitAt?: string; preferredSlots?: unknown; amount?: number; workDescription?: string; materials?: string; measurements?: string; finalStartDate?: string; finalCompletionDate?: string; depositAmount?: number; progressAmount?: number; completionAmount?: number; progressRequirement?: string; finalOptions?: unknown; selectedOptionId?: string };
   const quoteId = Number(payload.quoteId);
   if (!Number.isInteger(jobId) || !Number.isInteger(quoteId) || !payload.action) return Response.json({ error: "A quote and workflow action are required" }, { status: 400 });
   try {
@@ -310,6 +310,29 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     }
 
     if (job.ownerEmail !== identity.email) return Response.json({ error: "Job not found" }, { status: 404 });
+    if (payload.action === "prepare_agreement") {
+      if (quote.status !== "final_quote_ready" || !quote.contractorEmail) return Response.json({ error: "Choose a ready final quote before preparing the agreement" }, { status: 409 });
+      const selectedOption = payload.selectedOptionId ? parseFinalOptions(quote.finalOptions).find((option) => option.id === payload.selectedOptionId) : null;
+      if (payload.selectedOptionId && !selectedOption) return Response.json({ error: "That finalized quote option is no longer available" }, { status: 409 });
+      const existingAgreement = await db.select({ id: documentRecords.id, quoteId: documentRecords.quoteId, status: documentRecords.status }).from(documentRecords).where(and(eq(documentRecords.jobId, jobId), eq(documentRecords.documentType, "service_agreement"))).limit(1);
+      if (existingAgreement.length && existingAgreement[0].quoteId !== quote.id) return Response.json({ error: "An agreement is already being signed for another final quote. Finish or decline that agreement before preparing a different one." }, { status: 409 });
+      const finalTerms = selectedOption ? { amountCents: selectedOption.amountCents, depositCents: selectedOption.depositCents, progressCents: selectedOption.progressCents, completionCents: selectedOption.completionCents, workDescription: `${selectedOption.title}: ${selectedOption.description}` } : quote;
+      const customerFeeCents = Math.round(finalTerms.amountCents * 0.03);
+      const snapshot = JSON.stringify({ jobNumber: job.externalId, jobTitle: job.title, originalRequest: job.description, contractorName: quote.contractorName, originalInitialRange: { minCents: quote.initialMinCents, maxCents: quote.initialMaxCents }, originalEstimatedStartAt: quote.estimatedStartAt?.toISOString() ?? null, originalEstimatedTimeframe: initialCompletionTimeframe(quote.message), finalScope: finalTerms.workDescription, materials: quote.materials, measurements: quote.measurements, finalStartAt: quote.finalStartAt?.toISOString() ?? null, finalizedCompletionAt: quote.estimatedFinishAt?.toISOString() ?? null, progressRequirement: quote.progressRequirement, amountCents: finalTerms.amountCents, depositCents: finalTerms.depositCents, progressCents: finalTerms.progressCents, completionCents: finalTerms.completionCents, selectedFinalOption: selectedOption ? { id: selectedOption.id, title: selectedOption.title, description: selectedOption.description } : null, customerFeeCents });
+      const now = new Date();
+      if (existingAgreement.length) {
+        const signatures = await db.select({ id: agreementSignatures.id }).from(agreementSignatures).where(eq(agreementSignatures.documentId, existingAgreement[0].id)).limit(1);
+        if (signatures.length) return Response.json({ error: "This agreement has already been signed. Use a signed change order for any change." }, { status: 409 });
+        await db.update(documentRecords).set({ quoteId: quote.id, contractorEmail: quote.contractorEmail, status: "ready_for_signature", content: snapshot, updatedAt: now }).where(eq(documentRecords.id, existingAgreement[0].id));
+      } else {
+        await db.insert(documentRecords).values({ jobId, quoteId: quote.id, ownerEmail: identity.email, contractorEmail: quote.contractorEmail, externalId: `AGR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "service_agreement", title: "Service agreement", status: "ready_for_signature", content: snapshot });
+      }
+      const [updatedQuote] = await db.update(quotes).set({ status: "agreement_pending", selectedFinalOptionId: selectedOption?.id ?? null }).where(eq(quotes.id, quote.id)).returning();
+      await db.update(jobRequests).set({ status: "agreement_pending", updatedAt: now }).where(eq(jobRequests.id, jobId));
+      await db.insert(jobEvents).values({ jobId, eventType: "agreement_prepared", label: `Service agreement ready for ${quote.contractorName}`, metadata: JSON.stringify({ quoteId, selectedOptionId: selectedOption?.id ?? null, amountCents: finalTerms.amountCents }) });
+      await notify(quote.contractorEmail, { jobId, type: "agreement_prepared", title: "Service agreement ready to sign", body: `${job.externalId} has a finalized agreement ready for your demo signature.` });
+      return Response.json({ quote: updatedQuote });
+    }
     if (payload.action === "decline_final") {
       if (quote.status !== "final_quote_ready") return Response.json({ error: "Only a final quote can be declined" }, { status: 409 });
       const [updatedQuote] = await db.update(quotes).set({ status: "declined" }).where(eq(quotes.id, quote.id)).returning();
@@ -321,9 +344,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     }
 
     if (payload.action === "accept_final") {
-      if (quote.status !== "final_quote_ready" || !quote.contractorEmail) return Response.json({ error: "Only a ready final quote can be accepted" }, { status: 409 });
-      const selectedOption = payload.selectedOptionId ? parseFinalOptions(quote.finalOptions).find((option) => option.id === payload.selectedOptionId) : null;
-      if (payload.selectedOptionId && !selectedOption) return Response.json({ error: "That finalized quote option is no longer available" }, { status: 409 });
+      if (quote.status !== "agreement_pending" || !quote.contractorEmail) return Response.json({ error: "Prepare and sign the service agreement before accepting this final quote" }, { status: 409 });
+      const [agreement] = await db.select().from(documentRecords).where(and(eq(documentRecords.jobId, jobId), eq(documentRecords.quoteId, quote.id), eq(documentRecords.documentType, "service_agreement"))).limit(1);
+      if (!agreement) return Response.json({ error: "The service agreement has not been prepared" }, { status: 409 });
+      const signatures = await db.select().from(agreementSignatures).where(eq(agreementSignatures.documentId, agreement.id));
+      if (!signatures.some((item) => item.signerRole === "homeowner") || !signatures.some((item) => item.signerRole === "contractor")) return Response.json({ error: "Both parties must complete the demo service-agreement signature before this final quote can be accepted" }, { status: 409 });
+      const selectedOption = quote.selectedFinalOptionId ? parseFinalOptions(quote.finalOptions).find((option) => option.id === quote.selectedFinalOptionId) : null;
+      if (quote.selectedFinalOptionId && !selectedOption) return Response.json({ error: "The signed quote option is no longer available" }, { status: 409 });
       const finalTerms = selectedOption ? { amountCents: selectedOption.amountCents, depositCents: selectedOption.depositCents, progressCents: selectedOption.progressCents, completionCents: selectedOption.completionCents, workDescription: `${selectedOption.title}: ${selectedOption.description}` } : quote;
       const selectedAccuracy = quoteAccuracy(quote.initialMinCents, quote.initialMaxCents, finalTerms.amountCents);
       // A homeowner selecting the contractor confirms the final price was acceptable. Keep
@@ -341,7 +368,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       ]).onConflictDoUpdate({ target: [paymentMilestones.paymentId, paymentMilestones.milestoneType], set: { status: "awaiting_funding", proofNote: "", proofSubmittedAt: null, homeownerApprovedAt: null, releasedAt: null, updatedAt: new Date() } });
       const snapshot = JSON.stringify({ jobNumber: job.externalId, jobTitle: job.title, originalRequest: job.description, contractorName: quote.contractorName, originalInitialRange: { minCents: quote.initialMinCents, maxCents: quote.initialMaxCents }, originalEstimatedStartAt: quote.estimatedStartAt?.toISOString() ?? null, originalEstimatedTimeframe: initialCompletionTimeframe(quote.message), finalScope: finalTerms.workDescription, materials: quote.materials, measurements: quote.measurements, finalStartAt: quote.finalStartAt?.toISOString() ?? null, finalizedCompletionAt: quote.estimatedFinishAt?.toISOString() ?? null, progressRequirement: quote.progressRequirement, amountCents: finalTerms.amountCents, depositCents: finalTerms.depositCents, progressCents: finalTerms.progressCents, completionCents: finalTerms.completionCents, selectedFinalOption: selectedOption ? { id: selectedOption.id, title: selectedOption.title, description: selectedOption.description } : null, customerFeeCents });
       const documentBase = { jobId, quoteId, ownerEmail: identity.email, contractorEmail: quote.contractorEmail };
-      await db.insert(documentRecords).values([{ ...documentBase, externalId: `AGR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "service_agreement", title: "Service agreement", status: "ready_for_signature", content: snapshot }, { ...documentBase, externalId: `QTE-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "accepted_quote", title: "Accepted final quote", status: "accepted", content: snapshot }, { ...documentBase, externalId: `INV-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "invoice", title: "Invoice", status: "demo_payment_pending", content: snapshot }]).onConflictDoNothing();
+      await db.insert(documentRecords).values([{ ...documentBase, externalId: `QTE-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "accepted_quote", title: "Accepted final quote", status: "accepted", content: snapshot }, { ...documentBase, externalId: `INV-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "invoice", title: "Invoice", status: "demo_payment_pending", content: snapshot }]).onConflictDoNothing();
       await db.insert(jobEvents).values({ jobId, eventType: "final_quote_accepted", label: `${quote.contractorName} selected after on-site verification`, metadata: JSON.stringify({ quoteId, amountCents: finalTerms.amountCents, selectedOptionId: selectedOption?.id ?? null, quoteAccuracy: acceptedAccuracy }) });
       await notify(quote.contractorEmail, { jobId, type: "final_quote_accepted", title: "Final quote accepted", body: `${job.externalId} is booked. Set the scheduled work start when both parties are ready.` });
       return Response.json({ acceptedQuote });
