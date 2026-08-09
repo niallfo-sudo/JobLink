@@ -249,6 +249,7 @@ export default function Home() {
   const [scheduledStartValues, setScheduledStartValues] = useState<Record<number, string>>({});
   const [onsiteVisitValues, setOnsiteVisitValues] = useState<Record<number, string>>({});
   const [onsiteSchedulingQuote, setOnsiteSchedulingQuote] = useState<PersistedQuote | null>(null);
+  const [reviewingFinalQuote, setReviewingFinalQuote] = useState<PersistedQuote | null>(null);
   const [preferredOnsiteSlots, setPreferredOnsiteSlots] = useState<OnsiteTimeRange[]>([{ date: "", startTime: "09:00", endTime: "12:00" }, { date: "", startTime: "13:00", endTime: "16:00" }, { date: "", startTime: "", endTime: "" }]);
   const [finalQuoteJob, setFinalQuoteJob] = useState<ContractorQuote | null>(null);
   const [contractorRequestQuote, setContractorRequestQuote] = useState<ContractorQuote | null>(null);
@@ -1140,7 +1141,7 @@ export default function Home() {
 
   async function acceptSavedQuote(quote: PersistedQuote) {
     if (!selectedSavedJob) return;
-    if (quote.status === "final_quote_ready") { await decideFinalQuote(quote, "accept_final"); return; }
+    if (hasFinalQuoteDetails(quote)) { setReviewingFinalQuote(quote); return; }
     if (quote.status === "onsite_proposed") {
       setOnsiteSchedulingQuote(quote);
       return;
@@ -1230,8 +1231,17 @@ export default function Home() {
     return quote.status.replaceAll("_", " ");
   }
 
+  function hasFinalQuoteDetails(quote: PersistedQuote) {
+    return ["final_quote_ready", "agreement_pending", "accepted"].includes(quote.status) || Boolean(quote.workDescription || quote.materials || quote.measurements || quote.finalStartAt);
+  }
+
   async function decideFinalQuote(quote: PersistedQuote, action: "accept_final" | "decline_final", selectedOptionId?: string) {
     if (!selectedSavedJob) return;
+    if (action === "accept_final" && reviewingFinalQuote?.id !== quote.id) {
+      setReviewingFinalQuote(quote);
+      showNotice("Review the complete final quote and scope before preparing an agreement or accepting a signed quote.");
+      return;
+    }
     if (action === "accept_final" && !generatedDocuments.some((document) => document.documentType === "service_agreement" && document.quoteId === quote.id && document.status === "fully_signed")) {
       await prepareServiceAgreement(quote, selectedOptionId);
       return;
@@ -1249,9 +1259,11 @@ export default function Home() {
         setPersistedJobs((current) => current.map((job) => job.id === bookedJob.id ? bookedJob : job));
         await refreshPaymentRecords();
         await refreshGeneratedDocuments();
+        setReviewingFinalQuote(null);
         showNotice("Signed final quote accepted. Open Payments to fund the full job total in the demo, then releases follow the contractor checkpoints.");
       } else if (data.quote) {
         setSavedQuotes((current) => current.map((item) => item.id === quote.id ? { ...item, ...data.quote } : item));
+        setReviewingFinalQuote(null);
         showNotice("Final quote declined. You can continue comparing other contractors.");
       }
       setSavedQuotesStatus("idle");
@@ -1303,6 +1315,7 @@ export default function Home() {
       setSelectedSavedJob(agreementJob);
       setPersistedJobs((current) => current.map((job) => job.id === agreementJob.id ? agreementJob : job));
       await refreshGeneratedDocuments();
+      setReviewingFinalQuote(null);
       setAccountTab("documents");
       go("account");
       showNotice("Service agreement prepared. Both parties must complete the demo signature before this final quote can be accepted.");
@@ -1351,6 +1364,12 @@ export default function Home() {
   }
 
   async function openJobRoom(job: PersistedJob) {
+    if (["matching", "verification_pending", "final_quote_ready", "agreement_pending"].includes(job.status)) {
+      await loadSavedQuotes(job);
+      go("matches");
+      showNotice("Open the final quote submissions to view every contractor’s scope, dates and payment plan.");
+      return;
+    }
     setRoomJob(job);
     setRoomStatus("loading");
     try {
@@ -1965,6 +1984,7 @@ export default function Home() {
           <div className="match-layout">
             <div className="contractor-list" onPointerDown={(event) => { const target = event.target as HTMLElement; const button = target.closest("button"); if (button?.disabled && button.textContent?.includes("Review proposed visit time")) { const proposedQuote = savedQuotes.find((quote) => quote.status === "onsite_proposed"); if (proposedQuote) setOnsiteSchedulingQuote(proposedQuote); } }}>
               {savedQuotes.filter((quote) => quote.status === "onsite_proposed").map((quote) => <section className="quote-approval-banner" key={`approve-${quote.id}`}><div><p className="step-kicker">Approval required</p><h3>{quote.contractorName} suggested an on-site visit.</h3><p>Review the proposed date and time, then approve it to book the visit.</p></div><button className="primary-action" onClick={() => setOnsiteSchedulingQuote(quote)}>Review & approve visit →</button></section>)}
+              {savedQuotes.some(hasFinalQuoteDetails) && <section className="final-quote-submissions"><div><p className="aside-label">Final quote submissions</p><h3>Review every completed on-site quote.</h3><p>Open the full scope, materials, dates and payment plan before you begin agreement signing or accept a signed quote.</p></div><div>{savedQuotes.filter(hasFinalQuoteDetails).map((quote) => <button key={`review-final-${quote.id}`} type="button" onClick={() => setReviewingFinalQuote(quote)}><span><b>{quote.contractorName}</b><small>{quote.status === "accepted" ? "Accepted final quote" : quote.status === "declined" ? "Declined final quote" : quote.status === "agreement_pending" ? "Agreement in progress" : "Final quote ready"}</small></span><strong>View final quote & scope →</strong></button>)}</div></section>}
               {savedRequestId && savedQuotesStatus === "loading" && <div className="matches-loading"><span>JL</span><h3>Loading verified quotes…</h3><p>Your saved request is ready. We’re retrieving its current quote status.</p></div>}
             {savedRequestId && savedQuotes.length > 0 && savedQuotes.map((quote, index) => (
                 <article className={`contractor-card ${index === 0 ? "featured" : ""}`} key={quote.id}>
@@ -2259,6 +2279,8 @@ export default function Home() {
       <input id="verification-file-input" className="hidden-file-input" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadVerificationDocument(file); event.target.value = ""; }} />
 
       {onsiteSchedulingQuote && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="onsite-preferences-title"><div className="quote-drawer"><button className="overlay-close" onClick={() => setOnsiteSchedulingQuote(null)} aria-label="Close on-site scheduling">×</button><p className="step-kicker">On-site verification · {onsiteSchedulingQuote.contractorName}</p><h2 id="onsite-preferences-title">Choose preferred time ranges.</h2><p className="quote-job-title">Provide up to three weekday availability windows within the next two business days. The contractor can select one window or suggest another time for your approval.</p>{onsiteSchedulingQuote.status === "submitted" ? <><div className="onsite-slot-inputs">{preferredOnsiteSlots.map((slot, index) => <fieldset key={index} className="onsite-range-input"><legend>Preferred window {index + 1}{index === 0 ? " (required)" : " (optional)"}</legend><label>Date<input type="date" value={slot.date} onChange={(event) => setPreferredOnsiteSlots((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, date: event.target.value } : item))} /></label><label>From<input type="time" value={slot.startTime} onChange={(event) => setPreferredOnsiteSlots((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: event.target.value } : item))} /></label><label>To<input type="time" value={slot.endTime} onChange={(event) => setPreferredOnsiteSlots((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: event.target.value } : item))} /></label></fieldset>)}</div><button className="send-quote" disabled={savedQuotesStatus === "loading"} onClick={() => void submitPreferredOnsiteSlots()}>{savedQuotesStatus === "loading" ? "Sending…" : "Send preferred time ranges →"}</button></> : <section className="onsite-request-schedule"><b>Contractor-proposed times</b><p>Select a time to approve the on-site visit, or ask the contractor for another suggestion.</p>{(onsiteSchedulingQuote.onsiteProposals ?? []).map((slot) => <button key={slot} className="send-quote" disabled={savedQuotesStatus === "loading"} onClick={() => void confirmProposedOnsite(onsiteSchedulingQuote, slot)}>Approve {scheduledStartLabel(slot)} →</button>)}<button className="secondary-action" disabled={savedQuotesStatus === "loading"} onClick={() => void requestAnotherOnsiteTime(onsiteSchedulingQuote)}>Ask for another time suggestion</button></section>}</div></div>}
+
+      {reviewingFinalQuote && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="final-quote-review-title"><div className="quote-drawer final-quote-review-drawer"><button className="overlay-close" onClick={() => setReviewingFinalQuote(null)} aria-label="Close final quote review">×</button><p className="step-kicker">Final quote submission · {reviewingFinalQuote.contractorName}</p><h2 id="final-quote-review-title">Review the full scope before you choose.</h2><p className="quote-job-title">This is the contractor’s on-site verified submission. Review it completely before agreement signing, accepting a signed quote, or declining it.</p><section className="final-review-overview"><div><small>Initial bid range</small><b>${((reviewingFinalQuote.initialMinCents || 0) / 100).toLocaleString()}–${((reviewingFinalQuote.initialMaxCents || 0) / 100).toLocaleString()}</b></div><div><small>Final project total</small><b>${(reviewingFinalQuote.amountCents / 100).toLocaleString()}</b></div><div><small>Finalized start</small><b>{estimatedDateLabel(reviewingFinalQuote.finalStartAt)}</b></div><div><small>Completion target</small><b>{estimatedDateLabel(reviewingFinalQuote.estimatedFinishAt)}</b></div></section><section className="final-review-scope"><div><b>Contract-ready scope of work</b><p>{reviewingFinalQuote.workDescription || "The contractor has not provided a written final scope."}</p></div><div><b>Materials and inclusions</b><p>{reviewingFinalQuote.materials || "Not provided"}</p></div><div><b>Verified measurements and quantities</b><p>{reviewingFinalQuote.measurements || "Not provided"}</p></div>{reviewingFinalQuote.progressCents ? <div><b>Progress release requirement</b><p>{reviewingFinalQuote.progressRequirement || "Not provided"}</p></div> : null}</section><section className="final-review-payment"><p className="aside-label">Payment plan</p><div><span><small>Signing deposit</small><b>${((reviewingFinalQuote.depositCents || 0) / 100).toLocaleString()}</b></span><span><small>Progress checkpoint</small><b>${((reviewingFinalQuote.progressCents || 0) / 100).toLocaleString()}</b></span><span><small>Completion balance</small><b>${((reviewingFinalQuote.completionCents || 0) / 100).toLocaleString()}</b></span></div><p>The full final job total is funded in the JobLink demo after the service agreement is signed by both parties. Checkpoints release only after the required progress proof and approval.</p></section>{reviewingFinalQuote.finalOptions?.length ? <section className="final-review-options"><p className="aside-label">Alternative finalized options</p>{reviewingFinalQuote.finalOptions.map((option) => <article key={option.id}><b>{option.title} · ${(option.amountCents / 100).toLocaleString()}</b><p>{option.description}</p><small>Deposit ${(option.depositCents / 100).toLocaleString()} · Progress ${(option.progressCents / 100).toLocaleString()} · Completion ${(option.completionCents / 100).toLocaleString()}</small>{reviewingFinalQuote.status === "final_quote_ready" && <button className="secondary-action" disabled={savedQuotesStatus === "loading"} onClick={() => void decideFinalQuote(reviewingFinalQuote, "accept_final", option.id)}>Choose this option & prepare agreement →</button>}</article>)}</section> : null}<div className="final-review-actions">{reviewingFinalQuote.status === "final_quote_ready" ? <><button className="secondary-action" disabled={savedQuotesStatus === "loading"} onClick={() => void decideFinalQuote(reviewingFinalQuote, "decline_final")}>Decline final quote</button><button className="primary-action" disabled={savedQuotesStatus === "loading"} onClick={() => void decideFinalQuote(reviewingFinalQuote, "accept_final")}>Choose this quote & prepare agreement →</button></> : reviewingFinalQuote.status === "agreement_pending" ? <><button className="secondary-action" onClick={() => { setReviewingFinalQuote(null); setAccountTab("documents"); go("account"); }}>Review agreement</button>{generatedDocuments.some((document) => document.documentType === "service_agreement" && document.quoteId === reviewingFinalQuote.id && document.status === "fully_signed") ? <button className="primary-action" disabled={savedQuotesStatus === "loading"} onClick={() => void decideFinalQuote(reviewingFinalQuote, "accept_final")}>Accept signed quote & fund job →</button> : <button className="primary-action" disabled>Awaiting both demo signatures</button>}</> : reviewingFinalQuote.status === "accepted" ? <><button className="secondary-action" onClick={() => { setReviewingFinalQuote(null); setAccountTab("documents"); go("account"); }}>View signed documents</button><button className="primary-action" disabled>Final quote accepted ✓</button></> : <button className="secondary-action" onClick={() => setReviewingFinalQuote(null)}>Close review</button>}</div></div></div>}
 
       {contractorRequestQuote && <div className="quote-overlay" role="dialog" aria-modal="true" aria-labelledby="contractor-request-title"><div className="quote-drawer contractor-request-drawer"><button className="overlay-close" onClick={() => setContractorRequestQuote(null)} aria-label="Close request details">×</button><p className="step-kicker">Homeowner request · {contractorRequestQuote.externalId}</p><h2 id="contractor-request-title">{contractorRequestQuote.title}</h2><p className="quote-job-title">Review the submitted scope before selecting an on-site visit time.</p><div className="quote-scope"><span>✦</span><div><b>Requested scope</b><p>{contractorRequestQuote.description || "The homeowner has requested an on-site verification for this job."}</p></div></div><dl className="contractor-request-details"><div><dt>Service</dt><dd>{contractorRequestQuote.category}</dd></div><div><dt>Job size</dt><dd>{contractorRequestQuote.size || "Not provided"}</dd></div><div><dt>Timeline</dt><dd>{contractorRequestQuote.timeline || "To be confirmed"}</dd></div><div><dt>Area</dt><dd>{contractorRequestQuote.postalCode || "Shared after scheduling"}</dd></div></dl>{contractorRequestQuote.status === "onsite_requested" ? <section className="onsite-request-schedule"><b>On-site verification requested</b><p>Confirm one of the homeowner’s preferred time ranges, or suggest a different time for their approval.</p><section className="onsite-range-choices"><b>Homeowner preferred time ranges</b><p>Confirming a range schedules the on-site visit immediately.</p>{(contractorRequestQuote.onsitePreferences ?? []).map((range) => <button key={range} className="secondary-action" onClick={() => void confirmPreferredOnsiteRange(contractorRequestQuote, range)}>Confirm {onsiteRangeLabel(range)} →</button>)}</section><label htmlFor={`onsite-request-${contractorRequestQuote.id}`}>Or propose a different visit date and time<input id={`onsite-request-${contractorRequestQuote.id}`} type="datetime-local" value={onsiteVisitValues[contractorRequestQuote.id] ?? dateTimeInputValue(contractorRequestQuote.onsiteVisitAt)} onChange={(event) => setOnsiteVisitValues((current) => ({ ...current, [contractorRequestQuote.id]: event.target.value }))} /></label><button className="send-quote" onClick={() => void scheduleOnsiteVisit(contractorRequestQuote)}>Send alternate time for approval →</button></section> : <section className="onsite-request-schedule"><b>On-site visit scheduled</b><p>{scheduledStartLabel(contractorRequestQuote.onsiteVisitAt)}</p><button className="send-quote" onClick={() => { setContractorRequestQuote(null); openFinalQuote(contractorRequestQuote); }}>Create finalized quote →</button></section>}</div></div>}
 
