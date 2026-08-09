@@ -104,10 +104,12 @@ test("lets Operations administrators switch between verified demo contractor com
 
   assert.match(page, /Demo company view/);
   assert.match(page, /switchDemoContractor/);
+  assert.match(page, /contractor accounts available/);
   assert.match(demoRoute, /Operations administrators only/);
+  assert.match(demoRoute, /from\(contractorProfiles\)/);
   assert.match(demoRoute, /DEMO_CONTRACTOR_COOKIE/);
   assert.match(actor, /account\?\.role !== "admin"/);
-  assert.match(actor, /@joblink\.demo/);
+  assert.doesNotMatch(actor, /@joblink\.demo/);
   for (const company of ["North & Beam Drywall", "Hamilton Climate Co.", "Hamilton Plumbing Co.", "Citywide Painting"]) assert.match(migration, new RegExp(company.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 

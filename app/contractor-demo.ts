@@ -5,14 +5,8 @@ import { contractorProfiles, users } from "../db/schema";
 import { getChatGPTUser, type ChatGPTUser } from "./chatgpt-auth";
 
 export const DEMO_CONTRACTOR_COOKIE = "joblink_demo_contractor";
-export const DEMO_CONTRACTOR_EMAIL_SUFFIX = "@joblink.demo";
-
-export function isDemoContractorEmail(email: string) {
-  return email.endsWith(DEMO_CONTRACTOR_EMAIL_SUFFIX);
-}
-
 /**
- * Returns the selected demo contractor for an Operations administrator.
+ * Returns the selected contractor workspace for an Operations administrator.
  * Everyone else continues to act only as their authenticated account.
  */
 export async function getContractorActor(): Promise<ChatGPTUser | null> {
@@ -20,7 +14,7 @@ export async function getContractorActor(): Promise<ChatGPTUser | null> {
   if (!identity) return null;
 
   const selectedEmail = (await cookies()).get(DEMO_CONTRACTOR_COOKIE)?.value;
-  if (!selectedEmail || !isDemoContractorEmail(selectedEmail)) return identity;
+  if (!selectedEmail) return identity;
 
   const db = getDb();
   const [account] = await db.select({ role: users.role }).from(users).where(eq(users.email, identity.email)).limit(1);
