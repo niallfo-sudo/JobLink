@@ -416,7 +416,7 @@ test("requires a completed-job review before final payment release and calculate
   assert.match(paymentMilestoneRoute, /milestone\.milestoneType === "completion"/);
   assert.match(paymentMilestoneRoute, /Submit the required completed-job review before releasing the final payment/);
   assert.match(progressRoute, /homeowner review required/);
-  assert.match(reputationRoute, /quality \* 0\.55 \+ completion \* 0\.30 \+ documentation \* 0\.15/);
+  assert.match(reputationRoute, /quality \* 0\.45 \+ completion \* 0\.25 \+ documentation \* 0\.10 \+ timeline \* 0\.20/);
   assert.match(reputationRoute, /jobLinkScore/);
   assert.match(paymentsRoute, /completionReviewSubmitted/);
 });
@@ -680,4 +680,21 @@ test("coordinates homeowner visit preferences with contractor confirmations and 
   assert.match(schema, /onsitePreferences: text\("onsite_preferences"\)/);
   assert.match(migration, /onsite_preferences/);
   assert.match(migration, /onsite_proposals/);
+});
+
+test("uses finalized completion targets to calculate timeline reliability", async () => {
+  const [page, quoteRoute, reputationRoute] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+    source("../app/api/reputation/route.ts"),
+  ]);
+
+  assert.match(page, /Finalized completion target/);
+  assert.match(page, /Timeline reliability/);
+  assert.match(page, /Completion targets/);
+  assert.match(quoteRoute, /finalCompletionDate/);
+  assert.match(quoteRoute, /estimatedFinishAt: finalizedCompletionAt/);
+  assert.match(quoteRoute, /completionTimelineScore/);
+  assert.match(reputationRoute, /completionTimelineScore/);
+  assert.match(reputationRoute, /timeline \* 0\.20/);
 });

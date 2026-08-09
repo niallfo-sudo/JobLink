@@ -67,17 +67,27 @@ function quoteAccuracy(initialMinCents: number, initialMaxCents: number, finalCe
   return { delta: -Math.min(6, Math.max(2, Math.ceil((distance / initialMinCents) * 10))), status: "out_of_range" };
 }
 
-function publicContractorRatings(input: { reviewCount: number; averageScore: number; acceptedJobCount: number; completedJobCount: number; quoteDeltas: number[] }) {
+function completionTimelineScore(promisedAt: Date, completedAt: Date) {
+  const daysLate = Math.ceil((completedAt.getTime() - promisedAt.getTime()) / 86_400_000);
+  if (daysLate <= 0) return 100;
+  if (daysLate <= 2) return 85;
+  if (daysLate <= 7) return 65;
+  if (daysLate <= 14) return 35;
+  return 0;
+}
+
+function publicContractorRatings(input: { reviewCount: number; averageScore: number; acceptedJobCount: number; completedJobCount: number; quoteDeltas: number[]; timelineScores: number[] }) {
   const quality = input.reviewCount ? Math.round(input.averageScore / 5) : 0;
   const completion = input.acceptedJobCount ? Math.round((input.completedJobCount / input.acceptedJobCount) * 100) : 0;
   const documentation = input.completedJobCount ? Math.min(100, Math.round((input.reviewCount / input.completedJobCount) * 100)) : 0;
-  const jobLinkScore = input.acceptedJobCount ? Math.round(quality * 0.55 + completion * 0.30 + documentation * 0.15) : null;
+  const timeline = input.timelineScores.length ? Math.round(input.timelineScores.reduce((total, score) => total + score, 0) / input.timelineScores.length) : null;
+  const jobLinkScore = input.acceptedJobCount ? Math.round(timeline === null ? quality * 0.55 + completion * 0.30 + documentation * 0.15 : quality * 0.45 + completion * 0.25 + documentation * 0.10 + timeline * 0.20) : null;
   const quoteComparisonCount = input.quoteDeltas.length;
   const averageQuoteDelta = quoteComparisonCount ? input.quoteDeltas.reduce((sum, delta) => sum + delta, 0) / quoteComparisonCount : 0;
   const quoteRating = quoteComparisonCount ? Math.max(0, Math.min(100, Math.round(70 + averageQuoteDelta + Math.min(10, Math.max(0, quoteComparisonCount - 1) * 2)))) : null;
   // New businesses are not punished for having no history. Price is only used as a tie-breaker.
   const matchScore = Math.round((jobLinkScore ?? 60) * 0.60 + (quoteRating ?? 70) * 0.35 + (input.reviewCount ? quality : 60) * 0.05);
-  return { jobLinkScore, quoteRating, quoteComparisonCount, matchScore };
+  return { jobLinkScore, quoteRating, quoteComparisonCount, matchScore, timelineReliability: timeline };
 }
 
 function parseFinalOptions(value: string | null | undefined): FinalQuoteOption[] {
@@ -127,25 +137,28 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const db = getDb();
     const rows = await db.select().from(quotes).where(eq(quotes.jobId, jobId)).orderBy(asc(quotes.amountCents));
     const contractorEmails = [...new Set(rows.flatMap((quote) => quote.contractorEmail ? [quote.contractorEmail] : []))];
-    const [profiles, ratings, acceptedRows, completedRows, accuracyRows] = contractorEmails.length ? await Promise.all([
+    const [profiles, ratings, acceptedRows, completedRows, accuracyRows, timelineRows] = contractorEmails.length ? await Promise.all([
       db.select({ ownerEmail: contractorProfiles.ownerEmail, primaryService: contractorProfiles.primaryService, approvedServices: contractorProfiles.approvedServices, homeBase: contractorProfiles.homeBase, serviceRadiusKm: contractorProfiles.serviceRadiusKm, yearsInBusiness: contractorProfiles.yearsInBusiness, teamSize: contractorProfiles.teamSize, emergencyAvailable: contractorProfiles.emergencyAvailable, about: contractorProfiles.about, verificationStatus: contractorProfiles.verificationStatus }).from(contractorProfiles).where(inArray(contractorProfiles.ownerEmail, contractorEmails)),
       db.select({ contractorEmail: verifiedReviews.contractorEmail, reviewCount: count(), averageScore: avg(verifiedReviews.averageScore) }).from(verifiedReviews).where(inArray(verifiedReviews.contractorEmail, contractorEmails)).groupBy(verifiedReviews.contractorEmail),
       db.select({ contractorEmail: quotes.contractorEmail }).from(quotes).where(and(inArray(quotes.contractorEmail, contractorEmails), eq(quotes.status, "accepted"))),
       db.select({ contractorEmail: quotes.contractorEmail }).from(quotes).innerJoin(jobRequests, eq(quotes.jobId, jobRequests.id)).where(and(inArray(quotes.contractorEmail, contractorEmails), eq(quotes.status, "accepted"), eq(jobRequests.status, "completed"))),
       db.select({ contractorEmail: quotes.contractorEmail, quoteAccuracyDelta: quotes.quoteAccuracyDelta }).from(quotes).where(and(inArray(quotes.contractorEmail, contractorEmails), ne(quotes.quoteAccuracyStatus, "pending"), ne(quotes.quoteAccuracyStatus, "unavailable"), ne(quotes.quoteAccuracyStatus, "accepted_out_of_range"))),
-    ]) : [[], [], [], [], []];
+      db.select({ contractorEmail: quotes.contractorEmail, promisedAt: quotes.estimatedFinishAt, completedAt: jobRequests.updatedAt }).from(quotes).innerJoin(jobRequests, eq(quotes.jobId, jobRequests.id)).where(and(inArray(quotes.contractorEmail, contractorEmails), eq(quotes.status, "accepted"), eq(jobRequests.status, "completed"))),
+    ]) : [[], [], [], [], [], []];
     const profileByEmail = new Map(profiles.map((profile) => [profile.ownerEmail, profile]));
     const ratingByEmail = new Map(ratings.map((rating) => [rating.contractorEmail, rating]));
     const acceptedByEmail = new Map<string, number>();
     const completedByEmail = new Map<string, number>();
     const accuracyByEmail = new Map<string, number[]>();
+    const timelineByEmail = new Map<string, number[]>();
     for (const row of acceptedRows) if (row.contractorEmail) acceptedByEmail.set(row.contractorEmail, (acceptedByEmail.get(row.contractorEmail) ?? 0) + 1);
     for (const row of completedRows) if (row.contractorEmail) completedByEmail.set(row.contractorEmail, (completedByEmail.get(row.contractorEmail) ?? 0) + 1);
     for (const row of accuracyRows) if (row.contractorEmail) accuracyByEmail.set(row.contractorEmail, [...(accuracyByEmail.get(row.contractorEmail) ?? []), row.quoteAccuracyDelta ?? 0]);
+    for (const row of timelineRows) if (row.contractorEmail && row.promisedAt && row.completedAt) timelineByEmail.set(row.contractorEmail, [...(timelineByEmail.get(row.contractorEmail) ?? []), completionTimelineScore(row.promisedAt, row.completedAt)]);
     const detailedQuotes = rows.map((quote) => {
       const profile = quote.contractorEmail ? profileByEmail.get(quote.contractorEmail) : undefined;
       const rating = quote.contractorEmail ? ratingByEmail.get(quote.contractorEmail) : undefined;
-      const publicRatings = quote.contractorEmail ? publicContractorRatings({ reviewCount: Number(rating?.reviewCount ?? 0), averageScore: Number(rating?.averageScore ?? 0), acceptedJobCount: acceptedByEmail.get(quote.contractorEmail) ?? 0, completedJobCount: completedByEmail.get(quote.contractorEmail) ?? 0, quoteDeltas: accuracyByEmail.get(quote.contractorEmail) ?? [] }) : null;
+      const publicRatings = quote.contractorEmail ? publicContractorRatings({ reviewCount: Number(rating?.reviewCount ?? 0), averageScore: Number(rating?.averageScore ?? 0), acceptedJobCount: acceptedByEmail.get(quote.contractorEmail) ?? 0, completedJobCount: completedByEmail.get(quote.contractorEmail) ?? 0, quoteDeltas: accuracyByEmail.get(quote.contractorEmail) ?? [], timelineScores: timelineByEmail.get(quote.contractorEmail) ?? [] }) : null;
       return { ...quote, onsitePreferences: storedOnsiteSlots(quote.onsitePreferences), onsiteProposals: storedOnsiteSlots(quote.onsiteProposals), finalOptions: parseFinalOptions(quote.finalOptions), contractor: profile ? { ...profile, approvedServices: JSON.parse(profile.approvedServices || "[]"), reviewCount: Number(rating?.reviewCount ?? 0), averageRating: rating?.averageScore ? Number(rating.averageScore) / 100 : null, ...publicRatings } : null };
     });
     detailedQuotes.sort((left, right) => (right.contractor?.matchScore ?? 0) - (left.contractor?.matchScore ?? 0) || left.amountCents - right.amountCents);
@@ -194,7 +207,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const contractor = await getContractorActor();
   if (!identity || !contractor) return Response.json({ error: "Sign in required" }, { status: 401 });
   const jobId = Number((await context.params).id);
-  const payload = (await request.json()) as { action?: "request_onsite" | "schedule_onsite" | "confirm_proposed_onsite" | "submit_final" | "accept_final" | "decline_final"; quoteId?: number; onsiteVisitAt?: string; preferredSlots?: unknown; amount?: number; workDescription?: string; materials?: string; measurements?: string; depositAmount?: number; progressAmount?: number; completionAmount?: number; finalOptions?: unknown; selectedOptionId?: string };
+  const payload = (await request.json()) as { action?: "request_onsite" | "schedule_onsite" | "confirm_proposed_onsite" | "submit_final" | "accept_final" | "decline_final"; quoteId?: number; onsiteVisitAt?: string; preferredSlots?: unknown; amount?: number; workDescription?: string; materials?: string; measurements?: string; finalCompletionDate?: string; depositAmount?: number; progressAmount?: number; completionAmount?: number; finalOptions?: unknown; selectedOptionId?: string };
   const quoteId = Number(payload.quoteId);
   if (!Number.isInteger(jobId) || !Number.isInteger(quoteId) || !payload.action) return Response.json({ error: "A quote and workflow action are required" }, { status: 400 });
   try {
@@ -250,16 +263,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       const workDescription = payload.workDescription?.trim() || "";
       const materials = payload.materials?.trim() || "";
       const measurements = payload.measurements?.trim() || "";
+      const finalizedCompletionAt = estimatedDate(payload.finalCompletionDate);
       const finalOptions = finalOptionsFromPayload(payload.finalOptions);
       const accuracy = quoteAccuracy(quote.initialMinCents, quote.initialMaxCents, amountCents ?? 0);
       if (amountCents === null || amountCents < 1000 || depositCents === null || progressCents === null || completionCents === null || depositCents + progressCents + completionCents !== amountCents) return Response.json({ error: "Payment checkpoints must add up exactly to the final quote" }, { status: 400 });
       if (!finalOptions) return Response.json({ error: "Each alternative needs a title, detailed scope, total and matching payment checkpoints" }, { status: 400 });
       if (workDescription.length < 20 || materials.length < 3 || measurements.length < 3) return Response.json({ error: "Include a detailed work description, materials, and measurements" }, { status: 400 });
+      if (!finalizedCompletionAt || finalizedCompletionAt < new Date(new Date().toDateString())) return Response.json({ error: "Add a realistic finalized completion date" }, { status: 400 });
       const finalizedAt = new Date();
-      const [updatedQuote] = await db.update(quotes).set({ status: "final_quote_ready", amountCents, workDescription, materials, measurements, depositCents, progressCents, completionCents, finalOptions: JSON.stringify(finalOptions), selectedFinalOptionId: null, quoteAccuracyDelta: accuracy.delta, quoteAccuracyStatus: accuracy.status, finalizedAt, message: "Final quote prepared after on-site verification." }).where(eq(quotes.id, quote.id)).returning();
+      const [updatedQuote] = await db.update(quotes).set({ status: "final_quote_ready", amountCents, workDescription, materials, measurements, estimatedFinishAt: finalizedCompletionAt, depositCents, progressCents, completionCents, finalOptions: JSON.stringify(finalOptions), selectedFinalOptionId: null, quoteAccuracyDelta: accuracy.delta, quoteAccuracyStatus: accuracy.status, finalizedAt, message: "Final quote prepared after on-site verification." }).where(eq(quotes.id, quote.id)).returning();
       await db.update(jobRequests).set({ status: "final_quote_ready", updatedAt: finalizedAt }).where(eq(jobRequests.id, jobId));
-      await db.insert(jobEvents).values({ jobId, eventType: "final_quote_ready", label: `Final quote ready from ${quote.contractorName}`, metadata: JSON.stringify({ quoteId, amountCents, depositCents, progressCents, completionCents, alternativeCount: finalOptions.length, quoteAccuracy: accuracy }) });
-      await notify(job.ownerEmail, { jobId, type: "final_quote_ready", title: "Final quote ready to review", body: `${quote.contractorName} added the verified scope, materials, measurements, and payment checkpoints for ${job.externalId}.` });
+      await db.insert(jobEvents).values({ jobId, eventType: "final_quote_ready", label: `Final quote ready from ${quote.contractorName}`, metadata: JSON.stringify({ quoteId, amountCents, depositCents, progressCents, completionCents, finalizedCompletionAt: finalizedCompletionAt.toISOString(), alternativeCount: finalOptions.length, quoteAccuracy: accuracy }) });
+      await notify(job.ownerEmail, { jobId, type: "final_quote_ready", title: "Final quote ready to review", body: `${quote.contractorName} added the verified scope, materials, payment checkpoints and completion target for ${job.externalId}.` });
       return Response.json({ quote: updatedQuote, job: { ...job, status: "final_quote_ready" } });
     }
 
@@ -293,7 +308,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         { paymentId: paymentRecord.id, jobId, milestoneType: "progress", label: "50% progress checkpoint", amountCents: finalTerms.progressCents, status: "awaiting_funding" },
         { paymentId: paymentRecord.id, jobId, milestoneType: "completion", label: "Final completion", amountCents: finalTerms.completionCents, status: "awaiting_funding" },
       ]).onConflictDoUpdate({ target: [paymentMilestones.paymentId, paymentMilestones.milestoneType], set: { status: "awaiting_funding", proofNote: "", proofSubmittedAt: null, homeownerApprovedAt: null, releasedAt: null, updatedAt: new Date() } });
-      const snapshot = JSON.stringify({ jobNumber: job.externalId, jobTitle: job.title, originalRequest: job.description, contractorName: quote.contractorName, finalScope: finalTerms.workDescription, materials: quote.materials, measurements: quote.measurements, amountCents: finalTerms.amountCents, depositCents: finalTerms.depositCents, progressCents: finalTerms.progressCents, completionCents: finalTerms.completionCents, selectedFinalOption: selectedOption ? { id: selectedOption.id, title: selectedOption.title, description: selectedOption.description } : null, customerFeeCents });
+      const snapshot = JSON.stringify({ jobNumber: job.externalId, jobTitle: job.title, originalRequest: job.description, contractorName: quote.contractorName, finalScope: finalTerms.workDescription, materials: quote.materials, measurements: quote.measurements, finalizedCompletionAt: quote.estimatedFinishAt?.toISOString() ?? null, amountCents: finalTerms.amountCents, depositCents: finalTerms.depositCents, progressCents: finalTerms.progressCents, completionCents: finalTerms.completionCents, selectedFinalOption: selectedOption ? { id: selectedOption.id, title: selectedOption.title, description: selectedOption.description } : null, customerFeeCents });
       const documentBase = { jobId, quoteId, ownerEmail: identity.email, contractorEmail: quote.contractorEmail };
       await db.insert(documentRecords).values([{ ...documentBase, externalId: `AGR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "service_agreement", title: "Service agreement", status: "ready_for_signature", content: snapshot }, { ...documentBase, externalId: `QTE-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "accepted_quote", title: "Accepted final quote", status: "accepted", content: snapshot }, { ...documentBase, externalId: `INV-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "invoice", title: "Invoice", status: "demo_payment_pending", content: snapshot }]).onConflictDoNothing();
       await db.insert(jobEvents).values({ jobId, eventType: "final_quote_accepted", label: `${quote.contractorName} selected after on-site verification`, metadata: JSON.stringify({ quoteId, amountCents: finalTerms.amountCents, selectedOptionId: selectedOption?.id ?? null, quoteAccuracy: acceptedAccuracy }) });
