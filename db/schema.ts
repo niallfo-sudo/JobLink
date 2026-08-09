@@ -282,6 +282,7 @@ export const supportRequests = sqliteTable("support_requests", {
 export const jobAttachments = sqliteTable("job_attachments", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   jobId: integer("job_id").notNull().references(() => jobRequests.id, { onDelete: "cascade" }),
+  milestoneId: integer("milestone_id").references(() => paymentMilestones.id, { onDelete: "cascade" }),
   ownerEmail: text("owner_email").notNull(),
   storageKey: text("storage_key").notNull(),
   filename: text("filename").notNull(),
@@ -293,6 +294,7 @@ export const jobAttachments = sqliteTable("job_attachments", {
 }, (table) => [
   uniqueIndex("job_attachments_storage_key_unique").on(table.storageKey),
   index("job_attachments_job_created_idx").on(table.jobId, table.createdAt),
+  index("job_attachments_milestone_idx").on(table.milestoneId),
   index("job_attachments_owner_idx").on(table.ownerEmail),
 ]);
 

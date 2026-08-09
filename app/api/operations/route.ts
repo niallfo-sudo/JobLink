@@ -53,7 +53,7 @@ async function requireOperationsUser() {
 async function syncPendingVerificationCases(db: ReturnType<typeof getDb>) {
   const pendingProfiles = await db.select().from(contractorProfiles).where(inArray(contractorProfiles.verificationStatus, ["pending", "pending_review"]));
   for (const profile of pendingProfiles) {
-    const documents = await db.select({ id: contractorVerificationDocuments.id, documentType: contractorVerificationDocuments.documentType, filename: contractorVerificationDocuments.filename, reviewStatus: contractorVerificationDocuments.reviewStatus }).from(contractorVerificationDocuments).where(eq(contractorVerificationDocuments.ownerEmail, profile.ownerEmail));
+    const documents = await db.select({ id: contractorVerificationDocuments.id, documentType: contractorVerificationDocuments.documentType, filename: contractorVerificationDocuments.filename, contentType: contractorVerificationDocuments.contentType, reviewStatus: contractorVerificationDocuments.reviewStatus }).from(contractorVerificationDocuments).where(eq(contractorVerificationDocuments.ownerEmail, profile.ownerEmail));
     const externalId = `VR-P${profile.id}`;
     const [existingCase] = await db.select({ status: operationsCases.status, assignee: operationsCases.assignee, resolution: operationsCases.resolution }).from(operationsCases).where(eq(operationsCases.externalId, externalId)).limit(1);
     const shouldReopen = Boolean(existingCase && ["resolved", "dismissed"].includes(existingCase.status));
@@ -100,6 +100,9 @@ export async function GET() {
     const [activeJobCount] = await access.db.select({ value: sql<number>`count(*)` }).from(jobRequests).where(inArray(jobRequests.status, ["matching", "quoted", "booked", "in_progress"]));
     const [paymentTotal] = await access.db.select({ value: sql<number>`coalesce(sum(${paymentRecords.totalCents}), 0)` }).from(paymentRecords);
     const paymentReviewRows = await access.db.select({ milestone: paymentMilestones, payment: paymentRecords, job: { externalId: jobRequests.externalId, title: jobRequests.title } }).from(paymentMilestones).innerJoin(paymentRecords, eq(paymentMilestones.paymentId, paymentRecords.id)).innerJoin(jobRequests, eq(paymentMilestones.jobId, jobRequests.id)).where(inArray(paymentMilestones.status, ["proof_submitted", "operations_hold"])).orderBy(desc(paymentMilestones.updatedAt));
+    const paymentReviewJobIds = [...new Set(paymentReviewRows.map((row) => row.milestone.jobId))];
+    const paymentReviewPhotos = paymentReviewJobIds.length ? await access.db.select({ id: jobAttachments.id, jobId: jobAttachments.jobId, milestoneId: jobAttachments.milestoneId, filename: jobAttachments.filename, contentType: jobAttachments.contentType, kind: jobAttachments.kind, stage: jobAttachments.stage }).from(jobAttachments).where(inArray(jobAttachments.jobId, paymentReviewJobIds)) : [];
+    const reviewPhoto = (attachment: typeof paymentReviewPhotos[number]) => ({ ...attachment, url: `/api/jobs/${attachment.jobId}/attachments/${attachment.id}` });
     const staff = await access.db.select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, createdAt: users.createdAt }).from(users).where(inArray(users.role, ["employee", "admin"]));
     const verifiedContractors = await access.db.select().from(contractorProfiles).where(eq(contractorProfiles.verificationStatus, "verified")).orderBy(desc(contractorProfiles.updatedAt));
     const operationsJobs = await access.db.select().from(jobRequests).orderBy(desc(jobRequests.updatedAt)).limit(100);
@@ -145,7 +148,7 @@ export async function GET() {
           quotes: jobQuotes,
         };
       }),
-      paymentReviews: paymentReviewRows.map((row) => ({ ...row.milestone, externalId: row.job.externalId, jobTitle: row.job.title, contractorName: row.payment.contractorName })),
+      paymentReviews: paymentReviewRows.map((row) => ({ ...row.milestone, externalId: row.job.externalId, jobTitle: row.job.title, contractorName: row.payment.contractorName, preWorkPhotos: paymentReviewPhotos.filter((attachment) => attachment.jobId === row.milestone.jobId && attachment.stage === "pre_work" && attachment.kind === "image").map(reviewPhoto), progressPhotos: paymentReviewPhotos.filter((attachment) => attachment.milestoneId === row.milestone.id && attachment.stage === "progress" && attachment.kind === "image").map(reviewPhoto) })),
       stats: { jobs: jobCount?.value ?? 0, activeJobs: activeJobCount?.value ?? 0, paymentVolumeCents: paymentTotal?.value ?? 0, openCases: cases.filter((item) => !["resolved", "dismissed"].includes(item.status)).length },
     });
   } catch (error) {

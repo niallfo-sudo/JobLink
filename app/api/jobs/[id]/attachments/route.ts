@@ -1,8 +1,9 @@
 import { and, asc, eq } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { getDb } from "../../../../../db";
-import { jobAttachments, jobRequests, quotes } from "../../../../../db/schema";
+import { jobAttachments, jobRequests, paymentMilestones, quotes, users } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
+import { getContractorActor } from "../../../../contractor-demo";
 
 type UploadBucket = {
   put(key: string, value: ReadableStream<Uint8Array>, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
@@ -24,6 +25,8 @@ async function authorizedJob(jobId: number, email: string) {
   const [job] = await db.select().from(jobRequests).where(eq(jobRequests.id, jobId)).limit(1);
   if (!job) return null;
   if (job.ownerEmail === email) return { job, viewerRole: "homeowner" as const };
+  const [viewer] = await db.select({ role: users.role }).from(users).where(eq(users.email, email)).limit(1);
+  if (viewer && ["employee", "admin"].includes(viewer.role)) return { job, viewerRole: "operations" as const };
   const [contractorAccess] = await db.select({ jobId: quotes.jobId }).from(quotes)
     .where(and(eq(quotes.jobId, jobId), eq(quotes.contractorEmail, email), eq(quotes.status, "accepted"))).limit(1);
   return contractorAccess ? { job, viewerRole: "contractor" as const } : null;
@@ -42,25 +45,35 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     sizeBytes: jobAttachments.sizeBytes,
     kind: jobAttachments.kind,
     stage: jobAttachments.stage,
+    milestoneId: jobAttachments.milestoneId,
     createdAt: jobAttachments.createdAt,
   }).from(jobAttachments).where(eq(jobAttachments.jobId, jobId)).orderBy(asc(jobAttachments.createdAt));
   return Response.json({ attachments: attachments.map((attachment) => ({ ...attachment, url: `/api/jobs/${jobId}/attachments/${attachment.id}` })) });
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await getChatGPTUser();
-  if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
+  const homeowner = await getChatGPTUser();
+  if (!homeowner) return Response.json({ error: "Sign in required" }, { status: 401 });
   const jobId = Number((await context.params).id);
   if (!Number.isInteger(jobId)) return Response.json({ error: "Invalid job id" }, { status: 400 });
-  const access = await authorizedJob(jobId, user.email);
-  if (!access || access.viewerRole !== "homeowner") return Response.json({ error: "Job not found" }, { status: 404 });
 
   const form = await request.formData();
-  const stage = form.get("stage") === "pre_work" ? "pre_work" : null;
-  if (!stage) return Response.json({ error: "This upload must be identified as before-work documentation" }, { status: 400 });
+  const requestedStage = form.get("stage");
+  const stage = requestedStage === "pre_work" || requestedStage === "progress" ? requestedStage : null;
+  if (!stage) return Response.json({ error: "Choose whether these are before-work or progress photos" }, { status: 400 });
+  const contractor = stage === "progress" ? await getContractorActor() : null;
+  const uploader = contractor ?? homeowner;
+  const access = await authorizedJob(jobId, uploader.email);
+  if (!access || (stage === "pre_work" && access.viewerRole !== "homeowner") || (stage === "progress" && access.viewerRole !== "contractor")) return Response.json({ error: "You do not have permission to upload these job photos" }, { status: 403 });
+  const milestoneId = stage === "progress" ? Number(form.get("milestoneId")) : null;
+  if (stage === "progress" && !Number.isInteger(milestoneId)) return Response.json({ error: "Progress photos must be attached to a payment milestone" }, { status: 400 });
+  if (milestoneId) {
+    const [milestone] = await getDb().select({ id: paymentMilestones.id }).from(paymentMilestones).where(and(eq(paymentMilestones.id, milestoneId), eq(paymentMilestones.jobId, jobId))).limit(1);
+    if (!milestone) return Response.json({ error: "Payment milestone not found for this job" }, { status: 404 });
+  }
   const files = form.getAll("files").filter((value): value is File => value instanceof File && value.size > 0);
   if (!files.length || files.length > 5) return Response.json({ error: "Choose between 1 and 5 files" }, { status: 400 });
-  if (files.some((file) => !allowedTypes.has(file.type) || !file.type.startsWith("image/"))) return Response.json({ error: "Before-work documentation must use JPG, PNG, WebP or HEIC images" }, { status: 400 });
+  if (files.some((file) => !allowedTypes.has(file.type) || !file.type.startsWith("image/"))) return Response.json({ error: "Job documentation must use JPG, PNG, WebP or HEIC images" }, { status: 400 });
   if (files.some((file) => file.size > maxFileBytes) || files.reduce((sum, file) => sum + file.size, 0) > maxTotalBytes) {
     return Response.json({ error: "Uploads are limited to 25 MB each and 50 MB total" }, { status: 400 });
   }
@@ -76,7 +89,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     await Promise.all(uploads.map(({ file, storageKey }) => storage.put(storageKey, file.stream(), { httpMetadata: { contentType: file.type } })));
     const saved = await getDb().insert(jobAttachments).values(uploads.map(({ file, storageKey, filename, kind }) => ({
       jobId,
-      ownerEmail: user.email,
+      milestoneId,
+      ownerEmail: uploader.email,
       storageKey,
       filename,
       contentType: file.type,

@@ -813,8 +813,8 @@ test("requires before-work photos and limits booked jobs to the selected contrac
   assert.match(page, /Before-work photos required/);
   assert.match(page, /before signing or funding/i);
   assert.match(css, /Upload required project before photos/);
-  assert.match(attachmentsRoute, /form\.get\("stage"\) === "pre_work"/);
-  assert.match(attachmentsRoute, /Before-work documentation must use/);
+  assert.match(attachmentsRoute, /requestedStage === "pre_work" \|\| requestedStage === "progress"/);
+  assert.match(attachmentsRoute, /Job documentation must use/);
   assert.match(signatureRoute, /before-work photo before signing/i);
   assert.match(signatureRoute, /getContractorActor/);
   assert.match(signatureRoute, /You have already signed this agreement/);
@@ -824,6 +824,34 @@ test("requires before-work photos and limits booked jobs to the selected contrac
   assert.match(conversationsRoute, /eq\(quotes\.status, "accepted"\)/);
   assert.match(schema, /stage: text\("stage"\)/);
   assert.match(migration, /ADD `stage` text NOT NULL DEFAULT 'request'/);
+});
+
+test("requires milestone-specific contractor progress photos and displays evidence thumbnails", async () => {
+  const [page, css, attachmentsRoute, milestoneRoute, paymentsRoute, documentsRoute, operationsRoute, schema, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/globals.css"),
+    source("../app/api/jobs/[id]/attachments/route.ts"),
+    source("../app/api/payments/[id]/milestones/[milestoneId]/route.ts"),
+    source("../app/api/payments/route.ts"),
+    source("../app/api/documents/route.ts"),
+    source("../app/api/operations/route.ts"),
+    source("../db/schema.ts"),
+    source("../drizzle/0027_progress_milestone_photos.sql"),
+  ]);
+
+  assert.match(page, /Upload progress photos \(required\)/);
+  assert.match(page, /ImageThumbnailStrip/);
+  assert.match(page, /Operations compares these with the original before-work photos/);
+  assert.match(css, /image-thumbnail-strip/);
+  assert.match(attachmentsRoute, /milestoneId/);
+  assert.match(attachmentsRoute, /stage === "progress"/);
+  assert.match(milestoneRoute, /Upload at least one job-progress photo/);
+  assert.match(milestoneRoute, /Before-work photos must be on file/);
+  assert.match(paymentsRoute, /progressPhotos/);
+  assert.match(documentsRoute, /preWorkPhotos/);
+  assert.match(operationsRoute, /progressPhotos/);
+  assert.match(schema, /milestoneId: integer\("milestone_id"\)/);
+  assert.match(migration, /ADD `milestone_id` integer/);
 });
 
 test("scopes contractor payouts to accepted quotes and released demo funds", async () => {

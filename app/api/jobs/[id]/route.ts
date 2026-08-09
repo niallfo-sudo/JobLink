@@ -33,7 +33,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       db.select().from(quotes).where(eq(quotes.jobId, jobId)).orderBy(asc(quotes.createdAt)),
       db.select().from(changeOrders).where(eq(changeOrders.jobId, jobId)).orderBy(asc(changeOrders.createdAt)),
       db.select().from(verifiedReviews).where(eq(verifiedReviews.jobId, jobId)).limit(1),
-      db.select({ id: jobAttachments.id, filename: jobAttachments.filename, contentType: jobAttachments.contentType, sizeBytes: jobAttachments.sizeBytes, kind: jobAttachments.kind, createdAt: jobAttachments.createdAt }).from(jobAttachments).where(eq(jobAttachments.jobId, jobId)).orderBy(asc(jobAttachments.createdAt)),
+      db.select({ id: jobAttachments.id, filename: jobAttachments.filename, contentType: jobAttachments.contentType, sizeBytes: jobAttachments.sizeBytes, kind: jobAttachments.kind, stage: jobAttachments.stage, milestoneId: jobAttachments.milestoneId, createdAt: jobAttachments.createdAt }).from(jobAttachments).where(eq(jobAttachments.jobId, jobId)).orderBy(asc(jobAttachments.createdAt)),
     ]);
     return Response.json({
       job,

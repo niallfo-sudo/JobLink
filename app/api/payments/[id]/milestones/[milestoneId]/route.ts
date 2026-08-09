@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../../../db";
-import { jobEvents, jobRequests, paymentMilestones, paymentRecords, quotes, verifiedReviews } from "../../../../../../db/schema";
+import { jobAttachments, jobEvents, jobRequests, paymentMilestones, paymentRecords, quotes, verifiedReviews } from "../../../../../../db/schema";
 import { getChatGPTUser } from "../../../../../chatgpt-auth";
 import { getContractorActor } from "../../../../../contractor-demo";
 import { notify } from "../../../../../../lib/notifications";
@@ -29,9 +29,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       if (payment.status !== "demo_held" && payment.status !== "demo_partially_released") return Response.json({ error: "The homeowner must fund the full job before a release can be requested" }, { status: 409 });
       if (milestone.status !== "demo_held") return Response.json({ error: "This milestone is not ready for proof submission" }, { status: 409 });
       if (proofNote.length < 12) return Response.json({ error: "Describe the completed work and uploaded evidence" }, { status: 400 });
+      const [beforeWorkPhoto] = await db.select({ id: jobAttachments.id }).from(jobAttachments).where(and(eq(jobAttachments.jobId, job.id), eq(jobAttachments.stage, "pre_work"), eq(jobAttachments.kind, "image"))).limit(1);
+      if (!beforeWorkPhoto) return Response.json({ error: "Before-work photos must be on file before a progress payment can be reviewed" }, { status: 409 });
+      const [progressPhoto] = await db.select({ id: jobAttachments.id }).from(jobAttachments).where(and(eq(jobAttachments.jobId, job.id), eq(jobAttachments.milestoneId, milestone.id), eq(jobAttachments.ownerEmail, contractor.email), eq(jobAttachments.stage, "progress"), eq(jobAttachments.kind, "image"))).limit(1);
+      if (!progressPhoto) return Response.json({ error: "Upload at least one job-progress photo for this milestone before submitting proof" }, { status: 409 });
       const now = new Date();
       const [updated] = await db.update(paymentMilestones).set({ status: "proof_submitted", proofNote, proofSubmittedAt: now, updatedAt: now }).where(eq(paymentMilestones.id, milestone.id)).returning();
-      await db.insert(jobEvents).values({ jobId: job.id, eventType: "payment_proof_submitted", label: `${milestone.label} proof submitted`, metadata: JSON.stringify({ paymentId, milestoneId: milestone.id, amountCents: milestone.amountCents }) });
+      await db.insert(jobEvents).values({ jobId: job.id, eventType: "payment_proof_submitted", label: `${milestone.label} proof submitted with progress photos`, metadata: JSON.stringify({ paymentId, milestoneId: milestone.id, amountCents: milestone.amountCents, progressPhotoId: progressPhoto.id, beforeWorkPhotoId: beforeWorkPhoto.id }) });
       await notify(job.ownerEmail, { jobId: job.id, type: "payment_proof_submitted", title: "Payment release awaiting approval", body: `${payment.contractorName} submitted proof for the ${milestone.label.toLowerCase()} on ${job.externalId}.` });
       return Response.json({ milestone: updated, message: "Proof submitted for homeowner approval." });
     }
