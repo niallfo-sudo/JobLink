@@ -320,6 +320,12 @@ export default function Home() {
     window.location.assign(`/signin-with-chatgpt?return_to=${encodeURIComponent(`/?portal=${portal}`)}`);
   }
 
+  function openContractorQuoteReplies() {
+    setProTab("jobs");
+    setJobView("quotes");
+    window.setTimeout(() => window.document.getElementById("homeowner-visit-requests")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+  }
+
   function openContractorArea() {
     if (view === "contractor") { go("discover"); return; }
     if (!accountIdentity || accountIdentity.role !== "contractor") {
@@ -2013,8 +2019,8 @@ export default function Home() {
             <div className="pro-page">
               <div className="pro-page-heading"><div><p className="step-kicker">{new Date().toLocaleDateString("en-CA", { weekday: "long", month: "long", day: "numeric" })}</p><h1>{contractorProfile?.businessName || businessName || "Your contractor workspace."}</h1><p>{availableOpportunities.length ? `${availableOpportunities.length} verified opportunity${availableOpportunities.length === 1 ? " is" : "ies are"} available.` : "No matching opportunities are available right now."}</p></div><button className="primary-action" onClick={() => setProTab("opportunities")}>View opportunities →</button></div>
               <div className="pro-metrics">
-                <article><span>Open opportunities</span><b>{availableOpportunities.length}</b><small>Matched to your services and radius</small></article>
-                <article><span>Quotes awaiting reply</span><b>{contractorQuotes.filter((quote) => quote.status === "submitted").length}</b><small>Submitted through JobLink</small></article>
+                <button type="button" className="overview-metric-link" onClick={() => setProTab("opportunities")}><span>Open opportunities</span><b>{availableOpportunities.length}</b><small>Matched to your services and radius · View opportunities →</small></button>
+                <button type="button" className="overview-metric-link" onClick={openContractorQuoteReplies}><span>Quotes awaiting reply</span><b>{contractorQuotes.filter((quote) => quote.status === "submitted" || quote.status === "onsite_requested").length}</b><small>View quotes and homeowner visit times →</small></button>
                 <article><span>Recorded payouts</span><b>${(paymentRecords.reduce((total, payment) => total + payment.contractorPayoutCents, 0) / 100).toLocaleString()}</b><small>{paymentRecords.length} accepted {paymentRecords.length === 1 ? "job" : "jobs"}</small></article>
                 <article><span>JobLink Score</span><b>{reputation.jobLinkScore ?? "New"}</b><small>{reputation.verifiedReviewCount} verified completed-job {reputation.verifiedReviewCount === 1 ? "review" : "reviews"}</small></article>
               </div>
@@ -2077,6 +2083,7 @@ export default function Home() {
             </div>
           )}
 
+          {proTab === "jobs" && jobView === "quotes" && contractorQuotes.some((quote) => quote.status === "onsite_requested") && <span id="homeowner-visit-requests" className="visit-request-anchor" />}
           {proTab === "jobs" && jobView === "quotes" && contractorQuotes.some((quote) => quote.status === "onsite_requested") && <section className="onsite-request-panel"><div><p className="aside-label">Action required</p><h2>Homeowner visit requests</h2><p>A homeowner has asked you to schedule an on-site verification. Review their request, then choose a weekday visit within two business days.</p></div><div className="onsite-request-list">{contractorQuotes.filter((quote) => quote.status === "onsite_requested").map((quote) => <article key={quote.id}><div><small>{quote.externalId} · {quote.category}</small><b>{quote.title}</b><span>Requested on-site verification</span></div><button onClick={() => setContractorRequestQuote(quote)}>View request & schedule →</button></article>)}</div></section>}
 
           {proTab === "jobs" && jobView === "quotes" && contractorQuotes.some((quote) => quote.status === "onsite_requested") && <section className="preferred-slot-panel"><b>Homeowner preferred times</b>{contractorQuotes.filter((quote) => quote.status === "onsite_requested").flatMap((quote) => (quote.onsitePreferences ?? []).map((slot) => <button key={`${quote.id}-${slot}`} onClick={() => { setOnsiteVisitValues((current) => ({ ...current, [quote.id]: dateTimeInputValue(slot) })); setContractorRequestQuote(quote); }}>{quote.title} · {scheduledStartLabel(slot)}</button>))}</section>}

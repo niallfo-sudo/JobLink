@@ -698,3 +698,16 @@ test("uses finalized completion targets to calculate timeline reliability", asyn
   assert.match(reputationRoute, /completionTimelineScore/);
   assert.match(reputationRoute, /timeline \* 0\.20/);
 });
+
+test("links contractor dashboard metrics to opportunities and homeowner visit requests", async () => {
+  const [page, css] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/globals.css"),
+  ]);
+
+  assert.match(page, /openContractorQuoteReplies/);
+  assert.match(page, /homeowner-visit-requests/);
+  assert.match(page, /View quotes and homeowner visit times/);
+  assert.match(page, /View opportunities/);
+  assert.match(css, /overview-metric-link/);
+});
