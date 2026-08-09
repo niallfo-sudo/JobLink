@@ -365,6 +365,32 @@ test("requires a completed-job review before final payment release and calculate
   assert.match(paymentsRoute, /completionReviewSubmitted/);
 });
 
+test("requires custom initial bid ranges and scores finalized quote accuracy", async () => {
+  const [page, quoteRoute, contractorQuotes, reputationRoute, schema, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+    source("../app/api/contractor-quotes/route.ts"),
+    source("../app/api/reputation/route.ts"),
+    source("../db/schema.ts"),
+    source("../drizzle/0023_quote_accuracy_ranges.sql"),
+  ]);
+
+  assert.match(page, /Your required initial bid range/);
+  assert.match(page, /quoteMinAmount/);
+  assert.match(page, /quoteMaxAmount/);
+  assert.match(page, /Quote Rating starts at 70/);
+  assert.match(quoteRoute, /minAmount/);
+  assert.match(quoteRoute, /maxAmount/);
+  assert.match(quoteRoute, /quoteAccuracy\(/);
+  assert.match(quoteRoute, /tight_in_range/);
+  assert.match(quoteRoute, /out_of_range/);
+  assert.match(quoteRoute, /initial bid range with a maximum equal to or higher than the minimum/);
+  assert.match(contractorQuotes, /quoteAccuracyDelta/);
+  assert.match(reputationRoute, /quoteRating/);
+  assert.match(schema, /initial_min_cents/);
+  assert.match(migration, /quote_accuracy_status/);
+});
+
 test("compares verified contractor information and estimated project dates on preliminary quotes", async () => {
   const [page, quoteRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),

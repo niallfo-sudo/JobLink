@@ -80,6 +80,8 @@ export const quotes = sqliteTable("quotes", {
   contractorEmail: text("contractor_email"),
   contractorName: text("contractor_name").notNull(),
   amountCents: integer("amount_cents").notNull(),
+  initialMinCents: integer("initial_min_cents").notNull().default(0),
+  initialMaxCents: integer("initial_max_cents").notNull().default(0),
   message: text("message").notNull().default(""),
   availableAt: text("available_at").notNull().default(""),
   estimatedStartAt: integer("estimated_start_at", { mode: "timestamp_ms" }),
@@ -94,6 +96,8 @@ export const quotes = sqliteTable("quotes", {
   completionCents: integer("completion_cents").notNull().default(0),
   finalOptions: text("final_options").notNull().default("[]"),
   selectedFinalOptionId: text("selected_final_option_id"),
+  quoteAccuracyDelta: integer("quote_accuracy_delta").notNull().default(0),
+  quoteAccuracyStatus: text("quote_accuracy_status").notNull().default("pending"),
   finalizedAt: integer("finalized_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [

@@ -10,7 +10,7 @@ type PersistedJob = { id: number; externalId: string; category: string; title: s
 type ContractorComparison = { primaryService: string; approvedServices: string[]; homeBase: string; serviceRadiusKm: number; yearsInBusiness: number; teamSize: number; emergencyAvailable: boolean; about: string; verificationStatus: string; reviewCount: number; averageRating: number | null };
 type FinalQuoteOption = { id: string; title: string; description: string; amountCents: number; depositCents: number; progressCents: number; completionCents: number };
 type FinalQuoteOptionDraft = { id: string; title: string; description: string; amount: string; depositAmount: string; progressAmount: string; completionAmount: string };
-type PersistedQuote = { id: number; contractorName: string; amountCents: number; message: string; availableAt: string; estimatedStartAt?: string | number | null; estimatedFinishAt?: string | number | null; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; finalOptions?: FinalQuoteOption[]; selectedFinalOptionId?: string | null; contractor?: ContractorComparison | null };
+type PersistedQuote = { id: number; contractorName: string; amountCents: number; initialMinCents?: number; initialMaxCents?: number; message: string; availableAt: string; estimatedStartAt?: string | number | null; estimatedFinishAt?: string | number | null; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; finalOptions?: FinalQuoteOption[]; selectedFinalOptionId?: string | null; contractor?: ContractorComparison | null };
 type Opportunity = { numericId?: number; id: string; service: string; title: string; distance: string; budget: string; timing: string; match: number; posted: string; details: string };
 type RoomMessage = { id: number; body: string; mine: boolean; createdAt: string | number };
 type RoomEvent = { id: number; label: string; eventType: string; createdAt: string | number };
@@ -29,7 +29,7 @@ type OperationsCase = { id: number; externalId: string; caseType: "verification"
 type AccountIdentity = { email: string; displayName: string; role: "homeowner" | "contractor" | "employee" | "admin" | null; operationsRole?: "employee" | "admin" | null };
 type StaffMember = { id: number; email: string; displayName: string; role: "employee" | "admin"; createdAt: string | number };
 type VerificationDocument = { id: number; documentType: string; filename: string; reviewStatus: string; uploadedAt: string | number };
-type ContractorQuote = { id: number; jobId: number; externalId: string; title: string; category: string; amountCents: number; availableAt: string; estimatedStartAt?: string | number | null; estimatedFinishAt?: string | number | null; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; finalOptions?: FinalQuoteOption[]; selectedFinalOptionId?: string | null; createdAt: string | number };
+type ContractorQuote = { id: number; jobId: number; externalId: string; title: string; category: string; amountCents: number; initialMinCents?: number; initialMaxCents?: number; quoteAccuracyDelta?: number; quoteAccuracyStatus?: string; availableAt: string; estimatedStartAt?: string | number | null; estimatedFinishAt?: string | number | null; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; finalOptions?: FinalQuoteOption[]; selectedFinalOptionId?: string | null; createdAt: string | number };
 type VerifiedContractor = { id: number; ownerEmail: string; businessName: string; primaryService: string; requestedServices: string[]; approvedServices: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: string; subscriptionStatus: string; payoutsEnabled: boolean; updatedAt: string | number };
 type OperationsJob = { id: number; externalId: string; ownerEmail: string; category: string; title: string; budget: string; timeline: string; emergency: boolean; status: string; scheduledStartAt?: string | number | null; createdAt: string | number; updatedAt: string | number; matchingContractors: Array<{ businessName: string; ownerEmail: string; primaryService: string }>; quotes: Array<{ id: number; contractorEmail?: string | null; contractorName: string; amountCents: number; status: string; createdAt: string | number }> };
 type DemoContractorCompany = { ownerEmail: string; businessName: string; primaryService: string; homeBase: string; verificationStatus: string };
@@ -154,7 +154,8 @@ export default function Home() {
   const [customBudget, setCustomBudget] = useState("");
   const [proTab, setProTab] = useState<ProTab>("overview");
   const [quoteJob, setQuoteJob] = useState<Opportunity | null>(null);
-  const [quoteAmount, setQuoteAmount] = useState("");
+  const [quoteMinAmount, setQuoteMinAmount] = useState("");
+  const [quoteMaxAmount, setQuoteMaxAmount] = useState("");
   const [quoteSent, setQuoteSent] = useState<string | null>(null);
   const [contractorQuotes, setContractorQuotes] = useState<ContractorQuote[]>([]);
   const [quoteNote, setQuoteNote] = useState("");
@@ -241,7 +242,7 @@ export default function Home() {
   const [reviewScores, setReviewScores] = useState({ workmanship: 0, communication: 0, punctuality: 0, cleanliness: 0 });
   const [reviewComment, setReviewComment] = useState("");
   const [reviewStatus, setReviewStatus] = useState<"idle" | "saving" | "error">("idle");
-  const [reputation, setReputation] = useState<{ verifiedReviewCount: number; averageStars: number | null; verifiedReviewScore: number | null; jobLinkScore: number | null; scoreDetails: { quality: number; completion: number; documentation: number } }>({ verifiedReviewCount: 0, averageStars: null, verifiedReviewScore: null, jobLinkScore: null, scoreDetails: { quality: 0, completion: 0, documentation: 0 } });
+  const [reputation, setReputation] = useState<{ verifiedReviewCount: number; averageStars: number | null; verifiedReviewScore: number | null; jobLinkScore: number | null; scoreDetails: { quality: number; completion: number; documentation: number }; quoteRating: number | null; quoteComparisonCount: number; averageQuoteDelta: number | null }>({ verifiedReviewCount: 0, averageStars: null, verifiedReviewScore: null, jobLinkScore: null, scoreDetails: { quality: 0, completion: 0, documentation: 0 }, quoteRating: null, quoteComparisonCount: 0, averageQuoteDelta: null });
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [requestFiles, setRequestFiles] = useState<File[]>([]);
@@ -982,7 +983,7 @@ export default function Home() {
       const response = await fetch(`/api/jobs/${quoteJob.numericId}/quotes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: Number(quoteAmount), message: quoteNote, availableAt: quoteAvailability, estimatedStartAt: quoteEstimatedStart, estimatedFinishAt: quoteEstimatedFinish, contractorName: contractorProfile?.businessName || businessName }),
+        body: JSON.stringify({ minAmount: Number(quoteMinAmount), maxAmount: Number(quoteMaxAmount), message: quoteNote, availableAt: quoteAvailability, estimatedStartAt: quoteEstimatedStart, estimatedFinishAt: quoteEstimatedFinish, contractorName: contractorProfile?.businessName || businessName }),
       });
       const data = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Unable to submit quote");
@@ -998,7 +999,8 @@ export default function Home() {
   function openQuote(job: Opportunity) {
     setQuoteSubmitStatus("idle");
     setQuoteSubmitError("");
-    setQuoteAmount("");
+    setQuoteMinAmount("");
+    setQuoteMaxAmount("");
     setQuoteNote("Quote includes labour, materials and cleanup. Final scope will be confirmed with the homeowner before work begins.");
     setQuoteAvailability("Schedule to be confirmed with the homeowner");
     setQuoteEstimatedStart("");
@@ -1905,7 +1907,7 @@ export default function Home() {
                 <aside className="trust-panel">
                   <div className="trust-panel-top"><div><p className="aside-label">JobLink Score</p><h2>{reputation.jobLinkScore ?? "—"}<small>/100</small></h2></div><span>{reputation.verifiedReviewCount ? `${reputation.averageStars?.toFixed(1)} ★` : "Building"}</span></div>
                   <div className="score-bar"><i style={{ width: `${reputation.jobLinkScore ?? 0}%` }} /></div>
-                  <dl><div><dt>Verified reviews</dt><dd>{reputation.verifiedReviewCount}</dd></div><div><dt>Quality score</dt><dd>{reputation.scoreDetails.quality || "—"}</dd></div><div><dt>Completion reliability</dt><dd>{reputation.scoreDetails.completion || "—"}</dd></div><div><dt>Review completion</dt><dd>{reputation.scoreDetails.documentation || "—"}</dd></div></dl><p className="joblink-score-note">Weighted from verified review quality (55%), completed accepted jobs (30%) and required-review completion (15%).</p>
+                  <dl><div><dt>Verified reviews</dt><dd>{reputation.verifiedReviewCount}</dd></div><div><dt>Quality score</dt><dd>{reputation.scoreDetails.quality || "—"}</dd></div><div><dt>Completion reliability</dt><dd>{reputation.scoreDetails.completion || "—"}</dd></div><div><dt>Review completion</dt><dd>{reputation.scoreDetails.documentation || "—"}</dd></div><div><dt>Quote Rating</dt><dd>{reputation.quoteRating ?? "Building"}</dd></div></dl><p className="joblink-score-note">JobLink Score: review quality (55%), completed accepted jobs (30%) and required-review completion (15%). Quote Rating starts at 70 after the first verified on-site comparison: +12 for a tight range in range, +8 standard, +4 wide, and −2 to −6 when outside.</p>
                   <button onClick={() => setProTab("business")}>Improve your profile →</button>
                 </aside>
               </div>
@@ -1991,16 +1993,16 @@ export default function Home() {
                 <button className="overlay-close" onClick={() => setQuoteJob(null)} aria-label="Close quote builder">×</button>
                 <p className="step-kicker">Structured quote · {quoteJob.id}</p><h2 id="quote-title">Send a confident quote.</h2><p className="quote-job-title">{quoteJob.title}</p>
                 <div className="quote-scope"><span>✦</span><div><b>Scope checked</b><p>{quoteJob.details}</p></div></div>
-                <label className="field-label" htmlFor="quote-price">Your estimated price</label><div className="price-input"><span>$</span><input id="quote-price" value={quoteAmount} onChange={(event) => setQuoteAmount(event.target.value)} inputMode="decimal" /><em>CAD</em></div>
-                <div className="quote-breakdown"><div className="total"><span>Your submitted total</span><b>${Number(quoteAmount || 0).toLocaleString()}</b></div><p>Describe labour, materials, taxes, cleanup, and exclusions in the message so the homeowner can compare the scope accurately.</p></div>
+                <label className="field-label">Your required initial bid range</label><div className="quote-range-inputs"><label htmlFor="quote-min-price">From $<input id="quote-min-price" value={quoteMinAmount} onChange={(event) => setQuoteMinAmount(event.target.value)} inputMode="decimal" placeholder="Minimum" /></label><span>to</span><label htmlFor="quote-max-price">$<input id="quote-max-price" value={quoteMaxAmount} onChange={(event) => setQuoteMaxAmount(event.target.value)} inputMode="decimal" placeholder="Maximum" /></label></div>
+                <div className="quote-breakdown"><div className="total"><span>Your submitted initial range</span><b>${Number(quoteMinAmount || 0).toLocaleString()}–${Number(quoteMaxAmount || 0).toLocaleString()}</b></div><p>The final on-site quote is measured against this range. Accurate, tighter estimates earn more Quote Rating points; an out-of-range final quote has only a small deduction.</p></div>
                 <label className="field-label" htmlFor="quote-note">Message to customer</label><textarea id="quote-note" value={quoteNote} onChange={(event) => setQuoteNote(event.target.value)} rows={4} />
                 <div className="quote-schedule-inputs"><label className="field-label" htmlFor="quote-start-date">Estimated start date<input id="quote-start-date" type="date" min={earliestQuoteDate} value={quoteEstimatedStart} onChange={(event) => setQuoteEstimatedStart(event.target.value)} /></label><label className="field-label" htmlFor="quote-finish-date">Estimated finish date<input id="quote-finish-date" type="date" min={quoteEstimatedStart || earliestQuoteDate} value={quoteEstimatedFinish} onChange={(event) => setQuoteEstimatedFinish(event.target.value)} /></label></div>
                 <label className="field-label" htmlFor="quote-date">Availability note (optional)</label><input id="quote-date" value={quoteAvailability} onChange={(event) => setQuoteAvailability(event.target.value)} placeholder="Example: Weekdays after 9 AM" />
                 <div className="quote-protection"><span>✓</span><p>Customer contact details remain private until they accept your quote.</p></div>
                 {quoteSubmitStatus === "error" && <p className="quote-submit-error">{quoteSubmitError || "This quote could not be sent. Check the amount and try again."}</p>}
-                {Number(quoteAmount || 0) < 10 && <p className="quote-field-hint">Enter an estimated price of at least $10 to send this quote.</p>}
+                {(Number(quoteMinAmount || 0) < 10 || Number(quoteMaxAmount || 0) < Number(quoteMinAmount || 0)) && <p className="quote-field-hint">Enter a valid minimum and maximum bid range of at least $10.</p>}
                 {(!quoteEstimatedStart || !quoteEstimatedFinish || quoteEstimatedFinish < quoteEstimatedStart) && <p className="quote-field-hint">Add an estimated start and finish date so the homeowner can compare schedules.</p>}
-                <button className="send-quote" disabled={quoteSubmitStatus === "saving" || Number(quoteAmount) < 10 || !quoteEstimatedStart || !quoteEstimatedFinish || quoteEstimatedFinish < quoteEstimatedStart} onClick={submitQuote}>{quoteSubmitStatus === "saving" ? "Sending quote…" : `Send $${Number(quoteAmount || 0).toLocaleString()} quote →`}</button>
+                <button className="send-quote" disabled={quoteSubmitStatus === "saving" || Number(quoteMinAmount) < 10 || Number(quoteMaxAmount) < Number(quoteMinAmount) || !quoteEstimatedStart || !quoteEstimatedFinish || quoteEstimatedFinish < quoteEstimatedStart} onClick={submitQuote}>{quoteSubmitStatus === "saving" ? "Sending quote…" : `Send $${Number(quoteMinAmount || 0).toLocaleString()}–$${Number(quoteMaxAmount || 0).toLocaleString()} bid →`}</button>
               </div>
             </div>
           )}

@@ -39,6 +39,17 @@ function estimatedDate(value: string | undefined) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function quoteAccuracy(initialMinCents: number, initialMaxCents: number, finalCents: number) {
+  if (initialMinCents < 1000 || initialMaxCents < initialMinCents) return { delta: 0, status: "unavailable" };
+  const rangeWidth = (initialMaxCents - initialMinCents) / initialMinCents;
+  if (finalCents >= initialMinCents && finalCents <= initialMaxCents) {
+    const delta = rangeWidth <= 0.15 ? 12 : rangeWidth <= 0.35 ? 8 : 4;
+    return { delta, status: rangeWidth <= 0.15 ? "tight_in_range" : rangeWidth <= 0.35 ? "in_range" : "wide_in_range" };
+  }
+  const distance = finalCents < initialMinCents ? initialMinCents - finalCents : finalCents - initialMaxCents;
+  return { delta: -Math.min(6, Math.max(2, Math.ceil((distance / initialMinCents) * 10))), status: "out_of_range" };
+}
+
 function parseFinalOptions(value: string | null | undefined): FinalQuoteOption[] {
   try {
     const parsed = JSON.parse(value || "[]");
@@ -107,9 +118,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const jobId = Number((await context.params).id);
   if (!Number.isInteger(jobId)) return Response.json({ error: "Invalid job id" }, { status: 400 });
-  const payload = (await request.json()) as { amount?: number; message?: string; availableAt?: string; estimatedStartAt?: string; estimatedFinishAt?: string };
-  const amountCents = toCents(payload.amount);
-  if (amountCents === null || amountCents < 1000) return Response.json({ error: "Enter a valid quote amount of at least $10" }, { status: 400 });
+  const payload = (await request.json()) as { minAmount?: number; maxAmount?: number; message?: string; availableAt?: string; estimatedStartAt?: string; estimatedFinishAt?: string };
+  const initialMinCents = toCents(payload.minAmount);
+  const initialMaxCents = toCents(payload.maxAmount);
+  if (initialMinCents === null || initialMaxCents === null || initialMinCents < 1000 || initialMaxCents < initialMinCents) return Response.json({ error: "Enter a valid initial bid range with a maximum equal to or higher than the minimum" }, { status: 400 });
+  const amountCents = Math.round((initialMinCents + initialMaxCents) / 2);
+  const preliminaryMessage = `Initial bid range: $${(initialMinCents / 100).toLocaleString()}–$${(initialMaxCents / 100).toLocaleString()}. ${payload.message?.trim() || "Preliminary estimate only. This is not a booking or accepted price; a finalized quote follows the on-site visit."}`;
   const estimatedStartAt = estimatedDate(payload.estimatedStartAt);
   const estimatedFinishAt = estimatedDate(payload.estimatedFinishAt);
   if (!estimatedStartAt || !estimatedFinishAt || estimatedFinishAt < estimatedStartAt) return Response.json({ error: "Enter an estimated start and finish date for this initial quote" }, { status: 400 });
@@ -121,11 +135,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!profile || !profile.acceptingWork) return Response.json({ error: "A verified, active contractor profile that is accepting work is required" }, { status: 403 });
     const services = (JSON.parse(profile.approvedServices || "[]") as string[]).map((service) => service.toLowerCase());
     if (!services.some((service: string) => service.includes(job.category.toLowerCase()) || job.category.toLowerCase().includes(service))) return Response.json({ error: "This job is outside your verified services" }, { status: 403 });
-    const [quote] = await db.insert(quotes).values({ jobId, contractorEmail: user.email, contractorName: profile.businessName, amountCents, message: payload.message?.trim() || "Preliminary estimate only. This is not a booking or accepted price; a finalized quote follows the on-site visit.", availableAt: payload.availableAt?.trim() || "On-site availability to be confirmed", estimatedStartAt, estimatedFinishAt }).onConflictDoUpdate({
+    const [quote] = await db.insert(quotes).values({ jobId, contractorEmail: user.email, contractorName: profile.businessName, amountCents, initialMinCents, initialMaxCents, message: preliminaryMessage, availableAt: payload.availableAt?.trim() || "On-site availability to be confirmed", estimatedStartAt, estimatedFinishAt }).onConflictDoUpdate({
       target: [quotes.jobId, quotes.contractorEmail],
-      set: { amountCents, message: payload.message?.trim() || "Preliminary estimate only. This is not a booking or accepted price; a finalized quote follows the on-site visit.", availableAt: payload.availableAt?.trim() || "On-site availability to be confirmed", estimatedStartAt, estimatedFinishAt, status: "submitted", onsiteVisitAt: null, workDescription: "", materials: "", measurements: "", depositCents: 0, progressCents: 0, completionCents: 0, finalOptions: "[]", selectedFinalOptionId: null, finalizedAt: null, createdAt: new Date() },
+      set: { amountCents, initialMinCents, initialMaxCents, message: preliminaryMessage, availableAt: payload.availableAt?.trim() || "On-site availability to be confirmed", estimatedStartAt, estimatedFinishAt, status: "submitted", onsiteVisitAt: null, workDescription: "", materials: "", measurements: "", depositCents: 0, progressCents: 0, completionCents: 0, finalOptions: "[]", selectedFinalOptionId: null, quoteAccuracyDelta: 0, quoteAccuracyStatus: "pending", finalizedAt: null, createdAt: new Date() },
     }).returning();
-    await db.insert(jobEvents).values({ jobId, eventType: "quote_submitted", label: `Preliminary estimate received from ${profile.businessName}`, metadata: JSON.stringify({ quoteId: quote.id, amountCents, nonBinding: true }) });
+    await db.insert(jobEvents).values({ jobId, eventType: "quote_submitted", label: `Preliminary bid range received from ${profile.businessName}`, metadata: JSON.stringify({ quoteId: quote.id, initialMinCents, initialMaxCents, nonBinding: true }) });
     await notify(job.ownerEmail, { jobId, type: "quote_received", title: "New preliminary estimate", body: `${profile.businessName} submitted a non-binding estimate for ${job.externalId}. Requesting an on-site visit does not select the contractor.` });
     return Response.json({ quote }, { status: 201 });
   } catch (error) {
@@ -180,13 +194,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       const materials = payload.materials?.trim() || "";
       const measurements = payload.measurements?.trim() || "";
       const finalOptions = finalOptionsFromPayload(payload.finalOptions);
+      const accuracy = quoteAccuracy(quote.initialMinCents, quote.initialMaxCents, amountCents ?? 0);
       if (amountCents === null || amountCents < 1000 || depositCents === null || progressCents === null || completionCents === null || depositCents + progressCents + completionCents !== amountCents) return Response.json({ error: "Payment checkpoints must add up exactly to the final quote" }, { status: 400 });
       if (!finalOptions) return Response.json({ error: "Each alternative needs a title, detailed scope, total and matching payment checkpoints" }, { status: 400 });
       if (workDescription.length < 20 || materials.length < 3 || measurements.length < 3) return Response.json({ error: "Include a detailed work description, materials, and measurements" }, { status: 400 });
       const finalizedAt = new Date();
-      const [updatedQuote] = await db.update(quotes).set({ status: "final_quote_ready", amountCents, workDescription, materials, measurements, depositCents, progressCents, completionCents, finalOptions: JSON.stringify(finalOptions), selectedFinalOptionId: null, finalizedAt, message: "Final quote prepared after on-site verification." }).where(eq(quotes.id, quote.id)).returning();
+      const [updatedQuote] = await db.update(quotes).set({ status: "final_quote_ready", amountCents, workDescription, materials, measurements, depositCents, progressCents, completionCents, finalOptions: JSON.stringify(finalOptions), selectedFinalOptionId: null, quoteAccuracyDelta: accuracy.delta, quoteAccuracyStatus: accuracy.status, finalizedAt, message: "Final quote prepared after on-site verification." }).where(eq(quotes.id, quote.id)).returning();
       await db.update(jobRequests).set({ status: "final_quote_ready", updatedAt: finalizedAt }).where(eq(jobRequests.id, jobId));
-      await db.insert(jobEvents).values({ jobId, eventType: "final_quote_ready", label: `Final quote ready from ${quote.contractorName}`, metadata: JSON.stringify({ quoteId, amountCents, depositCents, progressCents, completionCents, alternativeCount: finalOptions.length }) });
+      await db.insert(jobEvents).values({ jobId, eventType: "final_quote_ready", label: `Final quote ready from ${quote.contractorName}`, metadata: JSON.stringify({ quoteId, amountCents, depositCents, progressCents, completionCents, alternativeCount: finalOptions.length, quoteAccuracy: accuracy }) });
       await notify(job.ownerEmail, { jobId, type: "final_quote_ready", title: "Final quote ready to review", body: `${quote.contractorName} added the verified scope, materials, measurements, and payment checkpoints for ${job.externalId}.` });
       return Response.json({ quote: updatedQuote, job: { ...job, status: "final_quote_ready" } });
     }
