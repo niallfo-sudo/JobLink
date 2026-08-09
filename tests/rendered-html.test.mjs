@@ -205,6 +205,27 @@ test("supports custom timing, richer request details and persistent employee ope
   assert.match(migration, /CREATE TABLE `operations_cases`/);
 });
 
+test("provides job-specific scope checklists and detailed inputs for every service", async () => {
+  const [page, catalog] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/request-catalog.ts"),
+  ]);
+
+  for (const service of ["Drywall", "Roofing", "Painting", "Plumbing", "Electrical", "HVAC", "Junk removal", "Landscaping", "Moving", "Carpentry", "Flooring", "General contracting"]) {
+    assert.match(catalog, new RegExp(service.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  for (const job of ["Full electrical for addition", "Dryer or range hookup", "Bathroom renovation", "Toilet addition or replacement", "Basement renovation", "Flooring", "Walls", "Painting"]) {
+    assert.match(`${page}\n${catalog}`, new RegExp(job.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+  }
+  assert.match(page, /jobWorkOptions\.map/);
+  assert.match(page, /detailedInputs\.map/);
+  assert.match(page, /selectedJobTasks\.length > 0/);
+  assert.match(page, /Object\.values\(detailFieldValues\)/);
+  assert.match(catalog, /Approximate project area/);
+  assert.match(catalog, /Wall or ceiling height/);
+  assert.match(catalog, /Panel size, brand and available breaker spaces/);
+});
+
 test("uses production-backed AI and verification with explicit demo money workflows", async () => {
   const [page, schema, quoteRoute, verificationRoute, aiRoute, paymentCheckout, subscriptionCheckout, payoutConnect, webhook, operationsRoute] = await Promise.all([
     source("../app/page.tsx"),
