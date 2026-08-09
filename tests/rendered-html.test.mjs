@@ -831,8 +831,10 @@ test("scopes contractor payouts to accepted quotes and released demo funds", asy
   ]);
 
   assert.match(paymentsRoute, /innerJoin\(quotes, eq\(paymentRecords\.quoteId, quotes\.id\)\)/);
+  assert.match(paymentsRoute, /scope === "contractor"/);
   assert.match(paymentsRoute, /eq\(quotes\.contractorEmail, user\.email\)/);
   assert.match(paymentsRoute, /eq\(quotes\.status, "accepted"\)/);
+  assert.match(page, /\/api\/payments\?scope=\$\{scope\}/);
   assert.match(page, /releasedPayoutCents/);
   assert.match(page, /demo_partially_released/);
   assert.match(page, /demo_released/);

@@ -1529,7 +1529,8 @@ export default function Home() {
 
   async function refreshPaymentRecords() {
     try {
-      const response = await fetch("/api/payments");
+      const scope = view === "contractor" ? "contractor" : "homeowner";
+      const response = await fetch(`/api/payments?scope=${scope}`);
       if (!response.ok) return;
       const data = (await response.json()) as { payments?: PaymentRecord[] };
       setPaymentRecords(data.payments ?? []);
