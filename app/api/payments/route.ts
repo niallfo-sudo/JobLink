@@ -1,6 +1,6 @@
-import { desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { jobAttachments, jobRequests, paymentMilestones, paymentRecords, verifiedReviews } from "../../../db/schema";
+import { jobAttachments, jobRequests, paymentMilestones, paymentRecords, quotes, verifiedReviews } from "../../../db/schema";
 import { getContractorActor } from "../../contractor-demo";
 
 export async function GET() {
@@ -8,8 +8,17 @@ export async function GET() {
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
     const rows = await getDb().select({ payment: paymentRecords, job: { externalId: jobRequests.externalId, title: jobRequests.title } })
-      .from(paymentRecords).innerJoin(jobRequests, eq(paymentRecords.jobId, jobRequests.id))
-      .where(or(eq(paymentRecords.ownerEmail, user.email), eq(paymentRecords.contractorEmail, user.email)))
+      .from(paymentRecords)
+      .innerJoin(jobRequests, eq(paymentRecords.jobId, jobRequests.id))
+      .innerJoin(quotes, eq(paymentRecords.quoteId, quotes.id))
+      .where(or(
+        eq(paymentRecords.ownerEmail, user.email),
+        and(
+          eq(paymentRecords.contractorEmail, user.email),
+          eq(quotes.contractorEmail, user.email),
+          eq(quotes.status, "accepted"),
+        ),
+      ))
       .orderBy(desc(paymentRecords.createdAt)).limit(50);
     const ids = rows.map((row) => row.payment.id);
     const jobIds = rows.map((row) => row.payment.jobId);

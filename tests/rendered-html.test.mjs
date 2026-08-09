@@ -817,3 +817,18 @@ test("requires before-work photos and limits booked jobs to the selected contrac
   assert.match(schema, /stage: text\("stage"\)/);
   assert.match(migration, /ADD `stage` text NOT NULL DEFAULT 'request'/);
 });
+
+test("scopes contractor payouts to accepted quotes and released demo funds", async () => {
+  const [page, paymentsRoute] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/payments/route.ts"),
+  ]);
+
+  assert.match(paymentsRoute, /innerJoin\(quotes, eq\(paymentRecords\.quoteId, quotes\.id\)\)/);
+  assert.match(paymentsRoute, /eq\(quotes\.contractorEmail, user\.email\)/);
+  assert.match(paymentsRoute, /eq\(quotes\.status, "accepted"\)/);
+  assert.match(page, /releasedPayoutCents/);
+  assert.match(page, /demo_partially_released/);
+  assert.match(page, /demo_released/);
+  assert.match(page, /Released demo payouts/);
+});
