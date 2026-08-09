@@ -241,6 +241,8 @@ test("uses production-backed AI and verification with explicit demo money workfl
   assert.match(subscriptionCheckout, /demo_active/);
   assert.doesNotMatch(subscriptionCheckout, /api\.stripe\.com/);
   assert.match(payoutConnect, /demo payout destination enabled/i);
+  assert.match(payoutConnect, /function serializeProfile/);
+  assert.match(payoutConnect, /profile: serializeProfile\(updated\)/);
   assert.doesNotMatch(payoutConnect, /api\.stripe\.com/);
   assert.match(webhook, /disabled.*demo mode/i);
   assert.match(page, /Payment demo for accepted quotes/);
