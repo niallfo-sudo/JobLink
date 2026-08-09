@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   title: "JobLink — Describe the job. Get matched. Get it done.",
   description: "Post a home-service job in 60 seconds and compare a shortlist of trusted local professionals.",
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+  openGraph: { title: "JobLink - Trusted work. Protected payments.", description: "Describe the job, compare qualified professionals, and follow documented work from quote to completion.", images: ["/og.png"] },
+  twitter: { card: "summary_large_image", title: "JobLink - Trusted work. Protected payments.", description: "Describe the job, compare qualified professionals, and follow documented work from quote to completion.", images: ["/og.png"] },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

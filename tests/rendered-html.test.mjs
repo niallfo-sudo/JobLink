@@ -493,7 +493,7 @@ test("requires custom initial bid ranges and scores finalized quote accuracy", a
   assert.match(page, /Estimated work duration/);
   assert.match(page, /quoteCompletionTimeframe/);
   assert.match(page, /Work duration/);
-  assert.match(page, /Quote Rating starts at 70/);
+  assert.match(page, /recognizes opening price ranges/);
   assert.match(quoteRoute, /minAmount/);
   assert.match(quoteRoute, /maxAmount/);
   assert.match(quoteRoute, /completionTimeframe/);
@@ -876,6 +876,8 @@ test("explains protected payment and homeowner remedies on the Trust and Safety 
 
   assert.doesNotMatch(page, /demo payment records/);
   assert.match(page, /Your money follows/);
+  assert.match(page, /licensed third-party payment provider/);
+  assert.match(page, /never charges a card or moves money/);
   assert.match(page, /Payments are processed through JobLink/);
   assert.match(page, /pause unreleased funds/);
   assert.match(page, /returned to the homeowner/);
@@ -890,6 +892,18 @@ test("explains trustworthy reviews and both contractor ratings on the Trust and 
   assert.match(page, /JobLink Score reflects verified work quality/);
   assert.match(page, /Quote Rating reflects how consistently/);
   assert.match(page, /Quote Rating: price-range accuracy/);
+});
+
+test("provides a full homeowner and contractor how-it-works journey", async () => {
+  const page = await source("../app/page.tsx");
+
+  assert.match(page, /How JobLink works/);
+  assert.match(page, /For homeowners/);
+  assert.match(page, /For contractors/);
+  assert.match(page, /Choose on-site verification/);
+  assert.match(page, /Review the finalized agreement/);
+  assert.match(page, /Document progress/);
+  assert.match(page, /go\("how"\)/);
 });
 
 test("keeps JobLink Score in New Building state until the first verified review", async () => {
