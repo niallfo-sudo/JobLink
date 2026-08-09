@@ -643,3 +643,11 @@ test("keeps quotes from separate contractor companies and blocks silent duplicat
   assert.match(page, /Submitting as <b>\{contractorProfile\?\.businessName \|\| businessName/);
   assert.match(page, /Each contractor company can submit one initial quote/);
 });
+
+test("returns a render-safe contractor profile when a demo subscription is activated", async () => {
+  const subscriptionRoute = await source("../app/api/contractor-subscription/checkout/route.ts");
+
+  assert.match(subscriptionRoute, /function parseServices/);
+  assert.match(subscriptionRoute, /services: parseServices\(updated\.services\)/);
+  assert.match(subscriptionRoute, /approvedServices: parseServices\(updated\.approvedServices\)/);
+});
