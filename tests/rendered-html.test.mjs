@@ -115,6 +115,11 @@ test("lets Operations administrators switch between verified demo contractor com
   for (const company of ["North & Beam Drywall", "Hamilton Climate Co.", "Hamilton Plumbing Co.", "Citywide Painting"]) assert.match(migration, new RegExp(company.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
+test("gives contractor applicants examples for every onboarding text field", async () => {
+  const page = await source("../app/page.tsx");
+  for (const example of ["1234567 Ontario Inc.", "Hamilton Home Improvements", "123 Main Street, Hamilton, ON L8P 1A1", "(905) 555-0123", "Example: 12", "Example: 6", "Licensed and insured residential renovation contractor", "Example: Hamilton, Ontario"]) assert.match(page, new RegExp(example.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
 test("supports custom request terms and persistent employee operations", async () => {
   const [page, operationsRoute, jobRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),
