@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { jobAttachments, paymentMilestones, paymentRecords } from "../../../../db/schema";
+import { documentRecords, jobAttachments, paymentMilestones, paymentRecords } from "../../../../db/schema";
 import { getChatGPTUser } from "../../../chatgpt-auth";
 
 export async function POST(request: Request) {
@@ -11,6 +11,8 @@ export async function POST(request: Request) {
   const db = getDb();
   const [payment] = await db.select().from(paymentRecords).where(and(eq(paymentRecords.id, Number(payload.paymentId)), eq(paymentRecords.ownerEmail, user.email))).limit(1);
   if (!payment) return Response.json({ error: "Payment record not found" }, { status: 404 });
+  const [agreement] = await db.select().from(documentRecords).where(and(eq(documentRecords.jobId, payment.jobId), eq(documentRecords.documentType, "service_agreement"))).limit(1);
+  if (!agreement || agreement.status !== "fully_signed") return Response.json({ error: "Both parties must sign the service agreement before the job can be funded" }, { status: 409 });
   const photos = await db.select({ id: jobAttachments.id }).from(jobAttachments).where(and(eq(jobAttachments.jobId, payment.jobId), eq(jobAttachments.ownerEmail, user.email), eq(jobAttachments.stage, "pre_work"), eq(jobAttachments.kind, "image"))).limit(1);
   if (!photos.length) return Response.json({ error: "Upload at least one before-work photo before funding this job" }, { status: 409 });
   if (["demo_held", "demo_partially_released", "demo_released"].includes(payment.status)) return Response.json({ payment, demo: true, message: "This full-job demo funding record is already held by JobLink." });

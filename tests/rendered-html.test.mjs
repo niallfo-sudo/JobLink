@@ -798,8 +798,9 @@ test("places a homeowner approval action beside contractor-proposed visit times"
 });
 
 test("requires before-work photos and limits booked jobs to the selected contractor", async () => {
-  const [page, attachmentsRoute, signatureRoute, checkoutRoute, conversationsRoute, schema, migration] = await Promise.all([
+  const [page, css, attachmentsRoute, signatureRoute, checkoutRoute, conversationsRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),
+    source("../app/globals.css"),
     source("../app/api/jobs/[id]/attachments/route.ts"),
     source("../app/api/documents/[id]/sign/route.ts"),
     source("../app/api/payments/checkout/route.ts"),
@@ -809,10 +810,15 @@ test("requires before-work photos and limits booked jobs to the selected contrac
   ]);
   assert.match(page, /Before-work photos required/);
   assert.match(page, /before signing or funding/i);
+  assert.match(css, /Upload required project before photos/);
   assert.match(attachmentsRoute, /form\.get\("stage"\) === "pre_work"/);
   assert.match(attachmentsRoute, /Before-work documentation must use/);
   assert.match(signatureRoute, /before-work photo before signing/i);
+  assert.match(signatureRoute, /getContractorActor/);
+  assert.match(signatureRoute, /You have already signed this agreement/);
+  assert.match(signatureRoute, /onConflictDoNothing/);
   assert.match(checkoutRoute, /before-work photo before funding/i);
+  assert.match(checkoutRoute, /Both parties must sign the service agreement before the job can be funded/);
   assert.match(conversationsRoute, /eq\(quotes\.status, "accepted"\)/);
   assert.match(schema, /stage: text\("stage"\)/);
   assert.match(migration, /ADD `stage` text NOT NULL DEFAULT 'request'/);
