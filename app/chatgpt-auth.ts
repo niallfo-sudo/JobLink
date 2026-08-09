@@ -1,10 +1,19 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 export type ChatGPTUser = {
   displayName: string;
   email: string;
   fullName: string | null;
+};
+
+export type DemoWorkspace = "homeowner" | "contractor" | "operations";
+export const DEMO_SESSION_COOKIE = "joblink_demo_session";
+
+const demoAccounts: Record<DemoWorkspace, ChatGPTUser> = {
+  homeowner: { email: "demo.homeowner@joblink.demo", displayName: "Demo Homeowner", fullName: "Demo Homeowner" },
+  contractor: { email: "demo-general-contractors@joblink.demo", displayName: "General Contractors Inc.", fullName: "General Contractors Inc." },
+  operations: { email: "demo.operations@joblink.demo", displayName: "JobLink Operations", fullName: "JobLink Operations" },
 };
 
 const USER_EMAIL_HEADER = "oai-authenticated-user-email";
@@ -19,7 +28,11 @@ const CALLBACK_PATH = "/callback";
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
   const email = requestHeaders.get(USER_EMAIL_HEADER);
-  if (!email) return null;
+  if (!email) {
+    const workspace = (await cookies()).get(DEMO_SESSION_COOKIE)?.value;
+    if (workspace === "homeowner" || workspace === "contractor" || workspace === "operations") return demoAccounts[workspace];
+    return null;
+  }
 
   const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
   const fullName =
@@ -33,6 +46,10 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
     email,
     fullName,
   };
+}
+
+export function demoUserForWorkspace(workspace: DemoWorkspace): ChatGPTUser {
+  return demoAccounts[workspace];
 }
 
 export async function requireChatGPTUser(

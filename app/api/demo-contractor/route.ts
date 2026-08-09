@@ -26,7 +26,7 @@ function serializeProfile<T extends { services: string; approvedServices: string
   };
 }
 
-async function ensureGeneralContractorsDemo() {
+export async function ensureGeneralContractorsDemo() {
   await getDb().insert(contractorProfiles).values({
     ownerEmail: "demo-general-contractors@joblink.demo",
     businessName: "General Contractors Inc.",

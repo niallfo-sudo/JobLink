@@ -356,6 +356,25 @@ export default function Home() {
     window.location.assign(`/signin-with-chatgpt?return_to=${encodeURIComponent(`/?portal=${portal}`)}`);
   }
 
+  async function openStandaloneDemo(workspace: "homeowner" | "contractor" | "operations") {
+    setAccountActionStatus("saving");
+    setAccountActionError("");
+    try {
+      const response = await fetch("/api/demo-auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace }) });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Demo access could not be started");
+      window.location.reload();
+    } catch (error) {
+      setAccountActionError(error instanceof Error ? error.message : "Demo access could not be started");
+      setAccountActionStatus("error");
+    }
+  }
+
+  async function leaveStandaloneDemo() {
+    await fetch("/api/demo-auth", { method: "DELETE" });
+    window.location.reload();
+  }
+
   function openContractorQuoteReplies() {
     setProTab("jobs");
     setJobView("quotes");
@@ -1778,28 +1797,28 @@ export default function Home() {
           <button className="account-gateway-close" onClick={() => setAccountGatewayOpen(false)} aria-label="Close account options">×</button>
           <header>
             <span className="brand-mark"><i /></span>
-            <div><p className="step-kicker">JobLink demo accounts</p><h2 id="account-gateway-title">Choose your workspace.</h2><p>{accountIdentity ? `Signed in as ${accountIdentity.displayName}` : "Sign in securely, then create a homeowner or contractor demo account."}</p></div>
+            <div><p className="step-kicker">JobLink demo accounts</p><h2 id="account-gateway-title">Choose your workspace.</h2><p>{accountIdentity ? `Signed in as ${accountIdentity.displayName}` : "External demo access uses shared sample accounts. Do not enter personal or sensitive information."}</p></div>
           </header>
           <div className="account-choice-grid">
             <article>
               <span>HM</span><p className="aside-label">Homeowner demo account</p><h3>Post and manage jobs</h3><p>Create requests, compare real submitted quotes, track work and simulate payments.</p>
               <ul><li>Free to post</li><li>Shortlisted local pros</li><li>Job tracking and documents</li></ul>
-              <button disabled={accountActionStatus === "saving"} onClick={() => void selectAccountRole("homeowner")}>{accountIdentity?.role === "homeowner" ? "Open homeowner account →" : accountIdentity ? "Continue as homeowner →" : "Sign up as a homeowner →"}</button>
+              <button disabled={accountActionStatus === "saving"} onClick={() => accountIdentity ? void selectAccountRole("homeowner") : void openStandaloneDemo("homeowner")}>{accountIdentity?.role === "homeowner" ? "Open homeowner account →" : accountIdentity ? "Continue as homeowner →" : "Open homeowner demo →"}</button>
             </article>
             <article className="contractor-account-choice">
               <span>PRO</span><p className="aside-label">Contractor demo account</p><h3>Build your business profile</h3><p>Select services and territory, submit verification, receive matched opportunities and quote jobs.</p>
               <ul><li>No pay-per-lead fees</li><li>Service-based matching</li><li>Quotes, jobs and payments</li></ul>
               {accountIdentity?.operationsRole === "admin" && <button className="create-demo-company" disabled={accountActionStatus === "saving"} onClick={() => void createDemoContractorCompany()}>{accountActionStatus === "saving" ? "Creating company…" : "Create new contractor company →"}</button>}
-              <button disabled={accountActionStatus === "saving"} onClick={() => void selectAccountRole("contractor")}>{accountIdentity?.role === "contractor" ? "Open contractor workspace →" : accountIdentity ? "Continue as contractor →" : "Sign up as a contractor →"}</button>
+              <button disabled={accountActionStatus === "saving"} onClick={() => accountIdentity ? void selectAccountRole("contractor") : void openStandaloneDemo("contractor")}>{accountIdentity?.role === "contractor" ? "Open contractor workspace →" : accountIdentity ? "Continue as contractor →" : "Open contractor demo →"}</button>
             </article>
             <article className="admin-account-choice">
               <span>OPS</span><p className="aside-label">JobLink employees</p><h3>Operations login</h3><p>Protected access for authorized administrators and employees handling verification, fraud and disputes.</p>
               <ul><li>Role-protected access</li><li>Audited case notes</li><li>Live marketplace operations</li></ul>
-              <button disabled={accountActionStatus === "saving"} onClick={() => void openOperationsLogin()}>{accountActionStatus === "saving" ? "Checking access…" : "Log in to Operations →"}</button>
+              <button disabled={accountActionStatus === "saving"} onClick={() => accountIdentity ? void openOperationsLogin() : void openStandaloneDemo("operations")}>{accountActionStatus === "saving" ? "Opening workspace…" : accountIdentity ? "Log in to Operations →" : "Open Operations demo →"}</button>
             </article>
           </div>
           {accountActionError && <p className="account-gateway-error">{accountActionError}</p>}
-          <footer>{accountIdentity ? <><span>{accountIdentity.email} · {accountIdentity.role ? accountIdentity.role.replace("employee", "operations employee") : "choose an account type"}{accountIdentity.operationsRole ? ` · Operations ${accountIdentity.operationsRole} access retained` : ""}</span><a href="/signout-with-chatgpt?return_to=%2F">Sign out</a></> : <span>Secure authentication is handled by ChatGPT. JobLink does not store a password.</span>}</footer>
+          <footer>{accountIdentity ? <><span>{accountIdentity.email} · {accountIdentity.role ? accountIdentity.role.replace("employee", "operations employee") : "choose an account type"}{accountIdentity.operationsRole ? ` · Operations ${accountIdentity.operationsRole} access retained` : ""}</span>{accountIdentity.email.endsWith("@joblink.demo") ? <button className="text-button" onClick={() => void leaveStandaloneDemo()}>Leave demo</button> : <a href="/signout-with-chatgpt?return_to=%2F">Sign out</a>}</> : <span>Choose a shared demo workspace to explore JobLink from any browser.</span>}</footer>
         </section>
       </div>}
 

@@ -94,6 +94,24 @@ test("wires existing controls and contractor service matching", async () => {
   assert.doesNotMatch(jobsRoute, /quoteProviderNames|providerNames\[0\]|insert\(quotes\)/);
 });
 
+test("offers standalone shared demo workspaces to public visitors", async () => {
+  const [auth, demoAuth, page] = await Promise.all([
+    source("../app/chatgpt-auth.ts"),
+    source("../app/api/demo-auth/route.ts"),
+    source("../app/page.tsx"),
+  ]);
+
+  assert.match(auth, /DEMO_SESSION_COOKIE/);
+  assert.match(auth, /demo-general-contractors@joblink\.demo/);
+  assert.match(demoAuth, /ensureGeneralContractorsDemo/);
+  assert.match(demoAuth, /workspace === "operations" \? "admin"/);
+  assert.match(page, /External demo access uses shared sample accounts/);
+  assert.match(page, /openStandaloneDemo\("homeowner"\)/);
+  assert.match(page, /openStandaloneDemo\("contractor"\)/);
+  assert.match(page, /openStandaloneDemo\("operations"\)/);
+  assert.match(page, /Leave demo/);
+});
+
 test("lets Operations administrators switch between verified demo contractor companies", async () => {
   const [page, demoRoute, actor, migration] = await Promise.all([
     source("../app/page.tsx"),
@@ -282,9 +300,9 @@ test("provides secure homeowner, contractor and operations account entry", async
     source("../app/chatgpt-auth.ts"),
   ]);
 
-  assert.match(page, /Sign up as a homeowner/);
-  assert.match(page, /Sign up as a contractor/);
-  assert.match(page, /Log in to Operations/);
+  assert.match(page, /Open homeowner demo/);
+  assert.match(page, /Open contractor demo/);
+  assert.match(page, /Open Operations demo/);
   assert.match(page, /signin-with-chatgpt/);
   assert.match(page, /signout-with-chatgpt/);
   assert.doesNotMatch(page, /type="password"/);
