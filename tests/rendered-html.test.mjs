@@ -381,6 +381,7 @@ test("uses the contractor company name and gives Operations a live job board", a
   assert.match(page, /Job board and matching/);
   assert.match(page, /Eligible matches/);
   assert.match(page, /Clear all job postings/);
+  assert.match(page, /Type <b>CLEAR JOBS<\/b> to confirm/);
   assert.match(operationsRoute, /matchingContractors/);
   assert.match(operationsRoute, /clear_job_postings/);
   assert.match(operationsRoute, /Administrator access is required to clear marketplace jobs/);
