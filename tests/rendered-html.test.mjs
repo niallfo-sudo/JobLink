@@ -630,3 +630,16 @@ test("matches contractors only to Operations-approved services", async () => {
   assert.match(page, /Edit approved services/);
   assert.match(page, /Operations-approved services/);
 });
+
+test("keeps quotes from separate contractor companies and blocks silent duplicate replacement", async () => {
+  const [page, quoteRoute] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+  ]);
+
+  assert.match(quoteRoute, /eq\(quotes\.jobId, jobId\), eq\(quotes\.contractorEmail, user\.email\)/);
+  assert.match(quoteRoute, /has already submitted a quote for this request/);
+  assert.doesNotMatch(quoteRoute, /onConflictDoUpdate\(\{\s*target: \[quotes\.jobId, quotes\.contractorEmail\]/);
+  assert.match(page, /Submitting as <b>\{contractorProfile\?\.businessName \|\| businessName/);
+  assert.match(page, /Each contractor company can submit one initial quote/);
+});
