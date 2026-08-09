@@ -261,6 +261,7 @@ export default function Home() {
   const [paymentWorkflowAction, setPaymentWorkflowAction] = useState<string | null>(null);
   const [demoLifecycleAction, setDemoLifecycleAction] = useState<string | null>(null);
   const [demoLifecycleFeedback, setDemoLifecycleFeedback] = useState<Record<number, ActionFeedback | undefined>>({});
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
   const [documentSigningId, setDocumentSigningId] = useState<number | null>(null);
   const [progressUpdatingId, setProgressUpdatingId] = useState<number | null>(null);
@@ -1852,8 +1853,14 @@ export default function Home() {
           {accountLoaded && !accountIdentity && <button className="account-entry-button" onClick={() => setAccountGatewayOpen(true)}>Sign up / Log in</button>}
           {accountIdentity && <button className="notification-button" aria-label="Open notifications" onClick={() => setNotificationsOpen(!notificationsOpen)}>{accountInitials}{notifications.filter((item) => !item.readAt).length > 0 && <b>{notifications.filter((item) => !item.readAt).length}</b>}</button>}
           {accountIdentity && <button className="avatar-button" aria-label="Open account menu" onClick={() => setAccountGatewayOpen(true)}>{accountInitials}</button>}
+          <button className="mobile-menu-toggle" aria-label={mobileNavigationOpen ? "Close navigation menu" : "Open navigation menu"} aria-expanded={mobileNavigationOpen} onClick={() => setMobileNavigationOpen((open) => !open)}><span /><span /><span /></button>
         </div>
       </header>
+
+      {mobileNavigationOpen && <nav className="mobile-navigation" aria-label="Mobile navigation">
+        <div className="mobile-navigation-head"><span>{view === "contractor" ? "Contractor workspace" : "JobLink menu"}</span><button aria-label="Close navigation menu" onClick={() => setMobileNavigationOpen(false)}>×</button></div>
+        {view === "contractor" ? <div className="mobile-navigation-links"><button className={proTab === "overview" ? "active" : ""} onClick={() => { setProTab("overview"); setMobileNavigationOpen(false); }}>Overview</button><button className={proTab === "opportunities" ? "active" : ""} onClick={() => { setProTab("opportunities"); setMobileNavigationOpen(false); }}>Opportunities</button><button className={proTab === "jobs" ? "active" : ""} onClick={() => { setProTab("jobs"); setMobileNavigationOpen(false); }}>Jobs</button><button className={proTab === "inbox" ? "active" : ""} onClick={() => { setProTab("inbox"); setMobileNavigationOpen(false); }}>Inbox</button><button className={proTab === "business" ? "active" : ""} onClick={() => { setProTab("business"); setMobileNavigationOpen(false); }}>Business</button><button className="mobile-navigation-secondary" onClick={() => { void openContractorArea(); setMobileNavigationOpen(false); }}>Homeowner view</button></div> : <div className="mobile-navigation-links"><button className={view === "discover" ? "active" : ""} onClick={() => { go("discover"); setMobileNavigationOpen(false); }}>Find a pro</button><button className={view === "matches" ? "active" : ""} onClick={() => { void openLatestRequest("matches"); setMobileNavigationOpen(false); }}>My request</button><button className={view === "account" ? "active" : ""} onClick={() => { accountIdentity ? go("account") : setAccountGatewayOpen(true); setMobileNavigationOpen(false); }}>Manage requests</button><button className={view === "tracking" ? "active" : ""} onClick={() => { void openLatestRequest("tracking"); setMobileNavigationOpen(false); }}>Track job</button><button className="mobile-navigation-secondary" onClick={() => { void openContractorArea(); setMobileNavigationOpen(false); }}>For contractors</button>{!accountIdentity && <button className="mobile-navigation-secondary" onClick={() => { setAccountGatewayOpen(true); setMobileNavigationOpen(false); }}>Sign up / Log in</button>}</div>}
+      </nav>}
 
       {accountGatewayOpen && <div className="account-gateway-overlay" role="dialog" aria-modal="true" aria-labelledby="account-gateway-title">
         <section className="account-gateway">

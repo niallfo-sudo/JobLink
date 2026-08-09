@@ -328,3 +328,41 @@ footer { border-top: 1px solid var(--line); padding: 34px 4vw; display: grid; gr
 .request-detail-level{display:grid;grid-template-columns:1fr 1fr;gap:10px}.request-detail-level button{min-height:92px;border:1px solid var(--line);background:var(--cream);text-align:left;padding:15px;display:grid;gap:6px;cursor:pointer}.request-detail-level button.selected{border:2px solid var(--green);background:var(--sage)}.request-detail-level b{font-size:13px}.request-detail-level span{color:var(--muted);font-size:11px;line-height:1.4}@media(max-width:600px){.request-detail-level{grid-template-columns:1fr}}
 .job-specific-options{margin-bottom:22px}.detailed-input-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 24px}.detailed-input-grid .custom-request-field{margin:0}.detailed-input-grid input{margin-top:7px}@media(max-width:700px){.detailed-input-grid{grid-template-columns:1fr}}
 .agreement-pending-summary{display:flex;justify-content:space-between;gap:24px;align-items:center;margin:18px 0;padding:18px 20px;border:1px solid #bfd4c5;background:var(--sage)}.agreement-pending-summary h2{margin:4px 0 6px;font:550 22px/1.1 var(--font-display);color:var(--green)}.agreement-pending-summary p:not(.aside-label){max-width:640px;margin:0;color:var(--green);font-size:10px;line-height:1.5}.agreement-pending-summary .primary-action{flex:none}@media(max-width:700px){.agreement-pending-summary{align-items:stretch;flex-direction:column}.agreement-pending-summary .primary-action{width:100%}}
+
+/* Phone and tablet navigation: preserves every workspace action behind a touch-friendly menu. */
+.mobile-menu-toggle,.mobile-navigation{display:none}
+@media(max-width:860px){
+  body{padding-bottom:env(safe-area-inset-bottom)}
+  .site-header{height:68px;padding:0 20px}
+  .site-header nav{display:none!important}
+  .site-header .text-button{display:none}
+  .site-header .brand{font-size:20px}
+  .header-actions{gap:8px}
+  .account-entry-button{min-height:42px;padding:9px 11px;font-size:10px}
+  .mobile-menu-toggle{width:42px;height:42px;display:grid;align-content:center;justify-items:center;gap:5px;border:1px solid var(--line);background:var(--cream);padding:0}
+  .mobile-menu-toggle span{width:18px;height:2px;background:var(--ink);display:block}
+  .mobile-navigation{display:block;position:fixed;z-index:110;top:68px;left:0;right:0;max-height:calc(100dvh - 68px);overflow:auto;padding:12px 20px calc(20px + env(safe-area-inset-bottom));background:rgba(243,239,230,.98);border-bottom:1px solid var(--line);box-shadow:0 18px 38px rgba(34,28,20,.15);backdrop-filter:blur(12px)}
+  .mobile-navigation-head{display:flex;align-items:center;justify-content:space-between;padding:3px 0 12px;color:var(--muted);font-size:10px;font-weight:850;letter-spacing:.1em;text-transform:uppercase}
+  .mobile-navigation-head button{width:36px;height:36px;border:1px solid var(--line);background:var(--cream);font-size:24px;line-height:1}
+  .mobile-navigation-links{display:grid;gap:7px}
+  .mobile-navigation-links button{min-height:48px;border:1px solid var(--line);background:var(--cream);padding:12px 14px;text-align:left;font-size:14px;font-weight:800}
+  .mobile-navigation-links button.active{background:var(--green);border-color:var(--green);color:white}
+  .mobile-navigation-links .mobile-navigation-secondary{background:var(--paper);color:var(--green)}
+  .quote-overlay,.operations-overlay,.job-room-overlay{padding-top:env(safe-area-inset-top)}
+  .quote-drawer,.operations-drawer,.job-room{max-width:100vw}
+}
+@media(max-width:520px){
+  .site-header{padding:0 14px}
+  .header-actions .account-entry-button{display:none}
+  .notification-button,.avatar-button{width:36px;height:36px}
+  .mobile-navigation{padding-left:14px;padding-right:14px}
+  .mobile-navigation-links button{min-height:52px}
+  button,.primary-action,.secondary-action,.send-quote,.form-footer button{min-height:44px}
+  input,select,textarea{font-size:16px}
+  .saved-request-list > article{padding:14px}
+  .saved-request-actions{grid-column:1/-1;display:grid}.saved-request-actions button{min-height:44px;width:100%;text-align:left}
+  .onsite-request-panel,.final-quote-submissions{grid-template-columns:1fr;padding:17px}
+  .onsite-request-list article,.homeowner-final-options article{align-items:stretch;flex-direction:column}
+  .onsite-request-list button,.homeowner-final-options button{width:100%}
+  .final-payment-grid,.final-review-payment>div{grid-template-columns:1fr}
+}
