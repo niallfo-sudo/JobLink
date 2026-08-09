@@ -106,7 +106,7 @@ function publicContractorRatings(input: { reviewCount: number; averageScore: num
   const quoteRating = quoteComparisonCount ? Math.max(0, Math.min(100, Math.round(70 + averageQuoteDelta + Math.min(10, Math.max(0, quoteComparisonCount - 1) * 2)))) : null;
   // New businesses are not punished for having no history. Price is only used as a tie-breaker.
   const matchScore = Math.round((jobLinkScore ?? 60) * 0.60 + (quoteRating ?? 70) * 0.35 + (input.reviewCount ? quality : 60) * 0.05);
-  return { jobLinkScore, quoteRating, quoteComparisonCount, matchScore, timelineReliability: timeline };
+  return { jobLinkScore, quoteRating, quoteComparisonCount, matchScore, qualityScore: input.reviewCount ? quality : null, completionReliability: input.acceptedJobCount ? completion : null, reviewCompletion: input.completedJobCount ? documentation : null, timelineReliability: timeline };
 }
 
 function parseFinalOptions(value: string | null | undefined): FinalQuoteOption[] {
@@ -178,7 +178,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       const profile = quote.contractorEmail ? profileByEmail.get(quote.contractorEmail) : undefined;
       const rating = quote.contractorEmail ? ratingByEmail.get(quote.contractorEmail) : undefined;
       const demoMetrics = demoContractorMetrics(quote.contractorEmail);
-      const publicRatings = demoMetrics ? { jobLinkScore: demoMetrics.jobLinkScore, quoteRating: demoMetrics.quoteRating, quoteComparisonCount: demoMetrics.completedJobs, matchScore: demoMetrics.jobLinkScore, timelineReliability: demoMetrics.jobLinkScore } : quote.contractorEmail ? publicContractorRatings({ reviewCount: Number(rating?.reviewCount ?? 0), averageScore: Number(rating?.averageScore ?? 0), acceptedJobCount: acceptedByEmail.get(quote.contractorEmail) ?? 0, completedJobCount: completedByEmail.get(quote.contractorEmail) ?? 0, quoteDeltas: accuracyByEmail.get(quote.contractorEmail) ?? [], timelineScores: timelineByEmail.get(quote.contractorEmail) ?? [] }) : null;
+      const publicRatings = demoMetrics ? { jobLinkScore: demoMetrics.jobLinkScore, quoteRating: demoMetrics.quoteRating, quoteComparisonCount: demoMetrics.completedJobs, matchScore: demoMetrics.jobLinkScore, qualityScore: demoMetrics.jobLinkScore, completionReliability: demoMetrics.jobLinkScore, reviewCompletion: demoMetrics.jobLinkScore, timelineReliability: demoMetrics.jobLinkScore } : quote.contractorEmail ? publicContractorRatings({ reviewCount: Number(rating?.reviewCount ?? 0), averageScore: Number(rating?.averageScore ?? 0), acceptedJobCount: acceptedByEmail.get(quote.contractorEmail) ?? 0, completedJobCount: completedByEmail.get(quote.contractorEmail) ?? 0, quoteDeltas: accuracyByEmail.get(quote.contractorEmail) ?? [], timelineScores: timelineByEmail.get(quote.contractorEmail) ?? [] }) : null;
       return { ...quote, onsitePreferences: storedOnsiteSlots(quote.onsitePreferences), onsiteProposals: storedOnsiteSlots(quote.onsiteProposals), finalOptions: parseFinalOptions(quote.finalOptions), contractor: profile ? { ...profile, approvedServices: JSON.parse(profile.approvedServices || "[]"), reviewCount: demoMetrics?.completedJobs ?? Number(rating?.reviewCount ?? 0), averageRating: demoMetrics?.averageRating ?? (rating?.averageScore ? Number(rating.averageScore) / 100 : null), ...publicRatings } : null };
     });
     detailedQuotes.sort((left, right) => (right.contractor?.matchScore ?? 0) - (left.contractor?.matchScore ?? 0) || left.amountCents - right.amountCents);
