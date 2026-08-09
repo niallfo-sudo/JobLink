@@ -81,6 +81,10 @@ function quoteAccuracy(initialMinCents: number, initialMaxCents: number, finalCe
   return { delta: -Math.min(6, Math.max(2, Math.ceil((distance / initialMinCents) * 10))), status: "out_of_range" };
 }
 
+function initialCompletionTimeframe(message: string) {
+  return message.match(/Estimated completion timeframe:\s*([^.]*)/i)?.[1]?.trim() || "Not provided";
+}
+
 function completionTimelineScore(promisedAt: Date, completedAt: Date) {
   const daysLate = Math.ceil((completedAt.getTime() - promisedAt.getTime()) / 86_400_000);
   if (daysLate <= 0) return 100;
@@ -221,7 +225,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const contractor = await getContractorActor();
   if (!identity || !contractor) return Response.json({ error: "Sign in required" }, { status: 401 });
   const jobId = Number((await context.params).id);
-  const payload = (await request.json()) as { action?: "request_onsite" | "schedule_onsite" | "confirm_proposed_onsite" | "reject_proposed_onsite" | "submit_final" | "accept_final" | "decline_final"; quoteId?: number; onsiteVisitAt?: string; preferredSlots?: unknown; amount?: number; workDescription?: string; materials?: string; measurements?: string; finalCompletionDate?: string; depositAmount?: number; progressAmount?: number; completionAmount?: number; finalOptions?: unknown; selectedOptionId?: string };
+  const payload = (await request.json()) as { action?: "request_onsite" | "schedule_onsite" | "confirm_proposed_onsite" | "reject_proposed_onsite" | "submit_final" | "accept_final" | "decline_final"; quoteId?: number; onsiteVisitAt?: string; preferredSlots?: unknown; amount?: number; workDescription?: string; materials?: string; measurements?: string; finalStartDate?: string; finalCompletionDate?: string; depositAmount?: number; progressAmount?: number; completionAmount?: number; progressRequirement?: string; finalOptions?: unknown; selectedOptionId?: string };
   const quoteId = Number(payload.quoteId);
   if (!Number.isInteger(jobId) || !Number.isInteger(quoteId) || !payload.action) return Response.json({ error: "A quote and workflow action are required" }, { status: 400 });
   try {
@@ -287,17 +291,20 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       const workDescription = payload.workDescription?.trim() || "";
       const materials = payload.materials?.trim() || "";
       const measurements = payload.measurements?.trim() || "";
+      const progressRequirement = payload.progressRequirement?.trim() || "";
+      const finalizedStartAt = estimatedDate(payload.finalStartDate);
       const finalizedCompletionAt = estimatedDate(payload.finalCompletionDate);
       const finalOptions = finalOptionsFromPayload(payload.finalOptions);
       const accuracy = quoteAccuracy(quote.initialMinCents, quote.initialMaxCents, amountCents ?? 0);
       if (amountCents === null || amountCents < 1000 || depositCents === null || progressCents === null || completionCents === null || depositCents + progressCents + completionCents !== amountCents) return Response.json({ error: "Payment checkpoints must add up exactly to the final quote" }, { status: 400 });
       if (!finalOptions) return Response.json({ error: "Each alternative needs a title, detailed scope, total and matching payment checkpoints" }, { status: 400 });
-      if (workDescription.length < 20 || materials.length < 3 || measurements.length < 3) return Response.json({ error: "Include a detailed work description, materials, and measurements" }, { status: 400 });
-      if (!finalizedCompletionAt || finalizedCompletionAt < new Date(new Date().toDateString())) return Response.json({ error: "Add a realistic finalized completion date" }, { status: 400 });
+      if (workDescription.length < 50 || materials.length < 3 || measurements.length < 3) return Response.json({ error: "Include a detailed, contract-ready work description, materials, and measurements" }, { status: 400 });
+      if (progressCents > 0 && progressRequirement.length < 10) return Response.json({ error: "Describe the completed work required before the progress payment can be released" }, { status: 400 });
+      if (!finalizedStartAt || !finalizedCompletionAt || finalizedStartAt < new Date(new Date().toDateString()) || finalizedCompletionAt < finalizedStartAt) return Response.json({ error: "Add realistic finalized start and completion dates" }, { status: 400 });
       const finalizedAt = new Date();
-      const [updatedQuote] = await db.update(quotes).set({ status: "final_quote_ready", amountCents, workDescription, materials, measurements, estimatedFinishAt: finalizedCompletionAt, depositCents, progressCents, completionCents, finalOptions: JSON.stringify(finalOptions), selectedFinalOptionId: null, quoteAccuracyDelta: accuracy.delta, quoteAccuracyStatus: accuracy.status, finalizedAt, message: "Final quote prepared after on-site verification." }).where(eq(quotes.id, quote.id)).returning();
+      const [updatedQuote] = await db.update(quotes).set({ status: "final_quote_ready", amountCents, workDescription, materials, measurements, finalStartAt: finalizedStartAt, estimatedFinishAt: finalizedCompletionAt, depositCents, progressCents, progressRequirement, completionCents, finalOptions: JSON.stringify(finalOptions), selectedFinalOptionId: null, quoteAccuracyDelta: accuracy.delta, quoteAccuracyStatus: accuracy.status, finalizedAt }).where(eq(quotes.id, quote.id)).returning();
       await db.update(jobRequests).set({ status: "final_quote_ready", updatedAt: finalizedAt }).where(eq(jobRequests.id, jobId));
-      await db.insert(jobEvents).values({ jobId, eventType: "final_quote_ready", label: `Final quote ready from ${quote.contractorName}`, metadata: JSON.stringify({ quoteId, amountCents, depositCents, progressCents, completionCents, finalizedCompletionAt: finalizedCompletionAt.toISOString(), alternativeCount: finalOptions.length, quoteAccuracy: accuracy }) });
+      await db.insert(jobEvents).values({ jobId, eventType: "final_quote_ready", label: `Final quote ready from ${quote.contractorName}`, metadata: JSON.stringify({ quoteId, amountCents, depositCents, progressCents, progressRequirement, completionCents, finalizedStartAt: finalizedStartAt.toISOString(), finalizedCompletionAt: finalizedCompletionAt.toISOString(), alternativeCount: finalOptions.length, quoteAccuracy: accuracy }) });
       await notify(job.ownerEmail, { jobId, type: "final_quote_ready", title: "Final quote ready to review", body: `${quote.contractorName} added the verified scope, materials, payment checkpoints and completion target for ${job.externalId}.` });
       return Response.json({ quote: updatedQuote, job: { ...job, status: "final_quote_ready" } });
     }
@@ -329,10 +336,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       const [paymentRecord] = await db.insert(paymentRecords).values({ jobId, quoteId, ownerEmail: identity.email, contractorEmail: quote.contractorEmail, contractorName: quote.contractorName, subtotalCents: finalTerms.amountCents, customerFeeCents, totalCents: finalTerms.amountCents + customerFeeCents, contractorPayoutCents: finalTerms.amountCents, releasedCents: 0, status: "demo_pending", processor: "demo" }).onConflictDoUpdate({ target: paymentRecords.jobId, set: { quoteId, contractorEmail: quote.contractorEmail, contractorName: quote.contractorName, subtotalCents: finalTerms.amountCents, customerFeeCents, totalCents: finalTerms.amountCents + customerFeeCents, contractorPayoutCents: finalTerms.amountCents, releasedCents: 0, status: "demo_pending", processor: "demo", updatedAt: new Date() } }).returning();
       await db.insert(paymentMilestones).values([
         { paymentId: paymentRecord.id, jobId, milestoneType: "deposit", label: "Deposit and materials", amountCents: finalTerms.depositCents, status: "awaiting_funding" },
-        { paymentId: paymentRecord.id, jobId, milestoneType: "progress", label: "50% progress checkpoint", amountCents: finalTerms.progressCents, status: "awaiting_funding" },
+        { paymentId: paymentRecord.id, jobId, milestoneType: "progress", label: quote.progressRequirement ? `Progress checkpoint: ${quote.progressRequirement}` : "Progress checkpoint", amountCents: finalTerms.progressCents, status: "awaiting_funding" },
         { paymentId: paymentRecord.id, jobId, milestoneType: "completion", label: "Final completion", amountCents: finalTerms.completionCents, status: "awaiting_funding" },
       ]).onConflictDoUpdate({ target: [paymentMilestones.paymentId, paymentMilestones.milestoneType], set: { status: "awaiting_funding", proofNote: "", proofSubmittedAt: null, homeownerApprovedAt: null, releasedAt: null, updatedAt: new Date() } });
-      const snapshot = JSON.stringify({ jobNumber: job.externalId, jobTitle: job.title, originalRequest: job.description, contractorName: quote.contractorName, finalScope: finalTerms.workDescription, materials: quote.materials, measurements: quote.measurements, finalizedCompletionAt: quote.estimatedFinishAt?.toISOString() ?? null, amountCents: finalTerms.amountCents, depositCents: finalTerms.depositCents, progressCents: finalTerms.progressCents, completionCents: finalTerms.completionCents, selectedFinalOption: selectedOption ? { id: selectedOption.id, title: selectedOption.title, description: selectedOption.description } : null, customerFeeCents });
+      const snapshot = JSON.stringify({ jobNumber: job.externalId, jobTitle: job.title, originalRequest: job.description, contractorName: quote.contractorName, originalInitialRange: { minCents: quote.initialMinCents, maxCents: quote.initialMaxCents }, originalEstimatedStartAt: quote.estimatedStartAt?.toISOString() ?? null, originalEstimatedTimeframe: initialCompletionTimeframe(quote.message), finalScope: finalTerms.workDescription, materials: quote.materials, measurements: quote.measurements, finalStartAt: quote.finalStartAt?.toISOString() ?? null, finalizedCompletionAt: quote.estimatedFinishAt?.toISOString() ?? null, progressRequirement: quote.progressRequirement, amountCents: finalTerms.amountCents, depositCents: finalTerms.depositCents, progressCents: finalTerms.progressCents, completionCents: finalTerms.completionCents, selectedFinalOption: selectedOption ? { id: selectedOption.id, title: selectedOption.title, description: selectedOption.description } : null, customerFeeCents });
       const documentBase = { jobId, quoteId, ownerEmail: identity.email, contractorEmail: quote.contractorEmail };
       await db.insert(documentRecords).values([{ ...documentBase, externalId: `AGR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "service_agreement", title: "Service agreement", status: "ready_for_signature", content: snapshot }, { ...documentBase, externalId: `QTE-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "accepted_quote", title: "Accepted final quote", status: "accepted", content: snapshot }, { ...documentBase, externalId: `INV-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "invoice", title: "Invoice", status: "demo_payment_pending", content: snapshot }]).onConflictDoNothing();
       await db.insert(jobEvents).values({ jobId, eventType: "final_quote_accepted", label: `${quote.contractorName} selected after on-site verification`, metadata: JSON.stringify({ quoteId, amountCents: finalTerms.amountCents, selectedOptionId: selectedOption?.id ?? null, quoteAccuracy: acceptedAccuracy }) });

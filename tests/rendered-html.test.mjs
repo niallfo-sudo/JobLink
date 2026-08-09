@@ -337,7 +337,10 @@ test("runs on-site verification and final quotes before booking", async () => {
   assert.match(page, /Only accepting the finalized quote selects the contractor/);
   assert.match(page, /Scheduled start date and time/);
   assert.match(page, /Create final quote/);
-  assert.match(page, /Confirmed work description/);
+  assert.match(page, /Detailed contract scope of work/);
+  assert.match(page, /Original estimated range/);
+  assert.match(page, /Finalized project start date/);
+  assert.match(page, /Progress release requirement/);
   assert.match(page, /Accept final quote/);
   assert.match(page, /decideFinalQuote/);
   assert.match(quoteRoute, /request_onsite/);
@@ -349,6 +352,8 @@ test("runs on-site verification and final quotes before booking", async () => {
   assert.match(quoteRoute, /decline_final/);
   assert.match(quoteRoute, /within the next two business days/);
   assert.match(quoteRoute, /Payment checkpoints must add up exactly to the final quote/);
+  assert.match(quoteRoute, /progressRequirement/);
+  assert.match(quoteRoute, /finalStartAt/);
   assert.match(quoteRoute, /Only the verified contractor can submit this final quote/);
   assert.match(contractorQuotes, /onsiteVisitAt/);
   assert.match(schema, /onsite_visit_at/);
