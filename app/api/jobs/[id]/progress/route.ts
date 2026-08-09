@@ -5,11 +5,10 @@ import { getContractorActor } from "../../../../contractor-demo";
 import { notify } from "../../../../../lib/notifications";
 
 const stages = {
-  materials_collected: { label: "Materials collected", jobStatus: "booked", rank: 1 },
-  work_started: { label: "Work started", jobStatus: "in_progress", rank: 2 },
-  halfway: { label: "Work is 50% complete", jobStatus: "in_progress", rank: 3 },
-  cleaning: { label: "Final cleanup underway", jobStatus: "in_progress", rank: 4 },
-  finished: { label: "Work finished", jobStatus: "completed", rank: 5 },
+  work_started: { label: "Work started", jobStatus: "in_progress", rank: 1 },
+  halfway: { label: "Work is 50% complete", jobStatus: "in_progress", rank: 2 },
+  cleaning: { label: "Final cleanup underway", jobStatus: "in_progress", rank: 3 },
+  finished: { label: "Work finished", jobStatus: "completed", rank: 4 },
 } as const;
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
