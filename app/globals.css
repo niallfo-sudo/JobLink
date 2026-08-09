@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
 .pro-metrics .overview-metric-link { appearance:none; border:0; border-right:1px solid var(--line); background:transparent; color:var(--ink); padding:24px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; text-align:left; cursor:pointer; font:inherit; }.pro-metrics .overview-metric-link:hover { background:var(--paper); }.pro-metrics .overview-metric-link:focus-visible { outline:3px solid var(--orange); outline-offset:-3px; }.pro-metrics .overview-metric-link span { font-size:10px; text-transform:uppercase; letter-spacing:.09em; color:var(--muted); font-weight:750; }.pro-metrics .overview-metric-link b { font:560 35px var(--font-display); }.pro-metrics .overview-metric-link small { color:var(--green); font-size:10px; line-height:1.35; }.visit-request-anchor { display:block; scroll-margin-top:100px; }
+.quote-approval-banner { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:18px 20px; background:var(--sage); border:2px solid var(--green); }.quote-approval-banner h3 { margin:4px 0; font:550 21px var(--font-display); }.quote-approval-banner p:not(.step-kicker) { margin:0; color:var(--green); font-size:10px; }.quote-approval-banner button { white-space:nowrap; }
 @media (max-width:900px) { .pro-metrics .overview-metric-link:nth-child(2) { border-right:0; }.pro-metrics .overview-metric-link:nth-child(-n+2) { border-bottom:1px solid var(--line); } }
 @media (max-width:620px) { .pro-metrics .overview-metric-link { border-right:0; border-bottom:1px solid var(--line); } }
+@media (max-width:620px) { .quote-approval-banner { align-items:stretch; flex-direction:column; }.quote-approval-banner button { width:100%; } }
 
 :root {
   --ink: #1d1c1a;

@@ -711,3 +711,15 @@ test("links contractor dashboard metrics to opportunities and homeowner visit re
   assert.match(page, /View opportunities/);
   assert.match(css, /overview-metric-link/);
 });
+
+test("places a homeowner approval action beside contractor-proposed visit times", async () => {
+  const [page, css] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/globals.css"),
+  ]);
+
+  assert.match(page, /Review & approve visit/);
+  assert.match(page, /suggested an on-site visit/);
+  assert.match(page, /setOnsiteSchedulingQuote\(quote\)/);
+  assert.match(css, /quote-approval-banner/);
+});
