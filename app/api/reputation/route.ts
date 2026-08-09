@@ -2,6 +2,7 @@ import { and, avg, count, eq, ne } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { jobRequests, quotes, verifiedReviews } from "../../../db/schema";
 import { getContractorActor } from "../../contractor-demo";
+import { demoContractorMetrics } from "../../demo-contractor-network";
 
 function completionTimelineScore(promisedAt: Date, completedAt: Date) {
   const daysLate = Math.ceil((completedAt.getTime() - promisedAt.getTime()) / 86_400_000);
@@ -16,6 +17,17 @@ export async function GET() {
   const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
+    const demoMetrics = demoContractorMetrics(user.email);
+    if (demoMetrics) return Response.json({ reputation: {
+      verifiedReviewCount: demoMetrics.completedJobs,
+      averageStars: demoMetrics.averageRating,
+      verifiedReviewScore: Math.round(demoMetrics.averageRating * 20),
+      jobLinkScore: demoMetrics.jobLinkScore,
+      scoreDetails: { quality: demoMetrics.jobLinkScore, completion: demoMetrics.jobLinkScore, documentation: demoMetrics.jobLinkScore, timeline: demoMetrics.jobLinkScore },
+      quoteRating: demoMetrics.quoteRating,
+      quoteComparisonCount: demoMetrics.completedJobs,
+      averageQuoteDelta: 8,
+    } });
     const db = getDb();
     const [[summary], [accepted], [completed], [accuracy], timelineRows] = await Promise.all([
       db.select({ reviewCount: count(), averageScore: avg(verifiedReviews.averageScore) }).from(verifiedReviews).where(eq(verifiedReviews.contractorEmail, user.email)),

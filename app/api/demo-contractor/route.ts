@@ -4,6 +4,7 @@ import { getDb } from "../../../db";
 import { contractorProfiles, users } from "../../../db/schema";
 import { DEMO_CONTRACTOR_COOKIE } from "../../contractor-demo";
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { ensureDemoContractorNetwork } from "../../demo-contractor-network";
 
 function cookie(value: string, maxAge = 60 * 60 * 8) {
   return `${DEMO_CONTRACTOR_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
@@ -27,26 +28,7 @@ function serializeProfile<T extends { services: string; approvedServices: string
 }
 
 export async function ensureGeneralContractorsDemo() {
-  await getDb().insert(contractorProfiles).values({
-    ownerEmail: "demo-general-contractors@joblink.demo",
-    businessName: "General Contractors Inc.",
-    legalName: "General Contractors Inc.",
-    phone: "905-555-0118",
-    businessAddress: "Hamilton, Ontario",
-    yearsInBusiness: 15,
-    about: "Full-service residential renovations, basements, kitchens, bathrooms and project management.",
-    primaryService: "General contracting",
-    services: '["General contracting", "Renovations", "Basements", "Kitchens", "Bathrooms", "Additions", "Project management"]',
-    approvedServices: '["General contracting", "Renovations", "Basements", "Kitchens", "Bathrooms", "Additions", "Project management"]',
-    homeBase: "Hamilton, Ontario",
-    serviceRadiusKm: 50,
-    teamSize: 8,
-    acceptingWork: true,
-    plan: "pro",
-    subscriptionStatus: "demo_active",
-    payoutsEnabled: true,
-    verificationStatus: "verified",
-  }).onConflictDoNothing();
+  await ensureDemoContractorNetwork();
 }
 
 async function demoAdmin() {

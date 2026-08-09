@@ -3,16 +3,21 @@ import { getDb } from "../../../db";
 import { contractorProfiles, operationsCases, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getContractorActor } from "../../contractor-demo";
+import { demoContractorMetrics } from "../../demo-contractor-network";
 
 const plans = new Set(["starter", "growth", "pro"]);
 const serviceCategories = new Set(["Drywall", "Roofing", "Painting", "Plumbing", "Electrical", "HVAC", "Junk removal", "Landscaping", "Moving", "Carpentry", "Flooring", "General contracting"]);
+
+function serializeProfile<T extends { ownerEmail: string; services: string; approvedServices: string | null }>(profile: T) {
+  return { ...profile, services: JSON.parse(profile.services), approvedServices: JSON.parse(profile.approvedServices || "[]"), demoMetrics: demoContractorMetrics(profile.ownerEmail) };
+}
 
 export async function GET() {
   const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
     const [profile] = await getDb().select().from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, user.email)).limit(1);
-    return Response.json({ profile: profile ? { ...profile, services: JSON.parse(profile.services), approvedServices: JSON.parse(profile.approvedServices || "[]") } : null });
+    return Response.json({ profile: profile ? serializeProfile(profile) : null });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }
@@ -82,7 +87,7 @@ export async function POST(request: Request) {
     } catch (error) {
       console.error("Verification case could not be queued", error);
     }
-    return Response.json({ profile: { ...profile, services: JSON.parse(profile.services), approvedServices: JSON.parse(profile.approvedServices || "[]") } }, { status: 201 });
+    return Response.json({ profile: serializeProfile(profile) }, { status: 201 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }
@@ -106,7 +111,7 @@ export async function PATCH(request: Request) {
     if (payload.serviceRadiusKm !== undefined) updates.serviceRadiusKm = Math.min(100, Math.max(5, Number(payload.serviceRadiusKm) || 30));
     const [profile] = await getDb().update(contractorProfiles).set(updates).where(eq(contractorProfiles.ownerEmail, user.email)).returning();
     if (!profile) return Response.json({ error: "Complete contractor onboarding first" }, { status: 404 });
-    return Response.json({ profile: { ...profile, services: JSON.parse(profile.services), approvedServices: JSON.parse(profile.approvedServices || "[]") } });
+    return Response.json({ profile: serializeProfile(profile) });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }

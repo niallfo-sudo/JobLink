@@ -4,6 +4,7 @@ import { agreementSignatures, contractorProfiles, documentRecords, jobEvents, jo
 import { getChatGPTUser } from "../../../../chatgpt-auth";
 import { getContractorActor } from "../../../../contractor-demo";
 import { notify } from "../../../../../lib/notifications";
+import { demoContractorMetrics } from "../../../../demo-contractor-network";
 
 const eligibleSubscriptionStatuses = ["active", "trialing", "demo_active"];
 type FinalQuoteOption = { id: string; title: string; description: string; amountCents: number; depositCents: number; progressCents: number; completionCents: number };
@@ -176,8 +177,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const detailedQuotes = rows.map((quote) => {
       const profile = quote.contractorEmail ? profileByEmail.get(quote.contractorEmail) : undefined;
       const rating = quote.contractorEmail ? ratingByEmail.get(quote.contractorEmail) : undefined;
-      const publicRatings = quote.contractorEmail ? publicContractorRatings({ reviewCount: Number(rating?.reviewCount ?? 0), averageScore: Number(rating?.averageScore ?? 0), acceptedJobCount: acceptedByEmail.get(quote.contractorEmail) ?? 0, completedJobCount: completedByEmail.get(quote.contractorEmail) ?? 0, quoteDeltas: accuracyByEmail.get(quote.contractorEmail) ?? [], timelineScores: timelineByEmail.get(quote.contractorEmail) ?? [] }) : null;
-      return { ...quote, onsitePreferences: storedOnsiteSlots(quote.onsitePreferences), onsiteProposals: storedOnsiteSlots(quote.onsiteProposals), finalOptions: parseFinalOptions(quote.finalOptions), contractor: profile ? { ...profile, approvedServices: JSON.parse(profile.approvedServices || "[]"), reviewCount: Number(rating?.reviewCount ?? 0), averageRating: rating?.averageScore ? Number(rating.averageScore) / 100 : null, ...publicRatings } : null };
+      const demoMetrics = demoContractorMetrics(quote.contractorEmail);
+      const publicRatings = demoMetrics ? { jobLinkScore: demoMetrics.jobLinkScore, quoteRating: demoMetrics.quoteRating, quoteComparisonCount: demoMetrics.completedJobs, matchScore: demoMetrics.jobLinkScore, timelineReliability: demoMetrics.jobLinkScore } : quote.contractorEmail ? publicContractorRatings({ reviewCount: Number(rating?.reviewCount ?? 0), averageScore: Number(rating?.averageScore ?? 0), acceptedJobCount: acceptedByEmail.get(quote.contractorEmail) ?? 0, completedJobCount: completedByEmail.get(quote.contractorEmail) ?? 0, quoteDeltas: accuracyByEmail.get(quote.contractorEmail) ?? [], timelineScores: timelineByEmail.get(quote.contractorEmail) ?? [] }) : null;
+      return { ...quote, onsitePreferences: storedOnsiteSlots(quote.onsitePreferences), onsiteProposals: storedOnsiteSlots(quote.onsiteProposals), finalOptions: parseFinalOptions(quote.finalOptions), contractor: profile ? { ...profile, approvedServices: JSON.parse(profile.approvedServices || "[]"), reviewCount: demoMetrics?.completedJobs ?? Number(rating?.reviewCount ?? 0), averageRating: demoMetrics?.averageRating ?? (rating?.averageScore ? Number(rating.averageScore) / 100 : null), ...publicRatings } : null };
     });
     detailedQuotes.sort((left, right) => (right.contractor?.matchScore ?? 0) - (left.contractor?.matchScore ?? 0) || left.amountCents - right.amountCents);
     return Response.json({ job, quotes: detailedQuotes });

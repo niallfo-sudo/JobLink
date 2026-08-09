@@ -1,8 +1,9 @@
 import { desc, eq } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { getDb } from "../../../db";
-import { jobAttachments, jobEvents, jobRequests, users } from "../../../db/schema";
+import { jobAttachments, jobEvents, jobRequests, quotes, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { createDemoQuote, ensureDemoContractorsForService } from "../../demo-contractor-network";
 
 type UploadBucket = {
   put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | Blob, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
@@ -85,6 +86,11 @@ export async function POST(request: Request) {
       }
       const [publishedJob] = await db.update(jobRequests).set({ status: "matching", updatedAt: new Date() }).where(eq(jobRequests.id, job.id)).returning();
       await db.insert(jobEvents).values({ jobId: job.id, eventType: "request_created", label: "Request submitted for matching", metadata: JSON.stringify({ category, attachmentCount: files.length }) });
+      const demoContractors = await ensureDemoContractorsForService(category);
+      if (demoContractors.length) {
+        await db.insert(quotes).values(demoContractors.map((contractor, index) => createDemoQuote(publishedJob, contractor, index))).onConflictDoNothing();
+        await db.insert(jobEvents).values({ jobId: job.id, eventType: "demo_quotes_added", label: `${demoContractors.length} verified ${category.toLowerCase()} estimates are ready to compare`, metadata: JSON.stringify({ automated: true, contractorEmails: demoContractors.map((contractor) => contractor.ownerEmail) }) });
+      }
       return Response.json({ job: publishedJob }, { status: 201 });
     } catch (uploadError) {
       const bucket = uploadsBucket();

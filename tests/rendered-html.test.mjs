@@ -91,7 +91,8 @@ test("wires existing controls and contractor service matching", async () => {
   assert.match(opportunitiesRoute, /contractorProfiles/);
   assert.match(opportunitiesRoute, /acceptingWork/);
   assert.match(opportunitiesRoute, /verificationStatus !== "verified"/);
-  assert.doesNotMatch(jobsRoute, /quoteProviderNames|providerNames\[0\]|insert\(quotes\)/);
+  assert.match(jobsRoute, /ensureDemoContractorsForService\(category\)/);
+  assert.match(jobsRoute, /insert\(quotes\)/);
 });
 
 test("offers standalone shared demo workspaces to public visitors", async () => {
@@ -113,11 +114,12 @@ test("offers standalone shared demo workspaces to public visitors", async () => 
 });
 
 test("lets Operations administrators switch between verified demo contractor companies", async () => {
-  const [page, demoRoute, actor, migration] = await Promise.all([
+  const [page, demoRoute, actor, migration, network] = await Promise.all([
     source("../app/page.tsx"),
     source("../app/api/demo-contractor/route.ts"),
     source("../app/contractor-demo.ts"),
     source("../drizzle/0020_demo_contractor_switching.sql"),
+    source("../app/demo-contractor-network.ts"),
   ]);
 
   assert.match(page, /Demo company view/);
@@ -128,7 +130,7 @@ test("lets Operations administrators switch between verified demo contractor com
   assert.match(demoRoute, /Operations administrators only/);
   assert.match(demoRoute, /from\(contractorProfiles\)/);
   assert.match(demoRoute, /ensureGeneralContractorsDemo/);
-  assert.match(demoRoute, /General Contractors Inc\./);
+  assert.match(network, /General Contractors Inc\./);
   assert.match(demoRoute, /payload\.action === "create"/);
   assert.match(demoRoute, /demo-contractor-\$\{crypto\.randomUUID/);
   assert.match(demoRoute, /function serializeProfile/);
@@ -874,4 +876,18 @@ test("keeps JobLink Score in New Building state until the first verified review"
   assert.match(page, /begins as New — Building until the first verified completed-job review/);
   assert.match(reputationRoute, /const jobLinkScore = verifiedReviewCount \?/);
   assert.match(quoteRoute, /const jobLinkScore = input\.reviewCount \?/);
+});
+
+test("seeds three verified demo contractors and automatic service-specific estimates", async () => {
+  const [network, jobsRoute, quotesRoute] = await Promise.all([
+    source("../app/demo-contractor-network.ts"),
+    source("../app/api/jobs/route.ts"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+  ]);
+  assert.match(network, /Drywall: \["Hamilton WallWorks", "Precision Drywall Co\.", "TrueNorth Board & Finish"\]/);
+  assert.match(network, /demoContractorsForService/);
+  assert.match(network, /verificationStatus: "verified"/);
+  assert.match(jobsRoute, /ensureDemoContractorsForService\(category\)/);
+  assert.match(jobsRoute, /createDemoQuote\(publishedJob, contractor, index\)/);
+  assert.match(quotesRoute, /demoContractorMetrics\(quote\.contractorEmail\)/);
 });
