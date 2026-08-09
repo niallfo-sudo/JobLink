@@ -1489,6 +1489,7 @@ export default function Home() {
           <nav aria-label="Main navigation">
             <button className={view === "discover" ? "active" : ""} onClick={() => go("discover")}>Find a pro</button>
             <button className={view === "matches" ? "active" : ""} onClick={() => void openLatestRequest("matches")}>My request</button>
+            <button className={view === "account" ? "active" : ""} onClick={() => accountIdentity ? go("account") : setAccountGatewayOpen(true)}>Manage requests</button>
             <button className={view === "tracking" ? "active" : ""} onClick={() => void openLatestRequest("tracking")}>Track job</button>
           </nav>
         )}
