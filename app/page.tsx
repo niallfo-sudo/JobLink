@@ -350,6 +350,7 @@ export default function Home() {
   const finalCheckpointOverage = finalDeposit + finalProgress > finalProjectTotal;
   const finalCompletionBalance = Math.max(0, finalProjectTotal - finalDeposit - finalProgress);
   const demoEligibleJobs = persistedJobs.filter((job) => ["booked", "in_progress", "completed"].includes(job.status));
+  const hasActiveQuoteComparison = savedQuotes.some((quote) => !["accepted", "declined"].includes(quote.status));
   const requestStepValid = step === 0 ? scope.trim().length >= 5 : step === 1 ? size.trim().length >= 2 && (requestDetailLevel === "basic" || (selectedJobTasks.length > 0 && Object.values(detailFieldValues).some((value) => value.trim().length > 0))) : step === 2 ? postalCode.trim().length >= 3 && (timeline !== "Custom" || customTimeline.trim().length >= 3) : true;
 
   function signInFor(portal: "homeowner" | "contractor" | "admin") {
@@ -2037,7 +2038,7 @@ export default function Home() {
               {savedRequestId && savedQuotesStatus !== "loading" && savedQuotes.length === 0 && <div className="matches-loading"><span>JL</span><h3>Waiting for verified contractors</h3><p>Your request is live. JobLink will notify you when a qualified contractor submits a real quote.</p><button onClick={() => go("account")}>Open my requests →</button></div>}
               {savedRequestId && savedQuotes.length > 0 && <section className="estimate-rating-summary"><div><p className="aside-label">Initial estimate ratings</p><h3>Ranked offers</h3><p>JobLink Score and Quote Rating determine the order. Price only breaks a tie.</p></div><div className="estimate-rating-list">{savedQuotes.map((quote, index) => <article key={`ratings-${quote.id}`}><span>#{index + 1}</span><b>{quote.contractorName}</b><small>JobLink Score <strong>{quote.contractor?.jobLinkScore ?? "Building"}</strong> · Quote Rating <strong>{quote.contractor?.quoteRating ?? "Building"}</strong></small></article>)}</div></section>}
             </div>
-            {savedQuotes.length > 0 && <aside className="insight-card">
+            {hasActiveQuoteComparison && <aside className="insight-card">
               <span className="insight-icon">✦</span>
               <p className="aside-label">JobLink insight</p>
               <h3>{savedQuotes[0].contractorName} is the best overall current match.</h3>

@@ -506,6 +506,14 @@ test("shows and ranks preliminary estimates using JobLink Score and Quote Rating
   assert.match(quoteRoute, /detailedQuotes\.sort/);
 });
 
+test("removes the comparison Insight after every quote has a final decision", async () => {
+  const page = await source("../app/page.tsx");
+
+  assert.match(page, /hasActiveQuoteComparison/);
+  assert.match(page, /!\["accepted", "declined"\]\.includes\(quote\.status\)/);
+  assert.match(page, /\{hasActiveQuoteComparison && <aside className="insight-card">/);
+});
+
 test("uses an initial start date and duration, with an on-site request workspace for contractors", async () => {
   const [page, quoteRoute, contractorQuotesRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),
