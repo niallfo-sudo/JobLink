@@ -141,7 +141,7 @@ test("defers emergency requests for the initial launch", async () => {
   assert.match(styles, /\.hero-quick-actions>button:first-child,.emergency-toggle,.availability-check\{display:none!important\}/);
 });
 
-test("supports custom request terms and persistent employee operations", async () => {
+test("supports custom timing, richer request details and persistent employee operations", async () => {
   const [page, operationsRoute, jobRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),
     source("../app/api/operations/route.ts"),
@@ -151,9 +151,12 @@ test("supports custom request terms and persistent employee operations", async (
   ]);
 
   assert.match(page, /customTimeline/);
-  assert.match(page, /customBudget/);
   assert.match(page, /requestTimeline/);
-  assert.match(page, /requestBudget/);
+  assert.match(page, /requestDetailLevel/);
+  assert.match(page, /Basic information/);
+  assert.match(page, /Detailed information/);
+  assert.match(page, /No budget required/);
+  assert.doesNotMatch(page, /customBudget/);
   assert.match(page, /filteredOperationsCases/);
   assert.match(page, /updateOperationsCase/);
   assert.match(page, /operations-drawer/);
@@ -410,9 +413,14 @@ test("requires custom initial bid ranges and scores finalized quote accuracy", a
   assert.match(page, /Your required initial bid range/);
   assert.match(page, /quoteMinAmount/);
   assert.match(page, /quoteMaxAmount/);
+  assert.match(page, /Estimated work duration/);
+  assert.match(page, /quoteCompletionTimeframe/);
+  assert.match(page, /Work duration/);
   assert.match(page, /Quote Rating starts at 70/);
   assert.match(quoteRoute, /minAmount/);
   assert.match(quoteRoute, /maxAmount/);
+  assert.match(quoteRoute, /completionTimeframe/);
+  assert.match(quoteRoute, /Estimated completion timeframe/);
   assert.match(quoteRoute, /quoteAccuracy\(/);
   assert.match(quoteRoute, /tight_in_range/);
   assert.match(quoteRoute, /out_of_range/);

@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     const form = isMultipart ? await request.formData() : null;
     const payload = (form ? JSON.parse(String(form.get("request") ?? "{}")) : await request.json()) as {
       category?: string; title?: string; description?: string; size?: string;
-      timeline?: string; budget?: string; postalCode?: string; emergency?: boolean;
+      timeline?: string; postalCode?: string; emergency?: boolean;
     };
     const files = form ? form.getAll("files").filter((entry): entry is File => entry instanceof File) : [];
     const category = payload.category?.trim() ?? "";
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       externalId, ownerEmail: user.email, category, title, description,
       size: payload.size?.trim() || "Not specified",
       timeline: payload.timeline?.trim() || "Flexible",
-      budget: payload.budget?.trim() || "Need guidance",
+      budget: "Not provided by homeowner",
       postalCode: payload.postalCode?.trim() || "",
       emergency: false,
       status: files.length ? "uploading" : "matching",
