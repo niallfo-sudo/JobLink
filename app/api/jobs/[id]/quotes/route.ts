@@ -99,7 +99,7 @@ function publicContractorRatings(input: { reviewCount: number; averageScore: num
   const completion = input.acceptedJobCount ? Math.round((input.completedJobCount / input.acceptedJobCount) * 100) : 0;
   const documentation = input.completedJobCount ? Math.min(100, Math.round((input.reviewCount / input.completedJobCount) * 100)) : 0;
   const timeline = input.timelineScores.length ? Math.round(input.timelineScores.reduce((total, score) => total + score, 0) / input.timelineScores.length) : null;
-  const jobLinkScore = input.acceptedJobCount ? Math.round(timeline === null ? quality * 0.55 + completion * 0.30 + documentation * 0.15 : quality * 0.45 + completion * 0.25 + documentation * 0.10 + timeline * 0.20) : null;
+  const jobLinkScore = input.reviewCount ? Math.round(timeline === null ? quality * 0.55 + completion * 0.30 + documentation * 0.15 : quality * 0.45 + completion * 0.25 + documentation * 0.10 + timeline * 0.20) : null;
   const quoteComparisonCount = input.quoteDeltas.length;
   const averageQuoteDelta = quoteComparisonCount ? input.quoteDeltas.reduce((sum, delta) => sum + delta, 0) / quoteComparisonCount : 0;
   const quoteRating = quoteComparisonCount ? Math.max(0, Math.min(100, Math.round(70 + averageQuoteDelta + Math.min(10, Math.max(0, quoteComparisonCount - 1) * 2)))) : null;

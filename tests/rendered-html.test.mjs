@@ -853,3 +853,17 @@ test("explains trustworthy reviews and both contractor ratings on the Trust and 
   assert.match(page, /Quote Rating reflects how consistently/);
   assert.match(page, /Quote Rating: price-range accuracy/);
 });
+
+test("keeps JobLink Score in New Building state until the first verified review", async () => {
+  const [page, reputationRoute, quoteRoute] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/reputation/route.ts"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+  ]);
+
+  assert.match(page, /function jobLinkScoreLabel/);
+  assert.match(page, /New — Building/);
+  assert.match(page, /begins as New — Building until the first verified completed-job review/);
+  assert.match(reputationRoute, /const jobLinkScore = verifiedReviewCount \?/);
+  assert.match(quoteRoute, /const jobLinkScore = input\.reviewCount \?/);
+});

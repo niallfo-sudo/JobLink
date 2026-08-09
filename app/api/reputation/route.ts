@@ -33,7 +33,7 @@ export async function GET() {
     const documentation = completedJobCount ? Math.min(100, Math.round((verifiedReviewCount / completedJobCount) * 100)) : 0;
     const timelineScores = timelineRows.flatMap((row) => row.promisedAt && row.completedAt ? [completionTimelineScore(row.promisedAt, row.completedAt)] : []);
     const timeline = timelineScores.length ? Math.round(timelineScores.reduce((total, score) => total + score, 0) / timelineScores.length) : null;
-    const jobLinkScore = acceptedJobCount ? Math.round(timeline === null ? quality * 0.55 + completion * 0.30 + documentation * 0.15 : quality * 0.45 + completion * 0.25 + documentation * 0.10 + timeline * 0.20) : null;
+    const jobLinkScore = verifiedReviewCount ? Math.round(timeline === null ? quality * 0.55 + completion * 0.30 + documentation * 0.15 : quality * 0.45 + completion * 0.25 + documentation * 0.10 + timeline * 0.20) : null;
     const quoteComparisonCount = Number(accuracy?.comparisonCount ?? 0);
     const averageQuoteDelta = Number(accuracy?.averageDelta ?? 0);
     const quoteRating = quoteComparisonCount ? Math.max(0, Math.min(100, Math.round(70 + averageQuoteDelta + Math.min(10, Math.max(0, quoteComparisonCount - 1) * 2)))) : null;

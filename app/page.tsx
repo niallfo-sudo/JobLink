@@ -36,6 +36,10 @@ type VerifiedContractor = { id: number; ownerEmail: string; businessName: string
 type OperationsJob = { id: number; externalId: string; ownerEmail: string; category: string; title: string; budget: string; timeline: string; emergency: boolean; status: string; scheduledStartAt?: string | number | null; createdAt: string | number; updatedAt: string | number; matchingContractors: Array<{ businessName: string; ownerEmail: string; primaryService: string }>; quotes: Array<{ id: number; contractorEmail?: string | null; contractorName: string; amountCents: number; status: string; createdAt: string | number }> };
 type DemoContractorCompany = { ownerEmail: string; businessName: string; primaryService: string; homeBase: string; verificationStatus: string };
 
+function jobLinkScoreLabel(score: number | null | undefined) {
+  return typeof score === "number" ? String(score) : "New — Building";
+}
+
 function BeforeWorkPhotoUpload({ jobId, photoCount, onUploaded }: { jobId: number; photoCount: number; onUploaded: () => void }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -152,7 +156,7 @@ const helpFaqsRaw = [
   { topic: "payments", question: "How are change orders charged?", answer: "A contractor submits the reason, added scope, amount and schedule impact. The customer must approve and sign before the contract total changes." },
   { topic: "trust", question: "What happens if something goes wrong?", answer: "Keep communication and payments inside JobLink. Support can review the quote, contract, messages, progress updates and payment record." },
   { topic: "trust", question: "How are professionals verified?", answer: "Contractors upload private identity, business, insurance and applicable trade-licence evidence. Authorized Operations staff review the evidence before matching can be enabled." },
-  { topic: "trust", question: "How is the JobLink Score calculated?", answer: "The JobLink Score reflects verified work, not unverified public reviews. It uses verified review quality (45%), completion of accepted jobs (25%), required homeowner-review completion (10%), and on-time delivery against the finalized completion date (20%). Finishing on or before the promised date earns full timeline credit; later completion earns less. Older jobs without a recorded finalized date keep the original three-part weighting." },
+  { topic: "trust", question: "How is the JobLink Score calculated?", answer: "The JobLink Score begins as New — Building until the first verified completed-job review is received. It then reflects verified work, not unverified public reviews: review quality (45%), completion of accepted jobs (25%), required homeowner-review completion (10%), and on-time delivery against the finalized completion date (20%). Finishing on or before the promised date earns full timeline credit; later completion earns less. Older jobs without a recorded finalized date keep the original three-part weighting." },
   { topic: "professionals", question: "How does Quote Rating work?", answer: "Each initial quote includes an honest minimum-to-maximum range. A finalized on-site quote within a tight range earns the most rating credit; a standard or wider in-range quote earns less. An unselected final quote outside the stated range receives only a small deduction. If the homeowner still selects that contractor, there is no Quote Rating penalty for the out-of-range final price." },
 ];
 
@@ -2231,7 +2235,7 @@ export default function Home() {
                 <button type="button" className="overview-metric-link" onClick={() => setProTab("opportunities")}><span>Open opportunities</span><b>{availableOpportunities.length}</b><small>Matched to your services and radius · View opportunities →</small></button>
                 <button type="button" className="overview-metric-link" onClick={openContractorQuoteReplies}><span>Quotes awaiting reply</span><b>{contractorQuotes.filter((quote) => quote.status === "submitted" || quote.status === "onsite_requested").length}</b><small>View quotes and homeowner visit times →</small></button>
                 <article><span>Released demo payouts</span><b>${(releasedPayoutCents / 100).toLocaleString()}</b><small>{releasedPayoutRecords.length} released {releasedPayoutRecords.length === 1 ? "job" : "jobs"}</small></article>
-                <article><span>JobLink Score</span><b>{reputation.jobLinkScore ?? "New"}</b><small>{reputation.verifiedReviewCount} verified completed-job {reputation.verifiedReviewCount === 1 ? "review" : "reviews"}</small></article>
+                <article><span>JobLink Score</span><b>{jobLinkScoreLabel(reputation.jobLinkScore)}</b><small>{reputation.verifiedReviewCount} verified completed-job {reputation.verifiedReviewCount === 1 ? "review" : "reviews"}</small></article>
               </div>
               <div className="pro-overview-grid">
                 <div className="pro-panel">
@@ -2245,7 +2249,7 @@ export default function Home() {
                   ))}
                 </div>
                 <aside className="trust-panel">
-                  <div className="trust-panel-top"><div><p className="aside-label">JobLink Score</p><h2>{reputation.jobLinkScore ?? "—"}<small>/100</small></h2></div><span>{reputation.verifiedReviewCount ? `${reputation.averageStars?.toFixed(1)} ★` : "Building"}</span></div>
+                  <div className="trust-panel-top"><div><p className="aside-label">JobLink Score</p><h2>{reputation.jobLinkScore === null ? "New — Building" : <>{reputation.jobLinkScore}<small>/100</small></>}</h2></div><span>{reputation.verifiedReviewCount ? `${reputation.averageStars?.toFixed(1)} ★` : "Building"}</span></div>
                   <div className="score-bar"><i style={{ width: `${reputation.jobLinkScore ?? 0}%` }} /></div>
                   <dl><div><dt>Verified reviews</dt><dd>{reputation.verifiedReviewCount}</dd></div><div><dt>Quality score</dt><dd>{reputation.scoreDetails.quality || "—"}</dd></div><div><dt>Completion reliability</dt><dd>{reputation.scoreDetails.completion || "—"}</dd></div><div><dt>Review completion</dt><dd>{reputation.scoreDetails.documentation || "—"}</dd></div><div><dt>Timeline reliability</dt><dd>{reputation.scoreDetails.timeline ?? "Building"}</dd></div><div><dt>Quote Rating</dt><dd>{reputation.quoteRating ?? "Building"}</dd></div></dl><p className="joblink-score-note">JobLink Score: review quality (45%), completed accepted jobs (25%), required-review completion (10%) and on-time delivery against the finalized completion target (20%). On or before target earns 100 timeline points; 1–2 days late earns 85, 3–7 earns 65, 8–14 earns 35, and more than 14 days late earns 0. Quote Rating starts at 70 after the first verified on-site comparison: +12 for a tight range in range, +8 standard, +4 wide, and −2 to −6 when outside.</p>
                   <button onClick={() => setProTab("business")}>Improve your profile →</button>
