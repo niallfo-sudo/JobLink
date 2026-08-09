@@ -2,7 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { getDb } from "../../../db";
 import { contractorProfiles, contractorVerificationDocuments } from "../../../db/schema";
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { getContractorActor } from "../../contractor-demo";
 
 type UploadBucket = { put(key: string, value: ReadableStream<Uint8Array>, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>; delete(key: string): Promise<void> };
 const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
@@ -15,14 +15,14 @@ function bucket() {
 }
 
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const documents = await getDb().select({ id: contractorVerificationDocuments.id, documentType: contractorVerificationDocuments.documentType, filename: contractorVerificationDocuments.filename, reviewStatus: contractorVerificationDocuments.reviewStatus, uploadedAt: contractorVerificationDocuments.uploadedAt }).from(contractorVerificationDocuments).where(eq(contractorVerificationDocuments.ownerEmail, user.email)).orderBy(asc(contractorVerificationDocuments.uploadedAt));
   return Response.json({ documents });
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const form = await request.formData();
   const documentType = String(form.get("documentType") || "");

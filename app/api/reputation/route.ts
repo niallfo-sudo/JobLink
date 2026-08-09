@@ -1,10 +1,10 @@
 import { avg, count, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { verifiedReviews } from "../../../db/schema";
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { getContractorActor } from "../../contractor-demo";
 
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
     const [summary] = await getDb().select({ reviewCount: count(), averageScore: avg(verifiedReviews.averageScore) }).from(verifiedReviews).where(eq(verifiedReviews.contractorEmail, user.email));

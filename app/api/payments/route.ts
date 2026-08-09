@@ -1,10 +1,10 @@
 import { desc, eq, inArray, or } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { jobRequests, paymentMilestones, paymentRecords } from "../../../db/schema";
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { getContractorActor } from "../../contractor-demo";
 
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
     const rows = await getDb().select({ payment: paymentRecords, job: { externalId: jobRequests.externalId, title: jobRequests.title } })

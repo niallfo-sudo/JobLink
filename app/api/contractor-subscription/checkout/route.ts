@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { contractorProfiles } from "../../../../db/schema";
-import { getChatGPTUser } from "../../../chatgpt-auth";
+import { getContractorActor } from "../../../contractor-demo";
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const payload = (await request.json()) as { plan?: "starter" | "growth" | "pro" };
   if (!payload.plan || !["starter", "growth", "pro"].includes(payload.plan)) return Response.json({ error: "Choose a valid plan" }, { status: 400 });

@@ -94,6 +94,23 @@ test("wires existing controls and contractor service matching", async () => {
   assert.doesNotMatch(jobsRoute, /quoteProviderNames|providerNames\[0\]|insert\(quotes\)/);
 });
 
+test("lets Operations administrators switch between verified demo contractor companies", async () => {
+  const [page, demoRoute, actor, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/demo-contractor/route.ts"),
+    source("../app/contractor-demo.ts"),
+    source("../drizzle/0020_demo_contractor_switching.sql"),
+  ]);
+
+  assert.match(page, /Demo company view/);
+  assert.match(page, /switchDemoContractor/);
+  assert.match(demoRoute, /Operations administrators only/);
+  assert.match(demoRoute, /DEMO_CONTRACTOR_COOKIE/);
+  assert.match(actor, /account\?\.role !== "admin"/);
+  assert.match(actor, /@joblink\.demo/);
+  for (const company of ["North & Beam Drywall", "Hamilton Climate Co.", "Hamilton Plumbing Co.", "Citywide Painting"]) assert.match(migration, new RegExp(company.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
 test("supports custom request terms and persistent employee operations", async () => {
   const [page, operationsRoute, jobRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),

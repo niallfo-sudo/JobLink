@@ -1,17 +1,17 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { notifications } from "../../../db/schema";
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { getContractorActor } from "../../contractor-demo";
 
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const rows = await getDb().select().from(notifications).where(eq(notifications.recipientEmail, user.email)).orderBy(desc(notifications.createdAt)).limit(50);
   return Response.json({ notifications: rows, unread: rows.filter((row) => !row.readAt).length });
 }
 
 export async function PATCH(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const payload = (await request.json()) as { id?: number; all?: boolean };
   const db = getDb();

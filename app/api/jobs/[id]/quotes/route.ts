@@ -2,6 +2,7 @@ import { and, asc, eq, ne } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { contractorProfiles, documentRecords, jobEvents, jobRequests, paymentMilestones, paymentRecords, quotes } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
+import { getContractorActor } from "../../../../contractor-demo";
 import { notify } from "../../../../../lib/notifications";
 
 const eligibleSubscriptionStatuses = ["active", "trialing", "demo_active"];
@@ -52,7 +53,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const jobId = Number((await context.params).id);
   if (!Number.isInteger(jobId)) return Response.json({ error: "Invalid job id" }, { status: 400 });
@@ -80,8 +81,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await getChatGPTUser();
-  if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
+  const identity = await getChatGPTUser();
+  const contractor = await getContractorActor();
+  if (!identity || !contractor) return Response.json({ error: "Sign in required" }, { status: 401 });
   const jobId = Number((await context.params).id);
   const payload = (await request.json()) as { action?: "request_onsite" | "schedule_onsite" | "submit_final" | "accept_final" | "decline_final"; quoteId?: number; onsiteVisitAt?: string; amount?: number; workDescription?: string; materials?: string; measurements?: string; depositAmount?: number; progressAmount?: number; completionAmount?: number };
   const quoteId = Number(payload.quoteId);
@@ -93,7 +95,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (!job || !quote) return Response.json({ error: "Job or quote not found" }, { status: 404 });
 
     if (payload.action === "request_onsite") {
-      if (job.ownerEmail !== user.email) return Response.json({ error: "Job not found" }, { status: 404 });
+      if (job.ownerEmail !== identity.email) return Response.json({ error: "Job not found" }, { status: 404 });
       if (!["matching", "verification_pending", "final_quote_ready"].includes(job.status) || !["submitted", "onsite_requested"].includes(quote.status)) return Response.json({ error: "This estimate is not available for an on-site verification" }, { status: 409 });
       if (!quote.contractorEmail || !await eligibleProfile(quote.contractorEmail)) return Response.json({ error: "This contractor is not currently eligible for verification" }, { status: 409 });
       const [updatedQuote] = await db.update(quotes).set({ status: "onsite_requested" }).where(eq(quotes.id, quote.id)).returning();
@@ -104,7 +106,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     }
 
     if (payload.action === "schedule_onsite") {
-      if (quote.contractorEmail !== user.email || !await eligibleProfile(user.email)) return Response.json({ error: "Only the verified contractor can schedule this visit" }, { status: 403 });
+      if (quote.contractorEmail !== contractor.email || !await eligibleProfile(contractor.email)) return Response.json({ error: "Only the verified contractor can schedule this visit" }, { status: 403 });
       if (!["onsite_requested", "onsite_scheduled"].includes(quote.status)) return Response.json({ error: "The homeowner must request an on-site verification first" }, { status: 409 });
       const visit = validOnsiteVisit(payload.onsiteVisitAt);
       if (!visit) return Response.json({ error: "Schedule a weekday visit within the next two business days" }, { status: 400 });
@@ -115,7 +117,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     }
 
     if (payload.action === "submit_final") {
-      if (quote.contractorEmail !== user.email || !await eligibleProfile(user.email)) return Response.json({ error: "Only the verified contractor can submit this final quote" }, { status: 403 });
+      if (quote.contractorEmail !== contractor.email || !await eligibleProfile(contractor.email)) return Response.json({ error: "Only the verified contractor can submit this final quote" }, { status: 403 });
       if (!quote.onsiteVisitAt || !["onsite_requested", "onsite_scheduled", "final_quote_ready"].includes(quote.status)) return Response.json({ error: "An on-site verification is required before finalizing the quote" }, { status: 409 });
       const amountCents = toCents(payload.amount);
       const depositCents = toCents(payload.depositAmount);
@@ -134,7 +136,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       return Response.json({ quote: updatedQuote, job: { ...job, status: "final_quote_ready" } });
     }
 
-    if (job.ownerEmail !== user.email) return Response.json({ error: "Job not found" }, { status: 404 });
+    if (job.ownerEmail !== identity.email) return Response.json({ error: "Job not found" }, { status: 404 });
     if (payload.action === "decline_final") {
       if (quote.status !== "final_quote_ready") return Response.json({ error: "Only a final quote can be declined" }, { status: 409 });
       const [updatedQuote] = await db.update(quotes).set({ status: "declined" }).where(eq(quotes.id, quote.id)).returning();
@@ -151,14 +153,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       const [acceptedQuote] = await db.update(quotes).set({ status: "accepted" }).where(eq(quotes.id, quote.id)).returning();
       await db.update(jobRequests).set({ status: "booked", updatedAt: new Date() }).where(eq(jobRequests.id, jobId));
       const customerFeeCents = Math.round(quote.amountCents * 0.03);
-      const [paymentRecord] = await db.insert(paymentRecords).values({ jobId, quoteId, ownerEmail: user.email, contractorEmail: quote.contractorEmail, contractorName: quote.contractorName, subtotalCents: quote.amountCents, customerFeeCents, totalCents: quote.amountCents + customerFeeCents, contractorPayoutCents: quote.amountCents, releasedCents: 0, status: "demo_pending", processor: "demo" }).onConflictDoUpdate({ target: paymentRecords.jobId, set: { quoteId, contractorEmail: quote.contractorEmail, contractorName: quote.contractorName, subtotalCents: quote.amountCents, customerFeeCents, totalCents: quote.amountCents + customerFeeCents, contractorPayoutCents: quote.amountCents, releasedCents: 0, status: "demo_pending", processor: "demo", updatedAt: new Date() } }).returning();
+      const [paymentRecord] = await db.insert(paymentRecords).values({ jobId, quoteId, ownerEmail: identity.email, contractorEmail: quote.contractorEmail, contractorName: quote.contractorName, subtotalCents: quote.amountCents, customerFeeCents, totalCents: quote.amountCents + customerFeeCents, contractorPayoutCents: quote.amountCents, releasedCents: 0, status: "demo_pending", processor: "demo" }).onConflictDoUpdate({ target: paymentRecords.jobId, set: { quoteId, contractorEmail: quote.contractorEmail, contractorName: quote.contractorName, subtotalCents: quote.amountCents, customerFeeCents, totalCents: quote.amountCents + customerFeeCents, contractorPayoutCents: quote.amountCents, releasedCents: 0, status: "demo_pending", processor: "demo", updatedAt: new Date() } }).returning();
       await db.insert(paymentMilestones).values([
         { paymentId: paymentRecord.id, jobId, milestoneType: "deposit", label: "Deposit and materials", amountCents: quote.depositCents, status: "awaiting_funding" },
         { paymentId: paymentRecord.id, jobId, milestoneType: "progress", label: "50% progress checkpoint", amountCents: quote.progressCents, status: "awaiting_funding" },
         { paymentId: paymentRecord.id, jobId, milestoneType: "completion", label: "Final completion", amountCents: quote.completionCents, status: "awaiting_funding" },
       ]).onConflictDoUpdate({ target: [paymentMilestones.paymentId, paymentMilestones.milestoneType], set: { status: "awaiting_funding", proofNote: "", proofSubmittedAt: null, homeownerApprovedAt: null, releasedAt: null, updatedAt: new Date() } });
       const snapshot = JSON.stringify({ jobNumber: job.externalId, jobTitle: job.title, originalRequest: job.description, contractorName: quote.contractorName, finalScope: quote.workDescription, materials: quote.materials, measurements: quote.measurements, amountCents: quote.amountCents, depositCents: quote.depositCents, progressCents: quote.progressCents, completionCents: quote.completionCents, customerFeeCents });
-      const documentBase = { jobId, quoteId, ownerEmail: user.email, contractorEmail: quote.contractorEmail };
+      const documentBase = { jobId, quoteId, ownerEmail: identity.email, contractorEmail: quote.contractorEmail };
       await db.insert(documentRecords).values([{ ...documentBase, externalId: `AGR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "service_agreement", title: "Service agreement", status: "ready_for_signature", content: snapshot }, { ...documentBase, externalId: `QTE-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "accepted_quote", title: "Accepted final quote", status: "accepted", content: snapshot }, { ...documentBase, externalId: `INV-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, documentType: "invoice", title: "Invoice", status: "demo_payment_pending", content: snapshot }]).onConflictDoNothing();
       await db.insert(jobEvents).values({ jobId, eventType: "final_quote_accepted", label: `${quote.contractorName} selected after on-site verification`, metadata: JSON.stringify({ quoteId, amountCents: quote.amountCents }) });
       await notify(quote.contractorEmail, { jobId, type: "final_quote_accepted", title: "Final quote accepted", body: `${job.externalId} is booked. Set the scheduled work start when both parties are ready.` });

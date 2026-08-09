@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { contractorProfiles } from "../../../../db/schema";
-import { getChatGPTUser } from "../../../chatgpt-auth";
+import { getContractorActor } from "../../../contractor-demo";
 
 export async function POST() {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const db = getDb();
   const [profile] = await db.select().from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, user.email)).limit(1);
@@ -15,7 +15,7 @@ export async function POST() {
 }
 
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const [profile] = await getDb().select().from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, user.email)).limit(1);
   return Response.json({ connected: Boolean(profile?.stripeConnectAccountId), payoutsEnabled: Boolean(profile?.payoutsEnabled), demo: true });

@@ -2,12 +2,13 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { contractorProfiles, operationsCases, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { getContractorActor } from "../../contractor-demo";
 
 const plans = new Set(["starter", "growth", "pro"]);
 const serviceCategories = new Set(["Drywall", "Roofing", "Painting", "Plumbing", "Electrical", "HVAC", "Junk removal", "Landscaping", "Moving", "Carpentry", "Flooring", "General contracting"]);
 
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
     const [profile] = await getDb().select().from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, user.email)).limit(1);
@@ -18,8 +19,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
-  if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
+  const identity = await getChatGPTUser();
+  const user = await getContractorActor();
+  if (!identity || !user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
     const payload = (await request.json()) as {
       businessName?: string; legalName?: string; phone?: string; businessAddress?: string; yearsInBusiness?: number; about?: string; primaryService?: string;
@@ -33,11 +35,13 @@ export async function POST(request: Request) {
     const radius = Math.min(100, Math.max(5, Number(payload.serviceRadiusKm) || 30));
     const teamSize = Math.min(500, Math.max(1, Number(payload.teamSize) || 1));
     const db = getDb();
-    const [existingUser] = await db.select({ role: users.role }).from(users).where(eq(users.email, user.email)).limit(1);
-    if (existingUser && ["employee", "admin"].includes(existingUser.role)) {
-      await db.update(users).set({ displayName: user.displayName, activeWorkspace: "contractor" }).where(eq(users.email, user.email));
-    } else {
-      await db.insert(users).values({ email: user.email, displayName: user.displayName, role: "contractor", activeWorkspace: "contractor" }).onConflictDoUpdate({ target: users.email, set: { displayName: user.displayName, role: "contractor", activeWorkspace: "contractor" } });
+    const [existingUser] = await db.select({ role: users.role }).from(users).where(eq(users.email, identity.email)).limit(1);
+    if (user.email === identity.email) {
+      if (existingUser && ["employee", "admin"].includes(existingUser.role)) {
+        await db.update(users).set({ displayName: identity.displayName, activeWorkspace: "contractor" }).where(eq(users.email, identity.email));
+      } else {
+        await db.insert(users).values({ email: identity.email, displayName: identity.displayName, role: "contractor", activeWorkspace: "contractor" }).onConflictDoUpdate({ target: users.email, set: { displayName: identity.displayName, role: "contractor", activeWorkspace: "contractor" } });
+      }
     }
     const values = {
       ownerEmail: user.email, businessName, legalName: payload.legalName?.trim() || businessName,
@@ -85,7 +89,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
     const payload = (await request.json()) as { acceptingWork?: boolean; emergencyAvailable?: boolean; serviceRadiusKm?: number };

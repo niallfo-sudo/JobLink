@@ -29,6 +29,7 @@ type VerificationDocument = { id: number; documentType: string; filename: string
 type ContractorQuote = { id: number; jobId: number; externalId: string; title: string; category: string; amountCents: number; availableAt: string; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; createdAt: string | number };
 type VerifiedContractor = { id: number; ownerEmail: string; businessName: string; primaryService: string; requestedServices: string[]; approvedServices: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: string; subscriptionStatus: string; payoutsEnabled: boolean; updatedAt: string | number };
 type OperationsJob = { id: number; externalId: string; ownerEmail: string; category: string; title: string; budget: string; timeline: string; emergency: boolean; status: string; scheduledStartAt?: string | number | null; createdAt: string | number; updatedAt: string | number; matchingContractors: Array<{ businessName: string; ownerEmail: string; primaryService: string }>; quotes: Array<{ id: number; contractorEmail?: string | null; contractorName: string; amountCents: number; status: string; createdAt: string | number }> };
+type DemoContractorCompany = { ownerEmail: string; businessName: string; primaryService: string; homeBase: string; verificationStatus: string };
 
 function PaymentReleaseWorkflow({ payment, actionId, onFund, onSubmitProof, onApprove }: { payment: PaymentRecord; actionId: string | null; onFund: (payment: PaymentRecord) => void; onSubmitProof: (payment: PaymentRecord, milestone: PaymentMilestone, proof: string) => void; onApprove: (payment: PaymentRecord, milestone: PaymentMilestone) => void }) {
   const [proofs, setProofs] = useState<Record<number, string>>({});
@@ -283,6 +284,9 @@ export default function Home() {
   const [accountGatewayOpen, setAccountGatewayOpen] = useState(false);
   const [accountActionStatus, setAccountActionStatus] = useState<"idle" | "saving" | "error">("idle");
   const [accountActionError, setAccountActionError] = useState("");
+  const [demoContractorCompanies, setDemoContractorCompanies] = useState<DemoContractorCompany[]>([]);
+  const [selectedDemoContractorEmail, setSelectedDemoContractorEmail] = useState("");
+  const [demoCompanySwitching, setDemoCompanySwitching] = useState(false);
 
   const serviceIntake = serviceIntakeCatalog[category] ?? serviceIntakeCatalog.Drywall;
   const requestTimeline = timeline === "Custom" ? customTimeline.trim() || "Custom timing to be confirmed" : timeline;
@@ -314,6 +318,7 @@ export default function Home() {
     setAccountActionStatus("saving");
     setAccountActionError("");
     try {
+      if (role === "homeowner") await fetch("/api/demo-contractor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contractorEmail: null }) });
       const response = await fetch("/api/account", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }) });
       const data = (await response.json()) as { user?: AccountIdentity; error?: string };
       if (!response.ok || !data.user) throw new Error(data.error || "Account could not be created");
@@ -325,6 +330,19 @@ export default function Home() {
     } catch (error) {
       setAccountActionError(error instanceof Error ? error.message : "Account could not be created");
       setAccountActionStatus("error");
+    }
+  }
+
+  async function switchDemoContractor(contractorEmail: string) {
+    setDemoCompanySwitching(true);
+    try {
+      const response = await fetch("/api/demo-contractor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contractorEmail }) });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Company could not be changed");
+      window.location.reload();
+    } catch (error) {
+      setDemoCompanySwitching(false);
+      showNotice(error instanceof Error ? error.message : "Company could not be changed");
     }
   }
 
@@ -368,6 +386,17 @@ export default function Home() {
       .catch(() => active && setAccountLoaded(true));
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (accountIdentity?.operationsRole !== "admin") return;
+    fetch("/api/demo-contractor")
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data: { companies?: DemoContractorCompany[]; selectedEmail?: string }) => {
+        setDemoContractorCompanies(data.companies ?? []);
+        setSelectedDemoContractorEmail(data.selectedEmail ?? "");
+      })
+      .catch(() => undefined);
+  }, [accountIdentity?.operationsRole]);
 
   const jobBrief = useMemo(
     () => {
@@ -1812,7 +1841,7 @@ export default function Home() {
         <section className="pro-shell">
           <div className="pro-banner">
             <div className="pro-company"><span>{(contractorProfile?.businessName || businessName).split(" ").slice(0,2).map((word) => word[0]).join("")}</span><div><b>{contractorProfile?.businessName || businessName}</b><small>{contractorProfile?.verificationStatus === "verified" ? "Verified business" : "Business profile"} · {contractorProfile?.homeBase || homeBase}</small></div></div>
-            <div className="pro-banner-actions"><button className="pro-availability" disabled={contractorProfile?.verificationStatus !== "verified" || !hasActiveSubscription} onClick={() => contractorProfile && updateContractorProfile({ acceptingWork: !contractorProfile.acceptingWork })}><span className={contractorProfile?.acceptingWork === false ? "paused" : ""}><i /></span><div><b>{contractorProfile?.verificationStatus !== "verified" ? "Matching awaiting verification" : !hasActiveSubscription ? "Subscription required" : contractorProfile?.acceptingWork === false ? "Matching paused" : "Accepting new work"}</b><small>{contractorProfile?.verificationStatus !== "verified" ? "Operations approval required" : !hasActiveSubscription ? "Choose a paid plan in Business" : "Click to change availability"}</small></div></button><button onClick={() => { setOnboardingStep(0); go("onboarding"); }}>{contractorProfile ? "Edit profile" : "Complete onboarding"}</button></div>
+            <div className="pro-banner-actions">{demoContractorCompanies.length > 1 && <label className="demo-company-switcher"><span>Demo company view</span><select value={selectedDemoContractorEmail} disabled={demoCompanySwitching} onChange={(event) => void switchDemoContractor(event.target.value)}>{demoContractorCompanies.map((company) => <option key={company.ownerEmail} value={company.ownerEmail}>{company.businessName} · {company.primaryService}</option>)}</select></label>}<button className="pro-availability" disabled={contractorProfile?.verificationStatus !== "verified" || !hasActiveSubscription} onClick={() => contractorProfile && updateContractorProfile({ acceptingWork: !contractorProfile.acceptingWork })}><span className={contractorProfile?.acceptingWork === false ? "paused" : ""}><i /></span><div><b>{contractorProfile?.verificationStatus !== "verified" ? "Matching awaiting verification" : !hasActiveSubscription ? "Subscription required" : contractorProfile?.acceptingWork === false ? "Matching paused" : "Accepting new work"}</b><small>{contractorProfile?.verificationStatus !== "verified" ? "Operations approval required" : !hasActiveSubscription ? "Choose a paid plan in Business" : "Click to change availability"}</small></div></button><button onClick={() => { setOnboardingStep(0); go("onboarding"); }}>{contractorProfile ? "Edit profile" : "Complete onboarding"}</button></div>
           </div>
           {contractorProfile && <div className={`contractor-verification-status ${contractorVerificationCopy.tone}`}><span>{contractorVerificationCopy.tone === "verified" ? "✓" : contractorVerificationCopy.tone === "rejected" ? "!" : "…"}</span><div><b>{contractorVerificationCopy.title}</b><p>{contractorVerificationCopy.body}</p></div><button onClick={() => setProTab("business")}>View business profile →</button></div>}
 

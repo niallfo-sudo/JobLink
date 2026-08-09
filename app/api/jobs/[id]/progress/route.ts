@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { documentRecords, jobEvents, jobRequests, quotes } from "../../../../../db/schema";
-import { getChatGPTUser } from "../../../../chatgpt-auth";
+import { getContractorActor } from "../../../../contractor-demo";
 import { notify } from "../../../../../lib/notifications";
 
 const stages = {
@@ -13,7 +13,7 @@ const stages = {
 } as const;
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await getChatGPTUser();
+  const user = await getContractorActor();
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const { id } = await context.params;
   const jobId = Number(id);

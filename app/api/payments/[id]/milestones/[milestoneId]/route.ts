@@ -2,11 +2,13 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../../../db";
 import { jobEvents, jobRequests, paymentMilestones, paymentRecords, quotes } from "../../../../../../db/schema";
 import { getChatGPTUser } from "../../../../../chatgpt-auth";
+import { getContractorActor } from "../../../../../contractor-demo";
 import { notify } from "../../../../../../lib/notifications";
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string; milestoneId: string }> }) {
-  const user = await getChatGPTUser();
-  if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
+  const identity = await getChatGPTUser();
+  const contractor = await getContractorActor();
+  if (!identity || !contractor) return Response.json({ error: "Sign in required" }, { status: 401 });
   const { id, milestoneId } = await context.params;
   const paymentId = Number(id);
   const idNumber = Number(milestoneId);
@@ -21,7 +23,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
 
     if (payload.action === "submit_proof") {
-      const [acceptedQuote] = await db.select().from(quotes).where(and(eq(quotes.jobId, payment.jobId), eq(quotes.status, "accepted"), eq(quotes.contractorEmail, user.email))).limit(1);
+      const [acceptedQuote] = await db.select().from(quotes).where(and(eq(quotes.jobId, payment.jobId), eq(quotes.status, "accepted"), eq(quotes.contractorEmail, contractor.email))).limit(1);
       const proofNote = payload.proofNote?.trim() || "";
       if (!acceptedQuote) return Response.json({ error: "Only the selected contractor can submit progress proof" }, { status: 403 });
       if (payment.status !== "demo_held" && payment.status !== "demo_partially_released") return Response.json({ error: "The homeowner must fund the full job before a release can be requested" }, { status: 409 });
@@ -34,7 +36,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       return Response.json({ milestone: updated, message: "Proof submitted for homeowner approval." });
     }
 
-    if (payment.ownerEmail !== user.email) return Response.json({ error: "Only the homeowner can approve a payment release" }, { status: 403 });
+    if (payment.ownerEmail !== identity.email) return Response.json({ error: "Only the homeowner can approve a payment release" }, { status: 403 });
     if (milestone.status !== "proof_submitted") return Response.json({ error: "Proof must be submitted before the homeowner can approve a release" }, { status: 409 });
     const now = new Date();
     const [updatedMilestone] = await db.update(paymentMilestones).set({ status: "demo_released", homeownerApprovedAt: now, releasedAt: now, updatedAt: now }).where(eq(paymentMilestones.id, milestone.id)).returning();
