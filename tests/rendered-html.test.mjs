@@ -832,3 +832,14 @@ test("scopes contractor payouts to accepted quotes and released demo funds", asy
   assert.match(page, /demo_released/);
   assert.match(page, /Released demo payouts/);
 });
+
+test("explains protected payment and homeowner remedies on the Trust and Safety page", async () => {
+  const page = await source("../app/page.tsx");
+
+  assert.doesNotMatch(page, /demo payment records/);
+  assert.match(page, /Your money follows/);
+  assert.match(page, /Payments are processed through JobLink/);
+  assert.match(page, /pause unreleased funds/);
+  assert.match(page, /returned to the homeowner/);
+  assert.match(page, /Contractor accountability for agreed work/);
+});
