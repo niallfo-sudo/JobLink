@@ -301,6 +301,46 @@ test("runs on-site verification and final quotes before booking", async () => {
   assert.match(migration, /completion_cents/);
 });
 
+test("does not publish a request until selected media has uploaded", async () => {
+  const [page, jobsRoute, schema] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/route.ts"),
+    source("../db/schema.ts"),
+  ]);
+
+  assert.match(page, /form\.append\("request"/);
+  assert.match(page, /requestFiles\.forEach\(\(file\) => form\.append\("files", file\)\)/);
+  assert.match(page, /Uploading files/);
+  assert.doesNotMatch(page, /Your request was posted, but the files did not finish uploading/);
+  assert.match(jobsRoute, /multipart\/form-data/);
+  assert.match(jobsRoute, /status: files\.length \? "uploading" : "matching"/);
+  assert.match(jobsRoute, /set\(\{ status: "matching"/);
+  assert.match(jobsRoute, /Your files could not be uploaded\. Your request was not posted/);
+  assert.match(jobsRoute, /db\.delete\(jobRequests\)/);
+  assert.match(schema, /job_attachments/);
+});
+
+test("supports contractor-provided finalized quote alternatives", async () => {
+  const [page, quoteRoute, contractorQuotes, schema, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+    source("../app/api/contractor-quotes/route.ts"),
+    source("../db/schema.ts"),
+    source("../drizzle/0022_final_quote_options.sql"),
+  ]);
+
+  assert.match(page, /Optional on-site alternatives/);
+  assert.match(page, /Add alternative option/);
+  assert.match(page, /Other finalized options/);
+  assert.match(page, /selectedOptionId/);
+  assert.match(quoteRoute, /finalOptionsFromPayload/);
+  assert.match(quoteRoute, /finalOptions/);
+  assert.match(quoteRoute, /selectedFinalOptionId/);
+  assert.match(contractorQuotes, /finalOptions/);
+  assert.match(schema, /final_options/);
+  assert.match(migration, /selected_final_option_id/);
+});
+
 test("compares verified contractor information and estimated project dates on preliminary quotes", async () => {
   const [page, quoteRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),

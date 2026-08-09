@@ -92,6 +92,8 @@ export const quotes = sqliteTable("quotes", {
   depositCents: integer("deposit_cents").notNull().default(0),
   progressCents: integer("progress_cents").notNull().default(0),
   completionCents: integer("completion_cents").notNull().default(0),
+  finalOptions: text("final_options").notNull().default("[]"),
+  selectedFinalOptionId: text("selected_final_option_id"),
   finalizedAt: integer("finalized_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 }, (table) => [
