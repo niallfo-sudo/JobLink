@@ -143,7 +143,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const jobId = Number((await context.params).id);
   if (!Number.isInteger(jobId)) return Response.json({ error: "Invalid job id" }, { status: 400 });
-  const payload = (await request.json()) as { minAmount?: number; maxAmount?: number; message?: string; availableAt?: string; estimatedStartAt?: string; estimatedFinishAt?: string; completionTimeframe?: string };
+  const payload = (await request.json()) as { minAmount?: number; maxAmount?: number; message?: string; availableAt?: string; estimatedStartAt?: string; completionTimeframe?: string };
   const initialMinCents = toCents(payload.minAmount);
   const initialMaxCents = toCents(payload.maxAmount);
   if (initialMinCents === null || initialMaxCents === null || initialMinCents < 1000 || initialMaxCents < initialMinCents) return Response.json({ error: "Enter a valid initial bid range with a maximum equal to or higher than the minimum" }, { status: 400 });
@@ -152,8 +152,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (completionTimeframe.length < 3 || completionTimeframe.length > 120) return Response.json({ error: "Provide a realistic estimated completion timeframe for this initial quote" }, { status: 400 });
   const preliminaryMessage = `Initial bid range: $${(initialMinCents / 100).toLocaleString()}–$${(initialMaxCents / 100).toLocaleString()}. Estimated completion timeframe: ${completionTimeframe}. ${payload.message?.trim() || "Preliminary estimate only. This is not a booking or accepted price; a finalized quote follows the on-site visit."}`;
   const estimatedStartAt = estimatedDate(payload.estimatedStartAt);
-  const estimatedFinishAt = estimatedDate(payload.estimatedFinishAt);
-  if (!estimatedStartAt || !estimatedFinishAt || estimatedFinishAt < estimatedStartAt) return Response.json({ error: "Enter an estimated start and finish date for this initial quote" }, { status: 400 });
+  if (!estimatedStartAt) return Response.json({ error: "Enter an estimated start date for this initial quote" }, { status: 400 });
   try {
     const db = getDb();
     const [job] = await db.select().from(jobRequests).where(eq(jobRequests.id, jobId)).limit(1);
@@ -164,7 +163,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!services.some((service: string) => service.includes(job.category.toLowerCase()) || job.category.toLowerCase().includes(service))) return Response.json({ error: "This job is outside your verified services" }, { status: 403 });
     const [existingQuote] = await db.select({ id: quotes.id }).from(quotes).where(and(eq(quotes.jobId, jobId), eq(quotes.contractorEmail, user.email))).limit(1);
     if (existingQuote) return Response.json({ error: `${profile.businessName} has already submitted a quote for this request. Switch to a different contractor company to submit another quote.` }, { status: 409 });
-    const [quote] = await db.insert(quotes).values({ jobId, contractorEmail: user.email, contractorName: profile.businessName, amountCents, initialMinCents, initialMaxCents, message: preliminaryMessage, availableAt: payload.availableAt?.trim() || "On-site availability to be confirmed", estimatedStartAt, estimatedFinishAt }).returning();
+    const [quote] = await db.insert(quotes).values({ jobId, contractorEmail: user.email, contractorName: profile.businessName, amountCents, initialMinCents, initialMaxCents, message: preliminaryMessage, availableAt: payload.availableAt?.trim() || "On-site availability to be confirmed", estimatedStartAt }).returning();
     await db.insert(jobEvents).values({ jobId, eventType: "quote_submitted", label: `Preliminary bid range received from ${profile.businessName}`, metadata: JSON.stringify({ quoteId: quote.id, initialMinCents, initialMaxCents, completionTimeframe, nonBinding: true }) });
     await notify(job.ownerEmail, { jobId, type: "quote_received", title: "New preliminary estimate", body: `${profile.businessName} submitted a non-binding estimate for ${job.externalId}. Requesting an on-site visit does not select the contractor.` });
     return Response.json({ quote }, { status: 201 });

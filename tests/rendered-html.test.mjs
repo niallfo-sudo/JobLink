@@ -481,24 +481,31 @@ test("shows and ranks preliminary estimates using JobLink Score and Quote Rating
   assert.match(quoteRoute, /detailedQuotes\.sort/);
 });
 
-test("compares verified contractor information and estimated project dates on preliminary quotes", async () => {
-  const [page, quoteRoute, schema, migration] = await Promise.all([
+test("uses an initial start date and duration, with an on-site request workspace for contractors", async () => {
+  const [page, quoteRoute, contractorQuotesRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),
     source("../app/api/jobs/[id]/quotes/route.ts"),
+    source("../app/api/contractor-quotes/route.ts"),
     source("../db/schema.ts"),
     source("../drizzle/0021_quote_estimated_schedule.sql"),
   ]);
 
   assert.match(page, /Estimated start date/);
-  assert.match(page, /Estimated finish date/);
+  assert.doesNotMatch(page, /Estimated finish date/);
+  assert.match(page, /Estimated work duration/);
+  assert.match(page, /Homeowner visit requests/);
+  assert.match(page, /View request & schedule/);
+  assert.match(page, /On-site verification requested/);
   assert.match(page, /Verified rating/);
   assert.match(page, /Verified jobs/);
   assert.match(page, /Approved work/);
   assert.match(page, /quote-schedule-estimate/);
   assert.match(quoteRoute, /estimatedStartAt/);
-  assert.match(quoteRoute, /estimatedFinishAt/);
+  assert.doesNotMatch(quoteRoute, /payload\.estimatedFinishAt/);
   assert.match(quoteRoute, /averageRating/);
   assert.match(quoteRoute, /reviewCount/);
+  assert.match(contractorQuotesRoute, /description: jobRequests\.description/);
+  assert.match(contractorQuotesRoute, /timeline: jobRequests\.timeline/);
   assert.match(schema, /estimated_start_at/);
   assert.match(schema, /estimated_finish_at/);
   assert.match(migration, /estimated_start_at/);
