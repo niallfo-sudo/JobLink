@@ -44,7 +44,7 @@ export async function POST(request: Request) {
         { paymentId: payment.id, jobId: job.id, milestoneType: "completion", label: "Demo completion balance", amountCents: plan.completionCents, status: "awaiting_funding" },
       ]).onConflictDoNothing();
       await db.insert(jobEvents).values({ jobId: job.id, eventType: "demo_records_created", label: "Demo agreement, invoice and payment plan created", metadata: JSON.stringify({ simulated: true }) });
-      return Response.json({ message: "Demo documents and payment plan created. No money moved.", action: payload.action });
+      return Response.json({ message: "Demo documents and payment plan created. No money moved.", action: payload.action, progress: { seeded: true, signed: false, funded: false, approved: false } });
     }
 
     const [agreement] = await db.select().from(documentRecords).where(and(eq(documentRecords.jobId, job.id), eq(documentRecords.documentType, "service_agreement"))).limit(1);
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       ]).onConflictDoUpdate({ target: [agreementSignatures.documentId, agreementSignatures.signerRole], set: { consentText, signingMethod: "demo_simulation", userAgent: "JobLink demo simulator", signedAt: now } });
       await db.update(documentRecords).set({ status: "fully_signed", updatedAt: now }).where(eq(documentRecords.id, agreement.id));
       await db.insert(jobEvents).values({ jobId: job.id, eventType: "demo_agreement_signed", label: "Demo signatures recorded for both parties", metadata: JSON.stringify({ simulated: true }) });
-      return Response.json({ message: "Both demo signatures are recorded. This is not a legal signature.", action: payload.action });
+      return Response.json({ message: "Both demo signatures are recorded. This is not a legal signature.", action: payload.action, progress: { seeded: true, signed: true, funded: false, approved: false } });
     }
 
     const [payment] = await db.select().from(paymentRecords).where(eq(paymentRecords.jobId, job.id)).limit(1);
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
       await db.update(paymentMilestones).set({ status: "demo_held", updatedAt: now }).where(eq(paymentMilestones.paymentId, payment.id));
       await db.update(documentRecords).set({ status: "demo_paid", updatedAt: now }).where(and(eq(documentRecords.jobId, job.id), eq(documentRecords.documentType, "invoice")));
       await db.insert(jobEvents).values({ jobId: job.id, eventType: "demo_funding_held", label: "Full job amount held in the demo ledger", metadata: JSON.stringify({ simulated: true, totalCents: payment.totalCents }) });
-      return Response.json({ message: "Demo funding is held. No card was charged and no funds moved.", action: payload.action });
+      return Response.json({ message: "Demo funding is held. No card was charged and no funds moved.", action: payload.action, progress: { seeded: true, signed: true, funded: true, approved: false } });
     }
 
     if (!["demo_held", "demo_partially_released", "demo_released"].includes(payment.status)) return Response.json({ error: "Simulate full-job funding before approvals" }, { status: 409 });
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
     for (const milestone of milestones) await db.update(paymentMilestones).set({ status: "demo_released", proofNote: `Demo proof and homeowner approval simulated for ${milestone.label.toLowerCase()}.`, proofSubmittedAt: now, homeownerApprovedAt: now, releasedAt: now, updatedAt: now }).where(eq(paymentMilestones.id, milestone.id));
     await db.update(paymentRecords).set({ status: "demo_released", releasedCents: payment.contractorPayoutCents, updatedAt: now }).where(eq(paymentRecords.id, payment.id));
     await db.insert(jobEvents).values({ jobId: job.id, eventType: "demo_approvals_released", label: "Demo progress proof and payment approvals completed", metadata: JSON.stringify({ simulated: true }) });
-    return Response.json({ message: "Demo proof, homeowner approvals and all payment releases are now recorded. No funds moved.", action: payload.action });
+    return Response.json({ message: "Demo proof, homeowner approvals and all payment releases are now recorded. No funds moved.", action: payload.action, progress: { seeded: true, signed: true, funded: true, approved: true } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unable to run the demo simulation" }, { status: 500 });
   }

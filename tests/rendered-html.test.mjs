@@ -891,3 +891,19 @@ test("seeds three verified demo contractors and automatic service-specific estim
   assert.match(jobsRoute, /createDemoQuote\(publishedJob, contractor, index\)/);
   assert.match(quotesRoute, /demoContractorMetrics\(quote\.contractorEmail\)/);
 });
+
+test("keeps demo lifecycle progress visible in the correct workspace", async () => {
+  const [page, lifecycleRoute, documentsRoute, paymentsRoute] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/demo/lifecycle/route.ts"),
+    source("../app/api/documents/route.ts"),
+    source("../app/api/payments/route.ts"),
+  ]);
+
+  assert.match(page, /demoLifecycleProgress/);
+  assert.match(page, /progress=\{demoLifecycleProgress\}/);
+  assert.match(page, /\/api\/documents\?scope=\$\{scope\}/);
+  assert.match(lifecycleRoute, /progress: \{ seeded: true, signed: true, funded: true, approved: true \}/);
+  assert.match(documentsRoute, /scope === "contractor" \? await getContractorActor\(\) : homeowner/);
+  assert.match(paymentsRoute, /scope === "contractor" \? await getContractorActor\(\) : homeowner/);
+});

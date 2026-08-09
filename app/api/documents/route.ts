@@ -2,9 +2,12 @@ import { desc, eq, inArray, or } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { agreementSignatures, documentRecords, jobAttachments, jobRequests } from "../../../db/schema";
 import { getContractorActor } from "../../contractor-demo";
+import { getChatGPTUser } from "../../chatgpt-auth";
 
-export async function GET() {
-  const user = await getContractorActor();
+export async function GET(request: Request) {
+  const scope = new URL(request.url).searchParams.get("scope");
+  const homeowner = await getChatGPTUser();
+  const user = scope === "contractor" ? await getContractorActor() : homeowner;
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
     const rows = await getDb().select({ document: documentRecords, jobTitle: jobRequests.title, jobNumber: jobRequests.externalId })

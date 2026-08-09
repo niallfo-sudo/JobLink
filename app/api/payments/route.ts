@@ -2,12 +2,14 @@ import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { jobAttachments, jobRequests, paymentMilestones, paymentRecords, quotes, verifiedReviews } from "../../../db/schema";
 import { getContractorActor } from "../../contractor-demo";
+import { getChatGPTUser } from "../../chatgpt-auth";
 
 export async function GET(request: Request) {
-  const user = await getContractorActor();
+  const scope = new URL(request.url).searchParams.get("scope");
+  const homeowner = await getChatGPTUser();
+  const user = scope === "contractor" ? await getContractorActor() : homeowner;
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   try {
-    const scope = new URL(request.url).searchParams.get("scope");
     const contractorPayments = and(
       eq(paymentRecords.contractorEmail, user.email),
       eq(quotes.contractorEmail, user.email),
