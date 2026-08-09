@@ -843,3 +843,13 @@ test("explains protected payment and homeowner remedies on the Trust and Safety 
   assert.match(page, /returned to the homeowner/);
   assert.match(page, /Contractor accountability for agreed work/);
 });
+
+test("explains trustworthy reviews and both contractor ratings on the Trust and Safety page", async () => {
+  const page = await source("../app/page.tsx");
+
+  assert.match(page, /Reviews and ratings/);
+  assert.match(page, /Only homeowners with a completed JobLink job can leave a review/);
+  assert.match(page, /JobLink Score reflects verified work quality/);
+  assert.match(page, /Quote Rating reflects how consistently/);
+  assert.match(page, /Quote Rating: price-range accuracy/);
+});
