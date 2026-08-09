@@ -676,6 +676,7 @@ test("coordinates homeowner visit preferences with contractor confirmations and 
   assert.match(page, /onsite-range-input/);
   assert.match(page, /quote\.status === "onsite_proposed"/);
   assert.match(page, /setContractorRequestQuote\(\(current\) => current\?\.id === quote\.id \? null : current\)/);
+  assert.match(page, /onPointerDown=.*Review proposed visit time/);
   assert.match(page, /confirm_proposed_onsite/);
   assert.match(quoteRoute, /preferredSlots/);
   assert.match(quoteRoute, /onsite_proposed/);
