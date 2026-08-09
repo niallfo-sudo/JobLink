@@ -341,6 +341,30 @@ test("supports contractor-provided finalized quote alternatives", async () => {
   assert.match(migration, /selected_final_option_id/);
 });
 
+test("requires a completed-job review before final payment release and calculates JobLink Score", async () => {
+  const [page, reviewRoute, paymentMilestoneRoute, progressRoute, reputationRoute, paymentsRoute] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/[id]/review/route.ts"),
+    source("../app/api/payments/[id]/milestones/[milestoneId]/route.ts"),
+    source("../app/api/jobs/[id]/progress/route.ts"),
+    source("../app/api/reputation/route.ts"),
+    source("../app/api/payments/route.ts"),
+  ]);
+
+  assert.match(page, /Required completed-job review/);
+  assert.match(page, /Complete required review/);
+  assert.match(page, /JobLink Score/);
+  assert.match(page, /reviewComment\.trim\(\)\.length < 20/);
+  assert.match(reviewRoute, /All four scores must be between 1 and 5/);
+  assert.match(reviewRoute, /at least 20 characters of written feedback/);
+  assert.match(paymentMilestoneRoute, /milestone\.milestoneType === "completion"/);
+  assert.match(paymentMilestoneRoute, /Submit the required completed-job review before releasing the final payment/);
+  assert.match(progressRoute, /homeowner review required/);
+  assert.match(reputationRoute, /quality \* 0\.55 \+ completion \* 0\.30 \+ documentation \* 0\.15/);
+  assert.match(reputationRoute, /jobLinkScore/);
+  assert.match(paymentsRoute, /completionReviewSubmitted/);
+});
+
 test("compares verified contractor information and estimated project dates on preliminary quotes", async () => {
   const [page, quoteRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),

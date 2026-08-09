@@ -1,6 +1,6 @@
 import { desc, eq, inArray, or } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { jobRequests, paymentMilestones, paymentRecords } from "../../../db/schema";
+import { jobRequests, paymentMilestones, paymentRecords, verifiedReviews } from "../../../db/schema";
 import { getContractorActor } from "../../contractor-demo";
 
 export async function GET() {
@@ -12,8 +12,13 @@ export async function GET() {
       .where(or(eq(paymentRecords.ownerEmail, user.email), eq(paymentRecords.contractorEmail, user.email)))
       .orderBy(desc(paymentRecords.createdAt)).limit(50);
     const ids = rows.map((row) => row.payment.id);
-    const milestones = ids.length ? await getDb().select().from(paymentMilestones).where(inArray(paymentMilestones.paymentId, ids)).orderBy(paymentMilestones.id) : [];
-    return Response.json({ payments: rows.map((row) => ({ ...row.payment, ...row.job, viewerRole: row.payment.ownerEmail === user.email ? "homeowner" : "contractor", milestones: milestones.filter((milestone) => milestone.paymentId === row.payment.id) })) });
+    const jobIds = rows.map((row) => row.payment.jobId);
+    const [milestones, reviews] = await Promise.all([
+      ids.length ? getDb().select().from(paymentMilestones).where(inArray(paymentMilestones.paymentId, ids)).orderBy(paymentMilestones.id) : [],
+      jobIds.length ? getDb().select({ jobId: verifiedReviews.jobId }).from(verifiedReviews).where(inArray(verifiedReviews.jobId, jobIds)) : [],
+    ]);
+    const reviewedJobIds = new Set(reviews.map((review) => review.jobId));
+    return Response.json({ payments: rows.map((row) => ({ ...row.payment, ...row.job, completionReviewSubmitted: reviewedJobIds.has(row.payment.jobId), viewerRole: row.payment.ownerEmail === user.email ? "homeowner" : "contractor", milestones: milestones.filter((milestone) => milestone.paymentId === row.payment.id) })) });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }

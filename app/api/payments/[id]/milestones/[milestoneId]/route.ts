@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../../../db";
-import { jobEvents, jobRequests, paymentMilestones, paymentRecords, quotes } from "../../../../../../db/schema";
+import { jobEvents, jobRequests, paymentMilestones, paymentRecords, quotes, verifiedReviews } from "../../../../../../db/schema";
 import { getChatGPTUser } from "../../../../../chatgpt-auth";
 import { getContractorActor } from "../../../../../contractor-demo";
 import { notify } from "../../../../../../lib/notifications";
@@ -38,6 +38,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
     if (payment.ownerEmail !== identity.email) return Response.json({ error: "Only the homeowner can approve a payment release" }, { status: 403 });
     if (milestone.status !== "proof_submitted") return Response.json({ error: "Proof must be submitted before the homeowner can approve a release" }, { status: 409 });
+    if (milestone.milestoneType === "completion") {
+      const [review] = await db.select({ id: verifiedReviews.id }).from(verifiedReviews).where(eq(verifiedReviews.jobId, job.id)).limit(1);
+      if (!review) return Response.json({ error: "Submit the required completed-job review before releasing the final payment" }, { status: 409 });
+    }
     const now = new Date();
     const [updatedMilestone] = await db.update(paymentMilestones).set({ status: "demo_released", homeownerApprovedAt: now, releasedAt: now, updatedAt: now }).where(eq(paymentMilestones.id, milestone.id)).returning();
     const releasedCents = payment.releasedCents + milestone.amountCents;

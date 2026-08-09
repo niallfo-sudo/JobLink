@@ -30,8 +30,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (job.status === "completed" && payload.stage !== "finished") return Response.json({ error: "Completed jobs cannot be moved backward" }, { status: 409 });
 
     await db.update(jobRequests).set({ status: stage.jobStatus, updatedAt: new Date() }).where(eq(jobRequests.id, jobId));
-    await db.insert(jobEvents).values({ jobId, eventType: payload.stage, label: stage.label, metadata: JSON.stringify({ rank: stage.rank, updatedBy: "contractor" }) });
-    await notify(job.ownerEmail, { jobId, type: payload.stage, title: stage.label, body: `${acceptedQuote.contractorName} updated ${job.externalId}.` });
+    const completionReviewRequired = payload.stage === "finished";
+    await db.insert(jobEvents).values({ jobId, eventType: payload.stage, label: completionReviewRequired ? "Work marked finished — homeowner review required" : stage.label, metadata: JSON.stringify({ rank: stage.rank, updatedBy: "contractor", completionReviewRequired }) });
+    await notify(job.ownerEmail, { jobId, type: payload.stage, title: completionReviewRequired ? "Work marked finished — review required" : stage.label, body: completionReviewRequired ? `${acceptedQuote.contractorName} marked ${job.externalId} finished. Complete the required review before the final payment can be released.` : `${acceptedQuote.contractorName} updated ${job.externalId}.` });
 
     if (payload.stage === "finished") {
       const warrantySnapshot = JSON.stringify({ jobNumber: job.externalId, jobTitle: job.title, scope: job.description, timeline: job.timeline, contractorName: acceptedQuote.contractorName, amountCents: acceptedQuote.amountCents, warrantyTerm: "Workmanship coverage recorded by the contractor. Final terms are subject to the signed service agreement." });
