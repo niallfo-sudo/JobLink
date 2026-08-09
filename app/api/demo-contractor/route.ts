@@ -53,7 +53,32 @@ export async function GET() {
 export async function POST(request: Request) {
   const identity = await demoAdmin();
   if (!identity) return Response.json({ error: "Demo company switching is available to Operations administrators only" }, { status: 403 });
-  const payload = (await request.json()) as { contractorEmail?: string | null };
+  const payload = (await request.json()) as { action?: "create"; contractorEmail?: string | null };
+  if (payload.action === "create") {
+    const ownerEmail = `demo-contractor-${crypto.randomUUID().slice(0, 8)}@joblink.demo`;
+    const [profile] = await getDb().insert(contractorProfiles).values({
+      ownerEmail,
+      businessName: "",
+      legalName: "",
+      phone: "",
+      businessAddress: "",
+      yearsInBusiness: 0,
+      about: "",
+      primaryService: "General contracting",
+      services: "[]",
+      approvedServices: "[]",
+      homeBase: "",
+      serviceRadiusKm: 30,
+      teamSize: 1,
+      emergencyAvailable: false,
+      acceptingWork: false,
+      plan: "growth",
+      subscriptionStatus: "inactive",
+      payoutsEnabled: false,
+      verificationStatus: "pending",
+    }).returning();
+    return Response.json({ profile, selectedEmail: ownerEmail }, { status: 201, headers: { "Set-Cookie": cookie(ownerEmail) } });
+  }
   const selectedEmail = payload.contractorEmail?.trim() || "";
   if (!selectedEmail || selectedEmail === identity.email) {
     return Response.json({ selectedEmail: identity.email }, { headers: { "Set-Cookie": cookie("", 0) } });

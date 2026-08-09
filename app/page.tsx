@@ -345,6 +345,32 @@ export default function Home() {
     }
   }
 
+  async function createDemoContractorCompany() {
+    if (!accountIdentity?.operationsRole || accountIdentity.operationsRole !== "admin") return;
+    setAccountActionStatus("saving");
+    setAccountActionError("");
+    try {
+      const workspaceResponse = await fetch("/api/account", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: "contractor" }) });
+      const workspaceData = (await workspaceResponse.json()) as { user?: AccountIdentity; error?: string };
+      if (!workspaceResponse.ok || !workspaceData.user) throw new Error(workspaceData.error || "Contractor workspace could not be opened");
+      const response = await fetch("/api/demo-contractor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create" }) });
+      const data = (await response.json()) as { profile?: ContractorProfile; selectedEmail?: string; error?: string };
+      if (!response.ok || !data.profile || !data.selectedEmail) throw new Error(data.error || "Contractor company could not be created");
+      setAccountIdentity(workspaceData.user);
+      setContractorProfile(data.profile);
+      setBusinessName(""); setLegalName(""); setBusinessPhone(""); setBusinessAddress(""); setYearsInBusiness(0); setBusinessAbout(""); setPrimaryService("General contracting"); setSelectedServices([]); setHomeBase(""); setServiceRadius(30); setTeamSize(1); setEmergencyAvailable(false); setSelectedPlan("growth");
+      setSelectedDemoContractorEmail(data.selectedEmail);
+      setDemoContractorCompanies((current) => [...current, { ownerEmail: data.selectedEmail, businessName: data.profile!.businessName || "New contractor company", primaryService: data.profile!.primaryService, homeBase: data.profile!.homeBase, verificationStatus: data.profile!.verificationStatus }].sort((left, right) => left.businessName.localeCompare(right.businessName)));
+      setOnboardingStep(0);
+      setAccountGatewayOpen(false);
+      setAccountActionStatus("idle");
+      go("onboarding");
+    } catch (error) {
+      setAccountActionError(error instanceof Error ? error.message : "Contractor company could not be created");
+      setAccountActionStatus("error");
+    }
+  }
+
   async function switchDemoContractor(contractorEmail: string) {
     setDemoCompanySwitching(true);
     try {
@@ -1536,6 +1562,7 @@ export default function Home() {
             <article className="contractor-account-choice">
               <span>PRO</span><p className="aside-label">Contractor demo account</p><h3>Build your business profile</h3><p>Select services and territory, submit verification, receive matched opportunities and quote jobs.</p>
               <ul><li>No pay-per-lead fees</li><li>Service-based matching</li><li>Quotes, jobs and payments</li></ul>
+              {accountIdentity?.operationsRole === "admin" && <button className="create-demo-company" disabled={accountActionStatus === "saving"} onClick={() => void createDemoContractorCompany()}>{accountActionStatus === "saving" ? "Creating company…" : "Create new contractor company →"}</button>}
               <button disabled={accountActionStatus === "saving"} onClick={() => void selectAccountRole("contractor")}>{accountIdentity?.role === "contractor" ? "Open contractor workspace →" : accountIdentity ? "Continue as contractor →" : "Sign up as a contractor →"}</button>
             </article>
             <article className="admin-account-choice">
