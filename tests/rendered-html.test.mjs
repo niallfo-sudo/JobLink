@@ -341,7 +341,8 @@ test("runs on-site verification and final quotes before booking", async () => {
   assert.match(page, /Original estimated range/);
   assert.match(page, /Finalized project start date/);
   assert.match(page, /Progress release requirement/);
-  assert.match(page, /Prepare agreement & sign/);
+  assert.match(page, /View final quote & agreement/);
+  assert.match(page, /Finalized start date/);
   assert.match(page, /decideFinalQuote/);
   assert.match(quoteRoute, /request_onsite/);
   assert.match(quoteRoute, /Preliminary estimate only/);
@@ -393,7 +394,7 @@ test("supports contractor-provided finalized quote alternatives", async () => {
 
   assert.match(page, /Optional on-site alternatives/);
   assert.match(page, /Add alternative option/);
-  assert.match(page, /Other finalized options/);
+  assert.match(page, /Alternative finalized options/);
   assert.match(page, /selectedOptionId/);
   assert.match(quoteRoute, /finalOptionsFromPayload/);
   assert.match(quoteRoute, /finalOptions/);
