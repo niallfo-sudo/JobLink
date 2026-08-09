@@ -382,14 +382,26 @@ export default function Home() {
     window.setTimeout(() => window.document.getElementById("homeowner-visit-requests")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
   }
 
-  function openContractorArea() {
+  async function openContractorArea() {
     if (view === "contractor") { go("discover"); return; }
     if (!accountIdentity || accountIdentity.role !== "contractor") {
       setAccountActionError("");
       setAccountGatewayOpen(true);
       return;
     }
-    go(contractorProfile ? "contractor" : "onboarding");
+    if (contractorProfile) { go("contractor"); return; }
+    try {
+      const response = await fetch("/api/contractor-profile");
+      const data = (await response.json()) as { profile?: ContractorProfile | null };
+      if (response.ok && data.profile) {
+        setContractorProfile(data.profile);
+        go("contractor");
+        return;
+      }
+    } catch {
+      // A new company without a profile continues to onboarding.
+    }
+    go("onboarding");
   }
 
   async function selectAccountRole(role: "homeowner" | "contractor") {
@@ -407,7 +419,17 @@ export default function Home() {
       setAccountIdentity(data.user);
       setAccountGatewayOpen(false);
       setAccountActionStatus("idle");
-      if (role === "contractor") { setOnboardingStep(0); go("onboarding"); }
+      if (role === "contractor") {
+        const profileResponse = await fetch("/api/contractor-profile");
+        const profileData = (await profileResponse.json().catch(() => ({}))) as { profile?: ContractorProfile | null };
+        if (profileResponse.ok && profileData.profile) {
+          setContractorProfile(profileData.profile);
+          go("contractor");
+        } else {
+          setOnboardingStep(0);
+          go("onboarding");
+        }
+      }
       else go("account");
     } catch (error) {
       setAccountActionError(error instanceof Error ? error.message : "Account could not be created");
@@ -1786,7 +1808,7 @@ export default function Home() {
           </nav>
         )}
         <div className="header-actions">
-          <button className="text-button" onClick={openContractorArea}>{view === "contractor" ? "Homeowner view" : "For contractors"}</button>
+          <button className="text-button" onClick={() => void openContractorArea()}>{view === "contractor" ? "Homeowner view" : "For contractors"}</button>
           {accountLoaded && !accountIdentity && <button className="account-entry-button" onClick={() => setAccountGatewayOpen(true)}>Sign up / Log in</button>}
           {accountIdentity && <button className="notification-button" aria-label="Open notifications" onClick={() => setNotificationsOpen(!notificationsOpen)}>{accountInitials}{notifications.filter((item) => !item.readAt).length > 0 && <b>{notifications.filter((item) => !item.readAt).length}</b>}</button>}
           {accountIdentity && <button className="avatar-button" aria-label="Open account menu" onClick={() => setAccountGatewayOpen(true)}>{accountInitials}</button>}
