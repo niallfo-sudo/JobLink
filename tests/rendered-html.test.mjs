@@ -668,14 +668,18 @@ test("coordinates homeowner visit preferences with contractor confirmations and 
     source("../drizzle/0024_onsite_schedule_preferences.sql"),
   ]);
 
-  assert.match(page, /Choose preferred times/);
-  assert.match(page, /Homeowner preferred times/);
+  assert.match(page, /Choose preferred time ranges/);
+  assert.match(page, /Homeowner preferred time ranges/);
   assert.match(page, /Confirm or propose visit/);
   assert.match(page, /Contractor-proposed times/);
+  assert.match(page, /Ask for another time suggestion/);
+  assert.match(page, /onsite-range-input/);
   assert.match(page, /confirm_proposed_onsite/);
   assert.match(quoteRoute, /preferredSlots/);
   assert.match(quoteRoute, /onsite_proposed/);
   assert.match(quoteRoute, /confirm_proposed_onsite/);
+  assert.match(quoteRoute, /reject_proposed_onsite/);
+  assert.match(quoteRoute, /function onsiteWindow/);
   assert.match(contractorQuotesRoute, /onsitePreferences: quotes\.onsitePreferences/);
   assert.match(schema, /onsitePreferences: text\("onsite_preferences"\)/);
   assert.match(migration, /onsite_preferences/);
