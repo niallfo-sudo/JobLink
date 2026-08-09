@@ -558,6 +558,8 @@ test("requires a recorded two-party service agreement before work can start", as
   ]);
 
   assert.match(page, /Sign service agreement/);
+  assert.match(page, /Service agreement awaits your signature/);
+  assert.match(page, /Open agreement signing/);
   assert.match(page, /intend to sign it electronically/);
   assert.match(page, /Both parties have signed/);
   assert.match(documentsRoute, /agreementSignatures/);
