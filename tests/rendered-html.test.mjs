@@ -120,6 +120,20 @@ test("gives contractor applicants examples for every onboarding text field", asy
   for (const example of ["1234567 Ontario Inc.", "Hamilton Home Improvements", "123 Main Street, Hamilton, ON L8P 1A1", "(905) 555-0123", "Example: 12", "Example: 6", "Licensed and insured residential renovation contractor", "Example: Hamilton, Ontario"]) assert.match(page, new RegExp(example.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
+test("defers emergency requests for the initial launch", async () => {
+  const [page, jobsRoute, styles] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/route.ts"),
+    source("../app/globals.css"),
+  ]);
+
+  assert.match(page, /const emergencyRequestsEnabled = false/);
+  assert.match(page, /emergencyRequestsEnabled && view === "emergency"/);
+  assert.match(page, /emergency: false/);
+  assert.match(jobsRoute, /Emergency requests are not available at launch/);
+  assert.match(styles, /\.hero-quick-actions>button:first-child,.emergency-toggle,.availability-check\{display:none!important\}/);
+});
+
 test("supports custom request terms and persistent employee operations", async () => {
   const [page, operationsRoute, jobRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),

@@ -105,9 +105,9 @@ const contractorServiceCatalog: Record<string, string[]> = {
   Drywall: ["Drywall repair", "Drywall installation", "Taping & finishing", "Plaster repair", "Texture matching", "Insulation"],
   Roofing: ["Roof repair", "Roof replacement", "Leak diagnosis", "Shingle installation", "Flat roofing", "Eavestroughs"],
   Painting: ["Interior painting", "Exterior painting", "Cabinet refinishing", "Deck staining", "Commercial painting", "Wallpaper removal"],
-  Plumbing: ["Leak repair", "Fixture installation", "Drain cleaning", "Water heaters", "Sump pumps", "Emergency plumbing"],
-  Electrical: ["Electrical repair", "Lighting installation", "Panel upgrades", "EV chargers", "Home rewiring", "Emergency electrical"],
-  HVAC: ["Furnace repair", "Air conditioning", "Heat pumps", "Ductwork", "Maintenance", "Emergency HVAC"],
+  Plumbing: ["Leak repair", "Fixture installation", "Drain cleaning", "Water heaters", "Sump pumps"],
+  Electrical: ["Electrical repair", "Lighting installation", "Panel upgrades", "EV chargers", "Home rewiring"],
+  HVAC: ["Furnace repair", "Air conditioning", "Heat pumps", "Ductwork", "Maintenance"],
   "Junk removal": ["Household junk", "Construction debris", "Appliance removal", "Estate cleanout", "Yard waste", "Commercial cleanup"],
   Landscaping: ["Lawn care", "Garden maintenance", "Interlock", "Fencing", "Tree and shrub care", "Seasonal cleanup"],
   Moving: ["Local moving", "Long-distance moving", "Packing", "Furniture delivery", "Office moving", "Heavy-item moving"],
@@ -136,6 +136,8 @@ const helpFaqs = helpFaqsRaw.map((item) => item.question === "Does posting a job
     : item);
 
 const steps = ["Describe", "Details", "Timing", "Review"];
+// Emergency dispatch is intentionally deferred until after the initial launch.
+const emergencyRequestsEnabled = false;
 
 export default function Home() {
   const [view, setView] = useState<View>("discover");
@@ -207,7 +209,7 @@ export default function Home() {
   const [homeBase, setHomeBase] = useState("Hamilton, Ontario");
   const [serviceRadius, setServiceRadius] = useState(30);
   const [teamSize, setTeamSize] = useState(1);
-  const [emergencyAvailable, setEmergencyAvailable] = useState(true);
+  const [emergencyAvailable, setEmergencyAvailable] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<"starter" | "growth" | "pro">("growth");
   const [profileStatus, setProfileStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [verificationDocuments, setVerificationDocuments] = useState<VerificationDocument[]>([]);
@@ -883,7 +885,7 @@ export default function Home() {
     setUploadError(null);
     try {
       const form = new FormData();
-      form.append("request", JSON.stringify({ category, title: aiBrief?.title || scope, description: effectiveBrief, size, timeline: requestTimeline, budget: requestBudget, postalCode, emergency: isEmergency }));
+      form.append("request", JSON.stringify({ category, title: aiBrief?.title || scope, description: effectiveBrief, size, timeline: requestTimeline, budget: requestBudget, postalCode, emergency: false }));
       requestFiles.forEach((file) => form.append("files", file));
       const response = await fetch("/api/jobs", {
         method: "POST",
@@ -1180,7 +1182,7 @@ export default function Home() {
       const response = await fetch("/api/contractor-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessName, legalName, phone: businessPhone, businessAddress, yearsInBusiness, about: businessAbout, primaryService, services: Array.from(new Set([primaryService, ...selectedServices])), homeBase, serviceRadiusKm: serviceRadius, teamSize, emergencyAvailable, acceptingWork: false, plan: selectedPlan }),
+        body: JSON.stringify({ businessName, legalName, phone: businessPhone, businessAddress, yearsInBusiness, about: businessAbout, primaryService, services: Array.from(new Set([primaryService, ...selectedServices])), homeBase, serviceRadiusKm: serviceRadius, teamSize, emergencyAvailable: false, acceptingWork: false, plan: selectedPlan }),
       });
       if (!response.ok) throw new Error("Unable to save profile");
       const data = (await response.json()) as { profile: ContractorProfile };
@@ -1778,7 +1780,7 @@ export default function Home() {
         </section>
       )}
 
-      {view === "emergency" && (
+      {emergencyRequestsEnabled && view === "emergency" && (
         <section className="emergency-page" aria-label={`${emergencyType} emergency request`}>
           {emergencyStage === 0 ? <div className="emergency-intake"><div className="emergency-copy"><span className="emergency-mark">!</span><p className="section-label">Priority request</p><h1>Get urgent work<br /><em>in front of local pros.</em></h1><p>For urgent home-service problems—not police, fire or medical emergencies. JobLink immediately posts your request to eligible contractors who accept emergency work.</p><div className="emergency-warning"><b>Immediate danger?</b><p>Call 911 or your local emergency service first.</p></div></div><div className="emergency-form"><p className="step-kicker">Emergency request</p><h2>What’s happening?</h2><div className="emergency-types">{[["PL","Active water leak"],["HV","No heat / HVAC"],["EL","Electrical issue"],["RF","Emergency roof damage"]].map(([code,label]) => <button type="button" key={label} className={emergencyType === label ? "selected" : ""} onClick={() => setEmergencyType(label)}><span>{code}</span>{label}</button>)}</div><label>Describe the situation<textarea rows={3} value={emergencyDescription} onChange={(event) => setEmergencyDescription(event.target.value)} /></label><label>Service address<input value={emergencyAddress} onChange={(event) => setEmergencyAddress(event.target.value)} /></label><label className="emergency-consent"><input type="checkbox" checked={emergencyConsent} onChange={(event) => setEmergencyConsent(event.target.checked)} /><span>✓</span>I agree to share this location with contractors matched to this request.</label>{emergencyStatus === "error" && <p className="emergency-form-error">Enter the situation and address, then confirm location sharing.</p>}<button disabled={emergencyStatus === "saving"} onClick={() => void submitEmergencyRequest()}>{emergencyStatus === "saving" ? "Creating priority request…" : "Post priority request →"}</button></div></div> : <div className="dispatch-live"><div className="dispatch-header"><span className="pulse-emergency"><i /></span><div><small>Priority request posted · {emergencyJob?.externalId}</small><h1>Your request is live.</h1><p>Eligible emergency contractors can now review the real scope and submit a quote. JobLink will notify you when a response arrives.</p></div><button disabled={emergencyStatus === "saving"} onClick={() => void updateEmergencyRequestStatus("cancelled")}>Cancel request</button></div><div className="operations-empty"><span>JL</span><h2>Waiting for a verified contractor</h2><p>No responder, price, or arrival time is shown until a contractor actually submits it.</p><button onClick={() => go("account")}>Open saved request</button></div></div>}
         </section>

@@ -53,6 +53,7 @@ export async function POST(request: Request) {
     if (!category || !title || !description) {
       return Response.json({ error: "Category, title and description are required" }, { status: 400 });
     }
+    if (payload.emergency) return Response.json({ error: "Emergency requests are not available at launch. Please contact local emergency services for immediate danger." }, { status: 409 });
     if (files.length > 5) return Response.json({ error: "Choose up to 5 photos or videos." }, { status: 400 });
     if (files.some((file) => !allowedFileTypes.has(file.type))) return Response.json({ error: "Use JPG, PNG, WebP, HEIC, MP4, MOV or WebM files." }, { status: 400 });
     if (files.some((file) => file.size > maxFileSize) || files.reduce((total, file) => total + file.size, 0) > maxTotalFileSize) return Response.json({ error: "Files are limited to 25 MB each and 50 MB total." }, { status: 400 });
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
       timeline: payload.timeline?.trim() || "Flexible",
       budget: payload.budget?.trim() || "Need guidance",
       postalCode: payload.postalCode?.trim() || "",
-      emergency: Boolean(payload.emergency),
+      emergency: false,
       status: files.length ? "uploading" : "matching",
     }).returning();
     const uploads = files.map((file) => ({ file, storageKey: `jobs/${job.id}/${crypto.randomUUID()}` }));
