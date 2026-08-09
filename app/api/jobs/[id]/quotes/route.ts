@@ -1,6 +1,6 @@
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, avg, count, eq, inArray, ne } from "drizzle-orm";
 import { getDb } from "../../../../../db";
-import { contractorProfiles, documentRecords, jobEvents, jobRequests, paymentMilestones, paymentRecords, quotes } from "../../../../../db/schema";
+import { contractorProfiles, documentRecords, jobEvents, jobRequests, paymentMilestones, paymentRecords, quotes, verifiedReviews } from "../../../../../db/schema";
 import { getChatGPTUser } from "../../../../chatgpt-auth";
 import { getContractorActor } from "../../../../contractor-demo";
 import { notify } from "../../../../../lib/notifications";
@@ -32,6 +32,12 @@ function validOnsiteVisit(value: string | undefined) {
   return visit;
 }
 
+function estimatedDate(value: string | undefined) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 async function eligibleProfile(email: string) {
   const [profile] = await getDb().select().from(contractorProfiles).where(eq(contractorProfiles.ownerEmail, email)).limit(1);
   return profile && profile.verificationStatus === "verified" && eligibleSubscriptionStatuses.includes(profile.subscriptionStatus) ? profile : null;
@@ -45,8 +51,20 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   try {
     const [job] = await getDb().select().from(jobRequests).where(and(eq(jobRequests.id, jobId), eq(jobRequests.ownerEmail, user.email))).limit(1);
     if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
-    const rows = await getDb().select().from(quotes).where(eq(quotes.jobId, jobId)).orderBy(asc(quotes.amountCents));
-    return Response.json({ job, quotes: rows });
+    const db = getDb();
+    const rows = await db.select().from(quotes).where(eq(quotes.jobId, jobId)).orderBy(asc(quotes.amountCents));
+    const contractorEmails = rows.flatMap((quote) => quote.contractorEmail ? [quote.contractorEmail] : []);
+    const [profiles, ratings] = contractorEmails.length ? await Promise.all([
+      db.select({ ownerEmail: contractorProfiles.ownerEmail, primaryService: contractorProfiles.primaryService, approvedServices: contractorProfiles.approvedServices, homeBase: contractorProfiles.homeBase, serviceRadiusKm: contractorProfiles.serviceRadiusKm, yearsInBusiness: contractorProfiles.yearsInBusiness, teamSize: contractorProfiles.teamSize, emergencyAvailable: contractorProfiles.emergencyAvailable, about: contractorProfiles.about, verificationStatus: contractorProfiles.verificationStatus }).from(contractorProfiles).where(inArray(contractorProfiles.ownerEmail, contractorEmails)),
+      db.select({ contractorEmail: verifiedReviews.contractorEmail, reviewCount: count(), averageScore: avg(verifiedReviews.averageScore) }).from(verifiedReviews).where(inArray(verifiedReviews.contractorEmail, contractorEmails)).groupBy(verifiedReviews.contractorEmail),
+    ]) : [[], []];
+    const profileByEmail = new Map(profiles.map((profile) => [profile.ownerEmail, profile]));
+    const ratingByEmail = new Map(ratings.map((rating) => [rating.contractorEmail, rating]));
+    return Response.json({ job, quotes: rows.map((quote) => {
+      const profile = quote.contractorEmail ? profileByEmail.get(quote.contractorEmail) : undefined;
+      const rating = quote.contractorEmail ? ratingByEmail.get(quote.contractorEmail) : undefined;
+      return { ...quote, contractor: profile ? { ...profile, approvedServices: JSON.parse(profile.approvedServices || "[]"), reviewCount: Number(rating?.reviewCount ?? 0), averageRating: rating?.averageScore ? Number(rating.averageScore) / 100 : null } : null };
+    }) });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unable to load quotes" }, { status: 500 });
   }
@@ -57,9 +75,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!user) return Response.json({ error: "Sign in required" }, { status: 401 });
   const jobId = Number((await context.params).id);
   if (!Number.isInteger(jobId)) return Response.json({ error: "Invalid job id" }, { status: 400 });
-  const payload = (await request.json()) as { amount?: number; message?: string; availableAt?: string };
+  const payload = (await request.json()) as { amount?: number; message?: string; availableAt?: string; estimatedStartAt?: string; estimatedFinishAt?: string };
   const amountCents = toCents(payload.amount);
   if (amountCents === null || amountCents < 1000) return Response.json({ error: "Enter a valid quote amount of at least $10" }, { status: 400 });
+  const estimatedStartAt = estimatedDate(payload.estimatedStartAt);
+  const estimatedFinishAt = estimatedDate(payload.estimatedFinishAt);
+  if (!estimatedStartAt || !estimatedFinishAt || estimatedFinishAt < estimatedStartAt) return Response.json({ error: "Enter an estimated start and finish date for this initial quote" }, { status: 400 });
   try {
     const db = getDb();
     const [job] = await db.select().from(jobRequests).where(eq(jobRequests.id, jobId)).limit(1);
@@ -68,9 +89,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!profile || !profile.acceptingWork) return Response.json({ error: "A verified, active contractor profile that is accepting work is required" }, { status: 403 });
     const services = (JSON.parse(profile.approvedServices || "[]") as string[]).map((service) => service.toLowerCase());
     if (!services.some((service: string) => service.includes(job.category.toLowerCase()) || job.category.toLowerCase().includes(service))) return Response.json({ error: "This job is outside your verified services" }, { status: 403 });
-    const [quote] = await db.insert(quotes).values({ jobId, contractorEmail: user.email, contractorName: profile.businessName, amountCents, message: payload.message?.trim() || "Preliminary estimate only. This is not a booking or accepted price; a finalized quote follows the on-site visit.", availableAt: payload.availableAt?.trim() || "On-site availability to be confirmed" }).onConflictDoUpdate({
+    const [quote] = await db.insert(quotes).values({ jobId, contractorEmail: user.email, contractorName: profile.businessName, amountCents, message: payload.message?.trim() || "Preliminary estimate only. This is not a booking or accepted price; a finalized quote follows the on-site visit.", availableAt: payload.availableAt?.trim() || "On-site availability to be confirmed", estimatedStartAt, estimatedFinishAt }).onConflictDoUpdate({
       target: [quotes.jobId, quotes.contractorEmail],
-      set: { amountCents, message: payload.message?.trim() || "Preliminary estimate only. This is not a booking or accepted price; a finalized quote follows the on-site visit.", availableAt: payload.availableAt?.trim() || "On-site availability to be confirmed", status: "submitted", onsiteVisitAt: null, workDescription: "", materials: "", measurements: "", depositCents: 0, progressCents: 0, completionCents: 0, finalizedAt: null, createdAt: new Date() },
+      set: { amountCents, message: payload.message?.trim() || "Preliminary estimate only. This is not a booking or accepted price; a finalized quote follows the on-site visit.", availableAt: payload.availableAt?.trim() || "On-site availability to be confirmed", estimatedStartAt, estimatedFinishAt, status: "submitted", onsiteVisitAt: null, workDescription: "", materials: "", measurements: "", depositCents: 0, progressCents: 0, completionCents: 0, finalizedAt: null, createdAt: new Date() },
     }).returning();
     await db.insert(jobEvents).values({ jobId, eventType: "quote_submitted", label: `Preliminary estimate received from ${profile.businessName}`, metadata: JSON.stringify({ quoteId: quote.id, amountCents, nonBinding: true }) });
     await notify(job.ownerEmail, { jobId, type: "quote_received", title: "New preliminary estimate", body: `${profile.businessName} submitted a non-binding estimate for ${job.externalId}. Requesting an on-site visit does not select the contractor.` });

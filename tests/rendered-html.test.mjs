@@ -301,6 +301,30 @@ test("runs on-site verification and final quotes before booking", async () => {
   assert.match(migration, /completion_cents/);
 });
 
+test("compares verified contractor information and estimated project dates on preliminary quotes", async () => {
+  const [page, quoteRoute, schema, migration] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+    source("../db/schema.ts"),
+    source("../drizzle/0021_quote_estimated_schedule.sql"),
+  ]);
+
+  assert.match(page, /Estimated start date/);
+  assert.match(page, /Estimated finish date/);
+  assert.match(page, /Verified rating/);
+  assert.match(page, /Verified jobs/);
+  assert.match(page, /Approved work/);
+  assert.match(page, /quote-schedule-estimate/);
+  assert.match(quoteRoute, /estimatedStartAt/);
+  assert.match(quoteRoute, /estimatedFinishAt/);
+  assert.match(quoteRoute, /averageRating/);
+  assert.match(quoteRoute, /reviewCount/);
+  assert.match(schema, /estimated_start_at/);
+  assert.match(schema, /estimated_finish_at/);
+  assert.match(migration, /estimated_start_at/);
+  assert.match(migration, /estimated_finish_at/);
+});
+
 test("holds the full job in the demo ledger and releases milestones after proof approval", async () => {
   const [page, paymentRoute, checkoutRoute, milestoneRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),

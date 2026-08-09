@@ -7,7 +7,8 @@ type ProTab = "overview" | "opportunities" | "jobs" | "inbox" | "business";
 type AccountTab = "jobs" | "payments" | "documents" | "saved";
 type AdminTab = "overview" | "jobs" | "verification" | "contractors" | "fraud" | "disputes" | "team";
 type PersistedJob = { id: number; externalId: string; category: string; title: string; description?: string; size?: string; timeline?: string; postalCode?: string; emergency?: boolean; status: string; budget: string; scheduledStartAt?: string | number | null; createdAt: string | number };
-type PersistedQuote = { id: number; contractorName: string; amountCents: number; message: string; availableAt: string; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number };
+type ContractorComparison = { primaryService: string; approvedServices: string[]; homeBase: string; serviceRadiusKm: number; yearsInBusiness: number; teamSize: number; emergencyAvailable: boolean; about: string; verificationStatus: string; reviewCount: number; averageRating: number | null };
+type PersistedQuote = { id: number; contractorName: string; amountCents: number; message: string; availableAt: string; estimatedStartAt?: string | number | null; estimatedFinishAt?: string | number | null; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; contractor?: ContractorComparison | null };
 type Opportunity = { numericId?: number; id: string; service: string; title: string; distance: string; budget: string; timing: string; match: number; posted: string; details: string };
 type RoomMessage = { id: number; body: string; mine: boolean; createdAt: string | number };
 type RoomEvent = { id: number; label: string; eventType: string; createdAt: string | number };
@@ -26,7 +27,7 @@ type OperationsCase = { id: number; externalId: string; caseType: "verification"
 type AccountIdentity = { email: string; displayName: string; role: "homeowner" | "contractor" | "employee" | "admin" | null; operationsRole?: "employee" | "admin" | null };
 type StaffMember = { id: number; email: string; displayName: string; role: "employee" | "admin"; createdAt: string | number };
 type VerificationDocument = { id: number; documentType: string; filename: string; reviewStatus: string; uploadedAt: string | number };
-type ContractorQuote = { id: number; jobId: number; externalId: string; title: string; category: string; amountCents: number; availableAt: string; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; createdAt: string | number };
+type ContractorQuote = { id: number; jobId: number; externalId: string; title: string; category: string; amountCents: number; availableAt: string; estimatedStartAt?: string | number | null; estimatedFinishAt?: string | number | null; status: string; onsiteVisitAt?: string | number | null; workDescription?: string; materials?: string; measurements?: string; depositCents?: number; progressCents?: number; completionCents?: number; createdAt: string | number };
 type VerifiedContractor = { id: number; ownerEmail: string; businessName: string; primaryService: string; requestedServices: string[]; approvedServices: string[]; homeBase: string; serviceRadiusKm: number; teamSize: number; emergencyAvailable: boolean; acceptingWork: boolean; plan: string; subscriptionStatus: string; payoutsEnabled: boolean; updatedAt: string | number };
 type OperationsJob = { id: number; externalId: string; ownerEmail: string; category: string; title: string; budget: string; timeline: string; emergency: boolean; status: string; scheduledStartAt?: string | number | null; createdAt: string | number; updatedAt: string | number; matchingContractors: Array<{ businessName: string; ownerEmail: string; primaryService: string }>; quotes: Array<{ id: number; contractorEmail?: string | null; contractorName: string; amountCents: number; status: string; createdAt: string | number }> };
 type DemoContractorCompany = { ownerEmail: string; businessName: string; primaryService: string; homeBase: string; verificationStatus: string };
@@ -156,6 +157,8 @@ export default function Home() {
   const [contractorQuotes, setContractorQuotes] = useState<ContractorQuote[]>([]);
   const [quoteNote, setQuoteNote] = useState("");
   const [quoteAvailability, setQuoteAvailability] = useState("");
+  const [quoteEstimatedStart, setQuoteEstimatedStart] = useState("");
+  const [quoteEstimatedFinish, setQuoteEstimatedFinish] = useState("");
   const [quoteSubmitStatus, setQuoteSubmitStatus] = useState<"idle" | "saving" | "error">("idle");
   const [quoteSubmitError, setQuoteSubmitError] = useState("");
   const [accountTab, setAccountTab] = useState<AccountTab>("jobs");
@@ -294,6 +297,7 @@ export default function Home() {
   const accountInitials = (accountIdentity?.displayName || "Guest").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "GU";
   const contractorVerificationCopy = contractorProfile?.verificationStatus === "verified" ? { title: "Business verified", body: contractorProfile.subscriptionStatus === "demo_active" ? "Your profile and demo subscription are active. You can enable matching when ready." : "Your business is approved. Activate a demo subscription to receive and quote matched work.", tone: "verified" } : contractorProfile?.verificationStatus === "rejected" ? { title: "Verification not approved", body: "Review the decision and update your business information before contacting JobLink support.", tone: "rejected" } : { title: "Verification in review", body: "Operations is reviewing your identity, insurance and business information. You can edit your profile while you wait.", tone: "pending" };
   const hasActiveSubscription = Boolean(contractorProfile && ["active", "trialing", "demo_active"].includes(contractorProfile.subscriptionStatus));
+  const earliestQuoteDate = new Date().toISOString().slice(0, 10);
   const requestStepValid = step === 0 ? scope.trim().length >= 5 : step === 1 ? size.trim().length >= 2 : step === 2 ? postalCode.trim().length >= 3 && (timeline !== "Custom" || customTimeline.trim().length >= 3) && (budget !== "Custom" || customBudget.trim().length >= 1) : true;
 
   function signInFor(portal: "homeowner" | "contractor" | "admin") {
@@ -944,6 +948,12 @@ export default function Home() {
     return Number.isNaN(date.getTime()) ? "Not scheduled yet" : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
   }
 
+  function estimatedDateLabel(value?: string | number | null) {
+    if (!value) return "Not provided";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "Not provided" : date.toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
+  }
+
   async function deleteSavedRequest(job: PersistedJob) {
     if (!window.confirm(`Delete ${job.externalId}? This permanently removes the request and any unaccepted quotes.`)) return;
     try {
@@ -971,7 +981,7 @@ export default function Home() {
       const response = await fetch(`/api/jobs/${quoteJob.numericId}/quotes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: Number(quoteAmount), message: quoteNote, availableAt: quoteAvailability, contractorName: contractorProfile?.businessName || businessName }),
+        body: JSON.stringify({ amount: Number(quoteAmount), message: quoteNote, availableAt: quoteAvailability, estimatedStartAt: quoteEstimatedStart, estimatedFinishAt: quoteEstimatedFinish, contractorName: contractorProfile?.businessName || businessName }),
       });
       const data = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Unable to submit quote");
@@ -990,6 +1000,8 @@ export default function Home() {
     setQuoteAmount("");
     setQuoteNote("Quote includes labour, materials and cleanup. Final scope will be confirmed with the homeowner before work begins.");
     setQuoteAvailability("Schedule to be confirmed with the homeowner");
+    setQuoteEstimatedStart("");
+    setQuoteEstimatedFinish("");
     setQuoteJob(job);
   }
 
@@ -1696,7 +1708,7 @@ export default function Home() {
               {savedRequestId && savedQuotesStatus === "loading" && <div className="matches-loading"><span>JL</span><h3>Loading verified quotes…</h3><p>Your saved request is ready. We’re retrieving its current quote status.</p></div>}
               {savedRequestId && savedQuotes.length > 0 && savedQuotes.map((quote, index) => (
                 <article className={`contractor-card ${index === 0 ? "featured" : ""}`} key={quote.id}>
-                  <div className="rank">0{index + 1}</div><div className="pro-logo">{quote.contractorName.split(" ").slice(0,2).map((word) => word[0]).join("")}</div><div className="pro-main"><div className="pro-title"><div><span className="match-badge">{quote.status === "final_quote_ready" ? "Final verified quote" : index === 0 ? "Lowest initial estimate" : "Verified contractor"}</span><h2>{quote.contractorName} <small>✓</small></h2></div></div><div className="pro-facts"><span>Profile approved by Operations</span><span>{quoteWorkflowLabel(quote)}</span></div><div className="quote-row"><div><small>{quote.status === "final_quote_ready" ? "On-site visit" : "Available"}</small><b>{quote.status === "onsite_scheduled" || quote.status === "final_quote_ready" ? scheduledStartLabel(quote.onsiteVisitAt) : quote.availableAt}</b></div><div><small>{quote.status === "final_quote_ready" ? "Final quote" : "Initial estimate"}</small><b className="quote-price">${(quote.amountCents / 100).toLocaleString()}</b></div></div><p className="quote-note">✓ {quote.status === "final_quote_ready" ? quote.workDescription : quote.message}</p>{quote.status === "final_quote_ready" && <div className="final-quote-summary"><b>Materials</b><p>{quote.materials}</p><b>Measurements</b><p>{quote.measurements}</p><div><span>Deposit ${(quote.depositCents || 0) / 100}</span><span>Progress ${(quote.progressCents || 0) / 100}</span><span>Completion ${(quote.completionCents || 0) / 100}</span></div></div>}<div className="card-actions"><button className="secondary-action" onClick={() => { setStep(3); go("request"); }}>Review request</button>{quote.status === "final_quote_ready" ? <><button className="secondary-action" onClick={() => void decideFinalQuote(quote, "decline_final")}>Decline</button><button className="primary-action" disabled={savedQuotesStatus === "loading"} onClick={() => void decideFinalQuote(quote, "accept_final")}>Accept final quote</button></> : <button className="primary-action" disabled={savedQuotesStatus === "loading" || quote.status !== "submitted"} onClick={() => void acceptSavedQuote(quote)}>{quoteWorkflowLabel(quote)}</button>}</div></div>
+                  <div className="rank">0{index + 1}</div><div className="pro-logo">{quote.contractorName.split(" ").slice(0,2).map((word) => word[0]).join("")}</div><div className="pro-main"><div className="pro-title"><div><span className="match-badge">{quote.status === "final_quote_ready" ? "Final verified quote" : index === 0 ? "Lowest initial estimate" : "Verified contractor"}</span><h2>{quote.contractorName} <small>✓</small></h2></div></div><div className="pro-facts"><span>Profile approved by Operations</span><span>{quoteWorkflowLabel(quote)}</span></div><div className="quote-row"><div><small>{quote.status === "final_quote_ready" ? "On-site visit" : "Available"}</small><b>{quote.status === "onsite_scheduled" || quote.status === "final_quote_ready" ? scheduledStartLabel(quote.onsiteVisitAt) : quote.availableAt}</b></div><div><small>{quote.status === "final_quote_ready" ? "Final quote" : "Initial estimate"}</small><b className="quote-price">${(quote.amountCents / 100).toLocaleString()}</b></div></div>{quote.status !== "final_quote_ready" && <div className="quote-schedule-estimate"><span><small>Estimated start</small><b>{estimatedDateLabel(quote.estimatedStartAt)}</b></span><span><small>Estimated finish</small><b>{estimatedDateLabel(quote.estimatedFinishAt)}</b></span></div>}<div className="contractor-selection-facts"><span><small>Verified rating</small><b>{quote.contractor?.averageRating ? `${quote.contractor.averageRating.toFixed(1)} ★` : "New to JobLink"}</b></span><span><small>Verified jobs</small><b>{quote.contractor?.reviewCount ?? 0} completed</b></span><span><small>Experience</small><b>{quote.contractor?.yearsInBusiness ? `${quote.contractor.yearsInBusiness} years` : "Not provided"}</b></span><span><small>Approved work</small><b>{quote.contractor?.approvedServices?.join(", ") || quote.contractor?.primaryService || "Verified service"}</b></span></div><p className="contractor-comparison-note">{quote.contractor?.about || "Operations has verified this company’s business profile, insurance evidence and applicable licence information."}</p><p className="quote-note">✓ {quote.status === "final_quote_ready" ? quote.workDescription : quote.message}</p>{quote.status === "final_quote_ready" && <div className="final-quote-summary"><b>Materials</b><p>{quote.materials}</p><b>Measurements</b><p>{quote.measurements}</p><div><span>Deposit ${(quote.depositCents || 0) / 100}</span><span>Progress ${(quote.progressCents || 0) / 100}</span><span>Completion ${(quote.completionCents || 0) / 100}</span></div></div>}<div className="card-actions"><button className="secondary-action" onClick={() => { setStep(3); go("request"); }}>Review request</button>{quote.status === "final_quote_ready" ? <><button className="secondary-action" onClick={() => void decideFinalQuote(quote, "decline_final")}>Decline</button><button className="primary-action" disabled={savedQuotesStatus === "loading"} onClick={() => void decideFinalQuote(quote, "accept_final")}>Accept final quote</button></> : <button className="primary-action" disabled={savedQuotesStatus === "loading" || quote.status !== "submitted"} onClick={() => void acceptSavedQuote(quote)}>{quoteWorkflowLabel(quote)}</button>}</div></div>
                 </article>
               ))}
               {!savedRequestId && <div className="matches-loading"><span>JL</span><h3>No request selected</h3><p>Post a request or open one from your account to compare its quotes.</p><button onClick={() => beginRequest()}>Post a request →</button></div>}
@@ -1957,11 +1969,13 @@ export default function Home() {
                 <label className="field-label" htmlFor="quote-price">Your estimated price</label><div className="price-input"><span>$</span><input id="quote-price" value={quoteAmount} onChange={(event) => setQuoteAmount(event.target.value)} inputMode="decimal" /><em>CAD</em></div>
                 <div className="quote-breakdown"><div className="total"><span>Your submitted total</span><b>${Number(quoteAmount || 0).toLocaleString()}</b></div><p>Describe labour, materials, taxes, cleanup, and exclusions in the message so the homeowner can compare the scope accurately.</p></div>
                 <label className="field-label" htmlFor="quote-note">Message to customer</label><textarea id="quote-note" value={quoteNote} onChange={(event) => setQuoteNote(event.target.value)} rows={4} />
-                <label className="field-label" htmlFor="quote-date">Earliest start or availability</label><input id="quote-date" value={quoteAvailability} onChange={(event) => setQuoteAvailability(event.target.value)} placeholder="Example: Tuesday after 9 AM or any weekday next week" />
+                <div className="quote-schedule-inputs"><label className="field-label" htmlFor="quote-start-date">Estimated start date<input id="quote-start-date" type="date" min={earliestQuoteDate} value={quoteEstimatedStart} onChange={(event) => setQuoteEstimatedStart(event.target.value)} /></label><label className="field-label" htmlFor="quote-finish-date">Estimated finish date<input id="quote-finish-date" type="date" min={quoteEstimatedStart || earliestQuoteDate} value={quoteEstimatedFinish} onChange={(event) => setQuoteEstimatedFinish(event.target.value)} /></label></div>
+                <label className="field-label" htmlFor="quote-date">Availability note (optional)</label><input id="quote-date" value={quoteAvailability} onChange={(event) => setQuoteAvailability(event.target.value)} placeholder="Example: Weekdays after 9 AM" />
                 <div className="quote-protection"><span>✓</span><p>Customer contact details remain private until they accept your quote.</p></div>
                 {quoteSubmitStatus === "error" && <p className="quote-submit-error">{quoteSubmitError || "This quote could not be sent. Check the amount and try again."}</p>}
                 {Number(quoteAmount || 0) < 10 && <p className="quote-field-hint">Enter an estimated price of at least $10 to send this quote.</p>}
-                <button className="send-quote" disabled={quoteSubmitStatus === "saving" || Number(quoteAmount) < 10} onClick={submitQuote}>{quoteSubmitStatus === "saving" ? "Sending quote…" : `Send $${Number(quoteAmount || 0).toLocaleString()} quote →`}</button>
+                {(!quoteEstimatedStart || !quoteEstimatedFinish || quoteEstimatedFinish < quoteEstimatedStart) && <p className="quote-field-hint">Add an estimated start and finish date so the homeowner can compare schedules.</p>}
+                <button className="send-quote" disabled={quoteSubmitStatus === "saving" || Number(quoteAmount) < 10 || !quoteEstimatedStart || !quoteEstimatedFinish || quoteEstimatedFinish < quoteEstimatedStart} onClick={submitQuote}>{quoteSubmitStatus === "saving" ? "Sending quote…" : `Send $${Number(quoteAmount || 0).toLocaleString()} quote →`}</button>
               </div>
             </div>
           )}
