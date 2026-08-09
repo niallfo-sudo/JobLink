@@ -391,6 +391,21 @@ test("requires custom initial bid ranges and scores finalized quote accuracy", a
   assert.match(migration, /quote_accuracy_status/);
 });
 
+test("waives quote-rating deductions when an out-of-range final quote is selected and explains both ratings", async () => {
+  const [page, quoteRoute, reputationRoute] = await Promise.all([
+    source("../app/page.tsx"),
+    source("../app/api/jobs/[id]/quotes/route.ts"),
+    source("../app/api/reputation/route.ts"),
+  ]);
+
+  assert.match(page, /How is the JobLink Score calculated\?/);
+  assert.match(page, /How does Quote Rating work\?/);
+  assert.match(page, /How your ratings work/);
+  assert.match(page, /no Quote Rating penalty/);
+  assert.match(quoteRoute, /accepted_out_of_range/);
+  assert.match(reputationRoute, /accepted_out_of_range/);
+});
+
 test("compares verified contractor information and estimated project dates on preliminary quotes", async () => {
   const [page, quoteRoute, schema, migration] = await Promise.all([
     source("../app/page.tsx"),

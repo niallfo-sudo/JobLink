@@ -12,7 +12,7 @@ export async function GET() {
       db.select({ reviewCount: count(), averageScore: avg(verifiedReviews.averageScore) }).from(verifiedReviews).where(eq(verifiedReviews.contractorEmail, user.email)),
       db.select({ count: count() }).from(quotes).where(and(eq(quotes.contractorEmail, user.email), eq(quotes.status, "accepted"))),
       db.select({ count: count() }).from(quotes).innerJoin(jobRequests, eq(quotes.jobId, jobRequests.id)).where(and(eq(quotes.contractorEmail, user.email), eq(quotes.status, "accepted"), eq(jobRequests.status, "completed"))),
-      db.select({ comparisonCount: count(), averageDelta: avg(quotes.quoteAccuracyDelta) }).from(quotes).where(and(eq(quotes.contractorEmail, user.email), ne(quotes.quoteAccuracyStatus, "pending"), ne(quotes.quoteAccuracyStatus, "unavailable"))),
+      db.select({ comparisonCount: count(), averageDelta: avg(quotes.quoteAccuracyDelta) }).from(quotes).where(and(eq(quotes.contractorEmail, user.email), ne(quotes.quoteAccuracyStatus, "pending"), ne(quotes.quoteAccuracyStatus, "unavailable"), ne(quotes.quoteAccuracyStatus, "accepted_out_of_range"))),
     ]);
     const average = Number(summary?.averageScore ?? 0);
     const verifiedReviewCount = Number(summary?.reviewCount ?? 0);
