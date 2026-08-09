@@ -64,7 +64,8 @@ export async function GET() {
     .from(contractorProfiles)
     .orderBy(asc(contractorProfiles.businessName));
   const selectedEmail = (await cookies()).get(DEMO_CONTRACTOR_COOKIE)?.value || identity.email;
-  return Response.json({ companies: rows, selectedEmail, enabled: true });
+  const companies = rows.filter((profile) => profile.businessName.trim() && profile.verificationStatus !== "rejected");
+  return Response.json({ companies, selectedEmail, enabled: true });
 }
 
 export async function POST(request: Request) {

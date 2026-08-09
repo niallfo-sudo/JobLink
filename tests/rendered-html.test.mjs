@@ -115,6 +115,7 @@ test("lets Operations administrators switch between verified demo contractor com
   assert.match(demoRoute, /demo-contractor-\$\{crypto\.randomUUID/);
   assert.match(demoRoute, /function serializeProfile/);
   assert.match(demoRoute, /profile: serializeProfile\(profile\)/);
+  assert.match(demoRoute, /profile\.businessName\.trim\(\) && profile\.verificationStatus !== "rejected"/);
   assert.match(demoRoute, /DEMO_CONTRACTOR_COOKIE/);
   assert.match(actor, /account\?\.role !== "admin"/);
   assert.doesNotMatch(actor, /@joblink\.demo/);
