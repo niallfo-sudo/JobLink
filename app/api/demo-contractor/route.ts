@@ -9,6 +9,23 @@ function cookie(value: string, maxAge = 60 * 60 * 8) {
   return `${DEMO_CONTRACTOR_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
 }
 
+function parseServices(value: string | null | undefined) {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed.filter((service): service is string => typeof service === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function serializeProfile<T extends { services: string; approvedServices: string | null }>(profile: T) {
+  return {
+    ...profile,
+    services: parseServices(profile.services),
+    approvedServices: parseServices(profile.approvedServices),
+  };
+}
+
 async function ensureGeneralContractorsDemo() {
   await getDb().insert(contractorProfiles).values({
     ownerEmail: "demo-general-contractors@joblink.demo",
@@ -77,7 +94,7 @@ export async function POST(request: Request) {
       payoutsEnabled: false,
       verificationStatus: "pending",
     }).returning();
-    return Response.json({ profile, selectedEmail: ownerEmail }, { status: 201, headers: { "Set-Cookie": cookie(ownerEmail) } });
+    return Response.json({ profile: serializeProfile(profile), selectedEmail: ownerEmail }, { status: 201, headers: { "Set-Cookie": cookie(ownerEmail) } });
   }
   const selectedEmail = payload.contractorEmail?.trim() || "";
   if (!selectedEmail || selectedEmail === identity.email) {
